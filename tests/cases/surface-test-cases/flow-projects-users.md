@@ -223,3 +223,36 @@ exit and protects nothing here.
 **Given** a prefix change interrupted mid-rewrite, **when** any command
 next runs, **then** the change is completed and no task is left on the
 old prefix.
+
+### PRU-C13 · major · P10 P11 · CLI
+**`loctt user shortcuts` reads and sets the single-key shortcut switches.**
+The web Settings → Keyboard switches are a core capability (K133), so the
+CLI reads and writes the same `keyboard_shortcuts` setting.
+
+- With no flags it prints the master switch, then each shortcut's id,
+  keys, `on`/`off` and action.
+- `--single-key on|off`, `--off <id>` and `--on <id>` write the setting
+  the web app reads; `--reset` removes it and keeps other settings.
+- An unknown id is refused, naming it and the valid ids, and nothing is
+  written.
+- A hand-corrupted value reads back degraded (valid parts kept), not as
+  a crash, and `loctt doctor` names the dropped part.
+
+**Given** a fresh tracker, **when** `--single-key off --off goto` runs,
+**then** `settings.yaml` holds `single_key: false` and `disabled: [goto]`
+and the print shows both off.
+
+### PRU-C14 · major · P10 P11 · MCP
+**`get_keyboard_shortcuts` / `set_keyboard_shortcuts` read and set the switches.**
+The MCP half of PRU-C13.
+
+- `get_keyboard_shortcuts` returns `single_key` and each shortcut's keys,
+  `on` and `active`.
+- `set_keyboard_shortcuts` takes `single_key`, `off`, `on`, or `reset`
+  alone, writes the same setting, and returns the resulting state.
+- An unknown id is an error naming it, and nothing is written.
+
+**Given** a fresh tracker, **when** `set_keyboard_shortcuts` turns
+`cycle-theme` off, **then** it reads back inactive and every other
+shortcut stays active.
+

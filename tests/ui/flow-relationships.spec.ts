@@ -615,7 +615,7 @@ test("REL-8: the target search matches key, title and a retired key, and never t
   // says why, rather than claiming nothing matched.
   await page.getByTestId("link-target").fill(root ?? "");
   await expect(page.locator(`[data-testid="link-result"][data-key="${root ?? ""}"]`)).toHaveCount(0);
-  await expect(page.getByTestId("link-no-results")).toContainText("cannot link to itself");
+  await expect(page.getByTestId("link-no-results")).toContainText(/can.t link to itself/);
 });
 
 // @verifies REL-9
@@ -1060,7 +1060,7 @@ test("REL-21: a hand-edited cycle renders, names the repeat, and does not hang t
     .toContainText(`cycle detected — ${a ?? ""} already appears above`);
   // Named, with a next action: which links, and what to do.
   await expect(page.getByTestId("relationship-cycle")).toContainText("contains a cycle");
-  await expect(page.getByTestId("relationship-cycle")).toContainText("remove one of the two links");
+  await expect(page.getByTestId("relationship-cycle")).toContainText(/remove one of the two links/i);
 
   // The page is alive: the tab did not lock. A frozen render would
   // never reach this, and the header is proof the rest of the page
@@ -1301,7 +1301,7 @@ test("REL-29: a self-link is refused, and the task is never offered in its own r
   // And the reason is named rather than presented as a spelling
   // mistake.
   await expect(page.getByTestId("link-no-results")).toContainText(t1 ?? "");
-  await expect(page.getByTestId("link-no-results")).toContainText("cannot link to itself");
+  await expect(page.getByTestId("link-no-results")).toContainText(/can.t link to itself/);
   // Nothing was written.
   expect(await frontmatter(tracker.root, t1 ?? "")).toBe(before);
 });
@@ -1598,7 +1598,7 @@ test("REL-42: a failed inverse write is reported, and the panel shows the forwar
 });
 
 // @verifies REL-43
-test("REL-43: a key that resolves to nothing is named back, with key_history mentioned, and the text is kept", async ({ page, tracker }) => {
+test("REL-43: a key that resolves to nothing says no matches were found, and the text is kept", async ({ page, tracker }) => {
   const [t1] = await tracker.seed([{ title: "Only task" }]);
   await openTask(page, tracker, t1 ?? "");
   await page.getByTestId("add-link").click();
@@ -1606,12 +1606,8 @@ test("REL-43: a key that resolves to nothing is named back, with key_history men
 
   const none = page.getByTestId("link-no-results");
   await expect(none).toBeVisible();
-  // The key as entered, and the statement that nothing matches it.
-  await expect(none).toContainText("T-999");
-  await expect(none).toContainText("No task matches");
-  // Former keys are mentioned, so a typo is distinguishable from a
-  // retired key.
-  await expect(none).toContainText("Former keys resolve");
+  // Just the outcome (REL-43 amended, K123).
+  await expect(none).toHaveText("No matches found.");
   // The picker keeps the typed text so the user can correct it.
   await expect(page.getByTestId("link-target")).toHaveValue("T-999");
 });
@@ -1675,11 +1671,11 @@ test("REL-45: a link blocked by the state lock names the contention, adds nothin
 
   await addLink(page, "blocks", t2 ?? "");
 
-  // The message says another LocTT process is writing, and suggests
+  // The message says another process is writing, and suggests
   // retrying — rather than an opaque `ELOCKED`.
   const err = page.getByTestId("link-error");
   await expect(err).toBeVisible();
-  await expect(err).toContainText("another LocTT process is writing");
+  await expect(err).toContainText(/another process is writing/i);
   await expect(err).toContainText("try again");
   // Not the library's own words.
   await expect(err).not.toContainText("ELOCKED");

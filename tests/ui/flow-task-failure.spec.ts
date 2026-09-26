@@ -771,11 +771,15 @@ test.describe("ERR-4 / XS-57 — outcomes the app cannot or must not guess", () 
     const state = await page.getByTestId("meta-field-error-state").innerText();
     expect(state).not.toBe("Your change was saved.");
     expect(state).not.toBe("Your change was not saved.");
-    expect(state).toContain("cannot tell whether this was saved");
+    // Pinned exactly (A348): the capitalisation pass turned the old
+    // lowercase fragment into its own sentence.
+    expect(state).toBe(
+      "Cannot tell whether this was saved. Reload the page, or run "
+      + "`loctt show` in a terminal to see what the file holds.",
+    );
 
     // Second bullet: how to find out, named concretely.
     expect(text).toMatch(/Reload/);
-    expect(state).toContain("loctt show");
 
     // Third bullet: no re-send is offered as the action, because a
     // write that may have landed could double-apply. The positive

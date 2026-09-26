@@ -43,6 +43,7 @@ Keys (`P-1`, `Q10`, …) come from the v1 decision register; see
 | Key | Invariant | What breaks if violated |
 |---|---|---|
 | **Q10** | Multiple simultaneously-`active` sprints are allowed. LocTT performs **no** automatic state transitions and **no** carryover. | "Helpfully" auto-completing a sprint past its end date mutates user data nobody asked to change. |
+| — | Sprint `state` moves freely: any state to any state, on every surface, with no force flag. **K130 removed the transition guard** (completed could not be reopened without CLI `--force` / MCP `force`) under P11. The one refusal is an `end_date` before `start_date` ("End date is before the start date."), a storage rule, not policy. | Reinstating a guard, a warning or a confirmation on a state change polices the user's process (P11). |
 | — | Tasks reference sprints by **id**. A sprint's `name` is mutable and not unique. | Renaming a sprint would detach its tasks. |
 
 ## Local-only state
@@ -58,4 +59,4 @@ Keys (`P-1`, `Q10`, …) come from the v1 decision register; see
 
 | Key | Invariant | What breaks if violated |
 |---|---|---|
-| **Q18 / D4** | The body editor autosaves on idle + blur; `body_edited` history entries coalesce within a 15-minute same-actor window. **The window rolls** — each merged save advances it — **but an entry spans at most 60 minutes**, after which a fresh entry starts even if edits continue. | Under explicit-save the coalescing window would merge two deliberate saves minutes apart into one history entry. Without the 60-minute cap the rolling window never closes: sub-15-minute edits collapse indefinitely, and every intermediate body state inside that span is unrecoverable — which breaks the M2 guarantee that a lost merge race is recoverable from history. |
+| **Q18 / D4** | The body editor writes only on Save (K124, 2026-09-24). **Every body write, from any surface (web Save, CLI, MCP), records its own `body_edited` history entry** with that write's `before` and `after` (K128, 2026-09-24). No entry is merged into another. | Merging deliberate Saves into one entry loses every body state between them, which breaks the M2 guarantee that a lost merge race is recoverable from history. The 15-minute same-actor merge (with its 60-minute cap) existed only for the old 1.5s autosave and was removed by K128. Entries written by the old rule keep their `meta.coalesce_started_at` and stay readable. |

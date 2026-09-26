@@ -202,4 +202,28 @@ describe("BoardColumnsPanel", () => {
     });
     expect(putBodies.length).toBe(0);
   });
+
+  /**
+   * @verifies A329 (B7)
+   *
+   * The audit found a literal "+ " prefix on this button (an A208
+   * violation). A329's chosen pattern for Board columns keeps it below
+   * the list (a genuinely different action — it appends a draft row
+   * saved later, not a dialog) but drops the "+" text in favour of a
+   * drawn `Icon name="plus"`.
+   *
+   * Red-proof: restore the plain "+ Add column" text label and the label
+   * assertion goes red; remove the `<Icon name="plus">` and the icon
+   * assertion goes red.
+   */
+  it("drops the literal \"+ \" text for a drawn plus icon (A329)", async () => {
+    mockWorkflow(BASE);
+    render(<BoardColumnsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("board-promote"));
+    await screen.findByTestId("board-columns-list");
+
+    const addColumn = screen.getByTestId("board-add-column");
+    expect(addColumn.textContent?.trim()).toBe("Add column");
+    expect(addColumn.querySelector("svg")).not.toBeNull();
+  });
 });

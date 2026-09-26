@@ -70,7 +70,10 @@ config changing underneath a live session is
 ### SHL-8 · M1 · blocker · P4 P6
 **"Mentions me" is an active built-in filter when a current user is set, and inert only when there is none.** It resolves to `comment_mentions = currentUser()` (CMT-10 / A183), so it behaves exactly like the other user-scoped filters ("Assigned to me", "Reported by me").
 
-- It renders in the Saved filters group in its final position, so the group order is stable.
+- It renders in the Filters section (K125, amended Ken 2026-09-24 — was
+  "Saved filters", then "Views"; the built-ins now have their own
+  section, separate from saved views) in its final position, so the
+  section order is stable.
 - **With a current user set** (the default — `init` bootstraps one): it is a real link that navigates to the filter state, and it carries a count badge like the other live filters (the count may be `0` when no comment mentions the user, which is an honest count, not a blank).
 - **With no current user** (the same precondition that makes "Assigned to me" inert): it renders inert — not clickable, no count. The disabled state is conveyed by more than colour and is exposed to assistive tech (see A11Y-31), and hovering or focusing it explains it is unavailable, rather than being silently dead. The explanation is the generic user-filter one, not a "comments land" promise (that feature has shipped).
 
@@ -213,7 +216,9 @@ config changing underneath a live session is
 ### SHL-27 · M1 · minor · P2
 **Reloading a deep-linked filtered view reproduces it exactly.** Copy the URL of a filtered, sorted, paginated list and open it in a new tab.
 
-- Filters, sort column and direction, page, active project, and archived toggle all match the source tab.
+- Filters, sort column and direction, page, and active project all match the source tab.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Dropped "archived toggle": there is none.
 - The sidebar highlights whatever built-in filter corresponds to that state, if any.
 
 ### SHL-28 · M1 · minor · P6
@@ -252,7 +257,8 @@ view, or on a different machine.
 
 - The stale entry does not render as a broken item and does not crash the group.
 - The user is told the pinned view was removed — inline in the group, naming the view, and dismissible. Dismissing removes the pin.
-- The rest of the Saved filters group renders normally.
+- The rest of the Saved views section (K125, amended Ken 2026-09-24 —
+  was "Saved filters", then "Views") renders normally.
 - **No error toast fires** — this is an explanation, not an error. A config the user edited themselves is not an error condition, but it is not invisible either.
 
 ### SHL-33 · M1 · minor · P3
@@ -342,7 +348,15 @@ a violation of P4.
 **A route-level render failure is caught by the error boundary inside the shell.** Force a component in the main pane to throw.
 
 - The header and sidebar survive; only the main pane is replaced by the error state, so the user can navigate away.
-- The message says what was being displayed, that the failure is a bug rather than a data problem, and offers reload plus a way back to the list.
+- The message says what was being displayed, and offers reload plus a way back to the list.
+
+> **Amended (K120, Ken 2026-09-23).** Dropped "that the failure is a bug":
+> under the messaging rules the screen states the data outcome, not an
+> explanation of the fault.
+
+> **Amended (K126, Ken 2026-09-24).** Dropped "that the user's tasks were
+> not affected". Ken: *"i dont think the 'your tasks werent affected'
+> message is needed."*
 - No raw stack trace is presented as the primary message.
 
 ### SHL-43 · M1 · minor · P4 P7
@@ -369,9 +383,106 @@ a violation of P4.
 
 > Shape DECIDED (Ken, 2026-09-06): **per-user** settings; built-in groups and filters are **hideable AND reorderable**; exposed on **web + CLI + MCP** (full parity — an agent may configure the UI). Persisted per-user `sidebar_groups`; doctor-tolerant.
 
+> **Amended (K125, Ken 2026-09-24).** Ken: *"Nest under 'Filters'"*. The
+> six built-in filters (Assigned to me, Reported by me, Mentions me, Due
+> this week, Overdue, High priority) no longer show as six flat top-level
+> rows in the Customize-sidebar panel — they nest as children of ONE
+> "Filters" group row, which is itself one more reorderable/hideable row
+> alongside Projects/Milestones/Sprints/Labels/Recently viewed. Each
+> child is still individually reorderable/hideable INSIDE the group.
+> - The "Filters" group id (`filters`) is a real, stored `sidebar_groups`
+>   entry (a new `SidebarGroupId`), not a presentation-only grouping — so
+>   moving it moves the whole block as a unit, and hiding it hides every
+>   built-in from the live sidebar regardless of each one's own `hidden`
+>   flag.
+> - **Migration:** an existing flat stored order from before this
+>   ticket (when a filter id could only ever be a top-level entry) still
+>   loads. The migrated group is placed at the position of the FIRST
+>   individual filter id found in that stored order (falling back to the
+>   group's own default catalog slot if none is present); every filter's
+>   own inner order and hidden flag is preserved exactly.
+> - **Show/Hide is now a Switch** (`ui/Toggle`, `role="switch"`), not a
+>   Show/Hide button — Ken: *"yes use switch"*. Each switch is labelled
+>   "Show {section} in the sidebar" for assistive tech; the strikethrough
+>   previously used to mark a hidden row is removed (the switch carries
+>   the state).
+> - **Switching the group off disables its children.** Ken: *"when an
+>   item is switched off, disable switching/reordering its child items
+>   too"* — while the "Filters" group's own switch is off, every child's
+>   switch AND its drag-reorder handle are disabled (still visible,
+>   clearly inactive; not hidden).
+> - CLI/MCP need no change beyond the new `filters` id joining the same
+>   `order`/`hidden` flat-list catalog they already validate against
+>   (`get_sidebar_groups`/`set_sidebar_groups`, `loctt user
+>   sidebar-groups`) — parity holds automatically.
+>
+> **Amended again (K125 gap fix, Ken 2026-09-24).** The build above gave
+> `filters` a real stored identity but no live-sidebar row of its own —
+> the six built-ins kept rendering inside the "Views" section (saved
+> views), so moving "Filters" in the Customize-sidebar panel changed
+> nothing visible. Ken: *"As built, the customiser shows a movable
+> 'Filters' row, but Sidebar.tsx returns null for case "filters" and
+> still renders the six built-ins inside the saved-filters section
+> (heading 'Views') above the saved views. So moving 'Filters' in the
+> customiser changes nothing, which is the disconnect Ken complained
+> about."* Fixed: the built-ins now render in their OWN section, headed
+> "Filters", at the `filters` group's resolved position in the stored
+> order — moving or hiding it in the panel now moves or hides a real
+> section, the same way every other group already works. The
+> saved-views-only section is renamed "Saved views" in BOTH the sidebar
+> heading and the Customize-sidebar panel's own row label (was "Views"
+> in the sidebar, "Saved filters" in the panel — two different labels
+> for the same section, which is its own instance of the "can't map a
+> customiser row to a sidebar section" problem) — it now matches the
+> Settings "Saved views" page and the "Save as view" button.
+
 ### SHL-46 · M1 · blocker · P2 P8
 **The global header search works.**
 
 - Typing in the header "Search tasks…" box and pressing Enter (or as-you-type) queries `/api/search` and shows results / navigates; a real network request fires.
 - The box is not a dead input (the input has no handler today).
 - Once wired, `/` focuses it (A11Y-2 becomes reachable).
+
+### SHL-47 · M1 · minor · P6
+**The brand loading mark spins in place about its own centre at every rendered size — it never orbits or drifts out of its box.** The mark appears wherever `LoadingState` or a loading `Button` renders (onboarding submit, panel loads, `DiagnosticsPanel`), at sizes from ~18px to 32px+.
+
+Ken reported it directly: "the spinner svg is misaligned." The mark
+(`LogoSpinner`, class `loctt-spin` on the outer `<svg>`) rotates via a
+CSS animation; the pivot is `transform-origin`, and on an outer `<svg>`
+that property is measured in CSS pixels of the *rendered box*, not in
+`viewBox` units. A rule copied from the source SVG's native 64px
+(`32px 32px`) is only centred at 64px — at the app's 21–24px sizes it
+sits past the bottom-right corner, so the mark swings in a visible
+orbit instead of rotating on the spot.
+
+- At every size the app renders the mark (at minimum 21px, 24px, and
+  64px), its bounding box stays fixed through the whole animation cycle
+  — the box does not translate, grow, or drift as the mark rotates.
+- The visual centre of the mark (the "L"/"o" pivot) coincides with the
+  centre of its bounding box at every size, not only at one specific
+  size the rule happened to be tuned for.
+- This holds independent of `prefers-reduced-motion` — a reduced-motion
+  user who still sees the frozen frame sees it centred, not offset.
+
+### SHL-48 · M4 · minor · P8
+**Chrome that summarises a Settings concept deep-links to the section that owns it, rather than leaving the user to hunt.** The header's user menu, and the `?` shortcut-reference overlay's footer.
+
+- The user menu's generic "Settings" catch-all link is kept, but sits alongside differentiated items — "My profile" (anchored at the current user's row in Settings → Users), "My preferences", and "Customize sidebar" — each pointing at the exact section that owns the concept, not the Settings landing page.
+- "My profile" is omitted (not shown pointing at a dead anchor) when the signed-in identity is unknown; the identity-independent items stay reachable.
+- The `?` shortcut overlay's footer links to Settings → Keyboard, the full rebindable reference the overlay itself only summarises.
+- Following any of these deep links closes the originating overlay — a modal layer left open over the destination panel would trap focus.
+
+> Added (2026-09-23) to cover behaviour four tests already asserted
+> under an invented `CONFIG-5` tag (`Header.test.tsx`,
+> `ShortcutHelpDialog.test.tsx`) — see `docs/dev/backlog.md` B9.
+
+### SHL-49 · M1 · minor · P6 P8
+**The sidebar's Views section (built-in filters and saved views) marks the selected row active, and a saved-view row's trailing kebab lines up with a built-in row's trailing badge.** Sidebar rendered at `/list` with a saved view or a built-in filter selected.
+
+- A saved view selected via `search.view` is marked with `aria-current="page"` and the row's own `data-active` marker, matching the treatment `ItemShell` already gives Projects and the view switcher.
+- A built-in filter is marked active when the URL's `q` matches that filter's resolved query exactly; only one row in the Views section is active at a time.
+- A saved-view row's trailing kebab (`RowActions`, a sibling of `ItemShell` outside its own padding) carries the same right inset (`pr-2.5`) as `ItemShell` gives a badge-ending row, so both row kinds end at the same right edge instead of the kebab sitting further out.
+
+> Added (2026-09-23) to cover behaviour two tests already asserted under
+> an invented `UI-16` tag (`Sidebar.test.tsx`, describe blocks tagged
+> `UI-16b`/`UI-16c`) — see `docs/dev/backlog.md` B9.

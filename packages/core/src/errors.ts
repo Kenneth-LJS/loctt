@@ -115,7 +115,7 @@ export function errorEnvelope(err: unknown): ErrorResponse {
   if (err instanceof LocttError) return err.toEnvelope();
   return {
     code: "unknown",
-    message: "Something failed and LocTT could not determine the cause.",
+    message: "Something failed. The cause could not be determined.",
     data_state: "unknown",
     recovery: { kind: "retry" },
     ...(err instanceof Error && err.message !== ""

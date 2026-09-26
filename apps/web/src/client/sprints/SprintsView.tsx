@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError } from "../api/client.ts";
+import { ApiError, isUnknownOutcome } from "../api/client.ts";
 import { useLabels, useMilestones, useProjects, useSprints, useUsers } from "../api/hooks/sidebarData.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { useSetField } from "../api/hooks/useSetField.ts";
@@ -22,7 +22,6 @@ import type { Progress, Readout } from "../milestones/model.ts";
 import { progressState } from "../milestones/model.ts";
 import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -34,8 +33,6 @@ import {
   bucketBySprint,
   deriveSprintColumns,
   isActive,
-  sprintCountdown,
-  windowDisagrees,
 } from "./columns.ts";
 import { VirtualCards } from "./VirtualCards.tsx";
 
@@ -126,15 +123,11 @@ export function SprintsView() {
   // another agent owns. See the REPORT note in the handoff.
   const brokenSprints: readonly BrokenEntry[] = brokenOf(sprints.data);
 
-  // SPR-1 / SPR-40: archived sprints are hidden by default and revealed
-  // by an explicit affordance — the overview's half of archive/unarchive
-  // parity (A166). A local view toggle only: it never writes, and
-  // `deriveSprintColumns` already took the option nothing was passing.
-  const [showArchived, setShowArchived] = useState(false);
+  // SPR-1 / K121 #1: archived sprints never appear here — there is no
+  // reveal. They are listed and restored in Settings → Archived only.
   // K105: "+ New sprint" opens the shared dialog in place (was a prose link
   // to the Settings page).
   const [creating, setCreating] = useState(false);
-  const archivedCount = sprintDefs.filter(s => s.archived === true).length;
 
   // SPR-39: `progress` off the `?progress=true` list, keyed by id, so the
   // header can look up its own done/total. A missing entry (an older
@@ -148,14 +141,13 @@ export function SprintsView() {
   }, [sprintsProgress.data]);
 
   const columns = useMemo(
-    () => deriveSprintColumns(sprintDefs, items, { showArchived }),
-    [sprintDefs, items, showArchived],
+    () => deriveSprintColumns(sprintDefs, items),
+    [sprintDefs, items],
   );
   const buckets = useMemo(() => bucketBySprint(columns, items), [columns, items]);
 
-  // The workspace's date, not the browser's — SPR-20's hint compares
-  // against the tracker's calendar, so a user in another timezone must
-  // not see a different set of overrun sprints than the CLI reports.
+  // The workspace's date, not the browser's, so a user in another
+  // timezone sees the same due-date states the CLI would.
   const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
 
   const cardLayout = useMemo(
@@ -176,10 +168,13 @@ export function SprintsView() {
 
   // SPR-5/SPR-36: a rejected write names the task, the target sprint,
   // and says plainly that the assignment was not saved.
+  // `unknown`: the write timed out and may have landed, so the banner
+  // must not say the assignment wasn't saved (A348).
   const [moveError, setMoveError] = useState<{
     key: string;
     sprintLabel: string;
     message: string;
+    unknown: boolean;
   } | null>(null);
 
   /**
@@ -282,10 +277,9 @@ export function SprintsView() {
             {sprintsConfigError.envelope?.message ?? sprintsConfigError.message}
           </p>
           <p className="mt-3 text-[0.9286rem] text-text-secondary">
-            No sprints could be loaded — the whole file failed to parse, so
-            this is not an empty tracker. Fix{" "}
+            No sprints could be loaded. The file failed to parse. Fix{" "}
             <code>.loctt/config/sprints.yaml</code> and
-            reload. LocTT will not repair the file for you.
+            reload.
           </p>
         </div>
       </div>
@@ -316,8 +310,8 @@ export function SprintsView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="sprints">
-      {/* SPR-40: the overview's lifecycle affordances (A166). Create and
-          archive-reveal act in place; delete-with-remap and reorder are
+      {/* SPR-40: the overview's lifecycle affordances (A166). Create acts
+          in place; delete-with-remap and reorder are
           roster-level actions that still live in the Settings panel,
           reached through the persistent Settings gear (UI-17 / K105 —
           Ken: "if im on a task, i dont want to see a link to manage all
@@ -328,19 +322,6 @@ export function SprintsView() {
         testId="sprints-header"
         actions={
           <>
-            {archivedCount > 0 && (
-              // SPR-1: archived sprints appear only behind this affordance.
-              // A checkbox so the state is announced; nothing here writes to
-              // sprints.yaml (unarchiving is a Settings action).
-              <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-                <Checkbox
-                  data-testid="sprints-show-archived"
-                  checked={showArchived}
-                  onChange={e => { setShowArchived(e.target.checked); }}
-                />
-                Show archived ({archivedCount})
-              </label>
-            )}
             {/* K105: create in place via the shared dialog — not a prose
                 link to Settings. */}
             <Button
@@ -365,6 +346,7 @@ export function SprintsView() {
             setMoveError({
               key: write.ref,
               sprintLabel: write.sprintLabel,
+              unknown: isUnknownOutcome(err),
               message:
                 err instanceof ApiError
                   ? err.envelope?.message ?? err.message
@@ -386,9 +368,17 @@ export function SprintsView() {
           className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
-            <strong>{moveError.key}</strong> was not moved to{" "}
-            <strong>{moveError.sprintLabel}</strong> — the assignment was not
-            saved. {moveError.message}
+            {moveError.unknown ? (
+              <>
+                Your changes may not have been saved. Please try again.
+              </>
+            ) : (
+              <>
+                <strong>{moveError.key}</strong> wasn't moved to{" "}
+                <strong>{moveError.sprintLabel}</strong>. The assignment wasn't
+                saved. {moveError.message}
+              </>
+            )}
           </span>
           <button
             type="button"
@@ -427,12 +417,9 @@ export function SprintsView() {
         >
           <p className="font-medium">
             {brokenSprints.length === 1
-              ? "1 sprint could not be read from sprints.yaml"
-              : `${String(brokenSprints.length)} sprints could not be read from sprints.yaml`}
-            {" "}— fix{" "}
-            <code>.loctt/config/sprints.yaml</code> and
-            reload to restore {brokenSprints.length === 1 ? "it" : "them"}.
-            LocTT will not repair the file for you.
+              ? "1 sprint in sprints.yaml is broken"
+              : `${String(brokenSprints.length)} sprints in sprints.yaml are broken`}
+            . Fix the file and reload.
           </p>
           <ul className="mt-1.5 space-y-1">
             {brokenSprints.map(b => (
@@ -468,8 +455,7 @@ export function SprintsView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
-          {" "}missing from this view. Check the file.
+          {" "}could not be read. Missing from this view.
         </div>
       )}
 
@@ -488,7 +474,7 @@ export function SprintsView() {
           data-testid="sprints-empty"
           className="flex flex-col items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
-          <span>No sprints yet.</span>
+          <span>No sprints found.</span>
           {/* K105: create in place, not a link to Settings. */}
           <Button
             variant="secondary"
@@ -638,7 +624,7 @@ function configInvalidOf(error: unknown): ApiError | null {
 /**
  * The controls that own their own click inside the at-a-glance card
  * (SPR-39). A click that `closest`-matches one of these is handled by
- * that control, not by the card's navigate — so the "Open sprint" link
+ * that control, not by the card's navigate — so the "Open" link
  * and the collapse toggle never double-fire the card. Kept as a string
  * so it degrades gracefully as controls are added.
  */
@@ -685,8 +671,6 @@ function Column({
   ) => void;
 }) {
   const active = column.kind === "sprint" && isActive(column.sprint as SprintDef);
-  const overrun = column.kind === "sprint"
-    && windowDisagrees(column.sprint as SprintDef, today);
   const isDropTarget = drag !== null && drag.over?.columnId === column.id;
   const draggingKey = drag?.key;
   const dropIndex = isDropTarget ? drag.over?.index : undefined;
@@ -696,10 +680,6 @@ function Column({
   // entry into an explicit "No tasks"/"unavailable" rather than a
   // fabricated 0/0.
   const readout: Readout = progressState(progress);
-  const countdown = column.kind === "sprint"
-    ? sprintCountdown((column.sprint as SprintDef).end_date, today)
-    : undefined;
-  const overdue = countdown !== undefined && countdown.endsWith("overdue");
 
   return (
     <section
@@ -782,13 +762,13 @@ function Column({
         </button>
 
         {/* SPR-39 / K-14: the at-a-glance card. The whole block opens the
-            sprint's detail (progress, dates, days-remaining, and a
+            sprint's detail (progress, dates, and a
             mini-bar that is the "burndown equivalent" — the real chart is
             one Open-away, A165). It is a sibling of the toggle, not a
             child: the header button owns the collapse gesture (SPR-2),
             and nesting a navigable region in a button is invalid.
 
-            The at-a-glance *data* (mini-bar + countdown) shows only when
+            The at-a-glance *data* (the mini-bar) shows only when
             the column is expanded — SPR-2 keeps a collapsed column to
             "header plus task count only", and expanding is one click of
             the toggle above. The Open-sprint link stays visible either
@@ -805,7 +785,6 @@ function Column({
         {column.kind === "sprint" && (
           <div
             data-testid={`sprint-card-${column.id}`}
-            data-overdue={overdue ? "true" : "false"}
             role="link"
             tabIndex={0}
             aria-label={`Open ${column.label}`}
@@ -827,52 +806,39 @@ function Column({
                 (SPR-2). */}
             {expanded && <SprintMiniProgress readout={readout} columnId={column.id} />}
 
-            <div className="mt-1 flex items-center justify-between gap-2">
-              {/* SPR-39: days-remaining, or overdue once the window has
-                  passed (the SPR-20 disagreement, read as a countdown).
-                  Expanded only, so a collapsed column stays minimal. */}
-              {expanded && countdown !== undefined && (
-                <span
-                  data-testid={`sprint-countdown-${column.id}`}
-                  className={[
-                    "text-[0.7857rem] tabular-nums",
-                    overdue ? "font-medium text-danger-fg" : "text-text-tertiary",
-                  ].join(" ")}
-                >
-                  {countdown}
-                </span>
-              )}
+            {/* No countdown to the end date (K131): the date range is on
+                the card, and "N days overdue" nudged a process choice
+                that is the user's (P11). */}
+            <div className="mt-1 flex items-center justify-end gap-2">
               {/* SPR-7: the explicit navigate affordance is kept — a real
                   anchor, so middle-click / open-in-new-tab work, and it
                   stays visible whether the column is expanded or not. The
                   surrounding card is also clickable (SPR-39); the card
-                  handler ignores clicks that originate here. */}
+                  handler ignores clicks that originate here.
+
+                  Label is bare "Open" (Ken, 2026-09-23). It was
+                  "Open sprint →": the noun repeated the column header
+                  directly above it, and the accent colour plus hover
+                  underline already say "link" without an arrow — which
+                  was also the app's only forward arrow, so nothing else
+                  depended on the convention. */}
               <Link
                 to="/sprints/$key"
                 params={{ key: column.id }}
                 data-testid={`sprint-open-${column.id}`}
+                // The visible label is bare "Open", so on a board of
+                // several columns every one of these would announce as
+                // an undifferentiated "Open". The name carries the
+                // sprint, matching the card's own aria-label above.
+                aria-label={`Open ${column.label}`}
                 className="ml-auto text-[0.7857rem] text-accent no-underline hover:underline"
               >
-                Open sprint →
+                Open
               </Link>
             </div>
           </div>
         )}
       </header>
-
-      {/* SPR-20: the window is in the past while the state says active.
-          An informational hint — not an error, and nothing here
-          rewrites `state`. */}
-      {overrun && expanded && (
-        <p
-          data-testid={`sprint-window-hint-${column.id}`}
-          className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-secondary"
-        >
-          This sprint is still marked <strong>active</strong>, but its dates
-          ({column.sprint?.start_date} → {column.sprint?.end_date}) do not
-          include today. LocTT does not change sprint state on its own.
-        </p>
-      )}
 
       {/* SPR-27: names the dangling id, so the user can find it. The
           rest of the view keeps rendering around it. */}
@@ -953,7 +919,7 @@ function Column({
  * bar + `done / total` from the same core `Progress` the detail page
  * renders — reusing `progressState`, so the overview and the detail can
  * never show two different numbers for the same sprint. The literal
- * burndown chart stays on the detail page (`Open sprint →`).
+ * burndown chart stays on the detail page (the column's `Open` link).
  *
  * `unavailable` (progress query in flight or failed) shows nothing
  * rather than a fabricated 0/0; `none` (no counted tasks) shows an

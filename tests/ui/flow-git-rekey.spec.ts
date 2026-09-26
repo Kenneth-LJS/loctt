@@ -75,20 +75,10 @@ test("GIT-8: a rekey shows a preview and waits for confirm; nothing renumbered u
   await expect(preview).toBeVisible();
   await expect(preview.getByTestId("git-rekey-collided-key")).toHaveText(key);
   await expect(preview.getByTestId("git-rekey-new-key")).not.toHaveText(key);
-  // The case requires the summary to state the keeper RULE and show both
-  // timestamps. The panel states the rule in plain language ("The
-  // earlier-created task keeps the key") rather than naming the
-  // `created_at` field — a deliberate de-jargoning (`5cdb0349`). Both
-  // halves are asserted: the rule, and the two timestamps themselves.
-  await expect(preview).toContainText(/earlier[- ]created task keeps the key/i);
-  await expect(preview).toContainText(/keeps the key\./i);
-  await expect(preview).toContainText(/is renumbered\./i);
-  // Two distinct ISO timestamps are shown, which is the "shows both
-  // timestamps" half — the jargon was the field name, not the data.
-  const stamps = (await preview.innerText())
-    .match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g) ?? [];
-  expect(stamps.length, `expected two timestamps, saw ${stamps.join(", ")}`)
-    .toBeGreaterThanOrEqual(2);
+  // GIT-8 (amended, A322): each row names the outcome, not the rule —
+  // which task keeps the key and what the other becomes.
+  await expect(preview).toContainText(/stays with task/i);
+  await expect(preview).toContainText(/becomes/i);
 
   // Nothing is renumbered before confirm: the loser still holds the
   // colliding key on disk.
@@ -153,8 +143,14 @@ test("GIT-9: the preview states the ULID tiebreak when created_at ties", async (
 
   const preview = page.getByTestId("git-rekey-preview");
   await expect(preview).toBeVisible();
-  // The tiebreak copy names the ULID as the decider (GIT-9).
-  await expect(preview).toContainText(/ULID/i);
+  // GIT-9: with created_at tied, the LOWER ULID keeps the key. The row
+  // reads "<key> stays with task <keeperId>. Task <loserId> becomes …",
+  // so the outcome is asserted directly rather than any explanation.
+  const text = await preview.innerText();
+  const m = /stays with task\s+([0-9A-HJKMNP-TV-Z]{26})\.\s+Task\s+([0-9A-HJKMNP-TV-Z]{26})/.exec(text);
+  expect(m, `expected a keeper/loser row, saw: ${text}`).not.toBeNull();
+  const [keeper, loser] = [m?.[1] ?? "", m?.[2] ?? ""];
+  expect(keeper < loser, `keeper ${keeper} should be the lower ULID than ${loser}`).toBe(true);
 
   expect(errors).toEqual([]);
 });

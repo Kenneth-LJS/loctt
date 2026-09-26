@@ -115,4 +115,42 @@ describe("CLI user sidebar-groups (spawned binary)", () => {
       expect(file).toContain("theme: dark");
     });
   });
+
+  // @verifies SHL-45 — A346: the read-back resolves through the same
+  // grouped resolver the web sidebar uses (K125 migration), not the
+  // flat per-id order.
+  it("migrates a pre-K125 stored order the way the sidebar renders it", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await writeFile(
+        await settingsPath(root),
+        "sidebar_groups:\n  order: [overdue, projects]\n",
+        "utf8",
+      );
+      const result = await runCli(["user", "sidebar-groups"], { cwd: root });
+      expect(result.exitCode).toBe(0);
+      const ids = result.stdout.trim().split("\n").map(l => l.split("\t")[0]);
+      // The Filters group lands where the first filter id sat, its
+      // children follow it (overdue first, its stored inner order), and
+      // projects comes after the whole block.
+      expect(ids.slice(0, 3)).toEqual(["filters", "overdue", "assigned-to-me"]);
+      expect(ids.indexOf("projects")).toBe(7);
+      expect(ids.slice(8, 9)).toEqual(["views"]);
+    });
+  });
+
+  // @verifies SHL-45 — A346: hiding the Filters group hides every
+  // built-in in the sidebar, so the read-back must say so.
+  it("reports every built-in filter hidden when the Filters group is hidden", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const result = await runCli(
+        ["user", "sidebar-groups", "--hidden", "filters"],
+        { cwd: root },
+      );
+      expect(result.exitCode).toBe(0);
+      for (const id of ["filters", "assigned-to-me", "reported-by-me", "mentions-me", "due-this-week", "overdue", "high-priority"]) {
+        expect(result.stdout).toContain(`${id}\thidden`);
+      }
+      expect(result.stdout).toContain("projects\tvisible");
+    });
+  });
 });

@@ -247,7 +247,7 @@ Use these rather than hand-rolled markup.
   **The rule:** a set the *user can grow* (labels, users, projects,
   milestones, sprints, custom-enum values, timezones) → `Combobox`. A
   small *fixed* set (status/priority/type, operators, sprint state, unit,
-  true/false) → plain `Select` or `Radio`. `FilterDropdown` (the list
+  true/false) → plain `Select` or `Radio`. `FilterFacet` (the list
   facets) keeps its `Menu`/`menuitemcheckbox` model (A11Y-10) but shares
   the Combobox threshold and match rule.
 - **`Select`, `TextField`, `Checkbox`, `Radio`, `Toggle`, `Chip`,
@@ -327,3 +327,5 @@ horizontal page scroll.
   B1 type scale, A11Y-39/40 zoom+contrast, and others cited above).
 - **Adoption gaps:** `design-review.md` (the audit of what's built but not
   yet wired up).
+- **Words on screen:** `messaging.md` (when to show a message at all, and
+  how to write one that stays).

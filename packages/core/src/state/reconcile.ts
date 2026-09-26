@@ -22,7 +22,7 @@ export function parseReconcileState(yamlContent: string): ReconcileState {
     return ReconcileStateSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new ReconcileStateError(formatZodIssues("reconcile state", err));
+      throw new ReconcileStateError(`reconcile.yaml is not valid: ${formatZodIssues("reconcile state", err)}`);
     }
     throw err;
   }

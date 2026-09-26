@@ -2,10 +2,16 @@
  * Transcribed from tests/cases/ui-test-cases/flow-tasks.md — M2.3, the
  * body editor.
  *
- * Browser specs because what they assert is browser behaviour: an
- * idle timer measured against the wall clock, a blur, a real
+ * Browser specs because what they assert is browser behaviour: a
+ * wall-clock wait that proves nothing is written, a blur, a real
  * contenteditable receiving real keystrokes, a CLI process writing the
- * same file underneath a live page.
+ * same file underneath a live page, a reload.
+ *
+ * K124 (Ken, 2026-09-24): the description saves only on Save. Specs
+ * here that used to wait for the 1.5s idle autosave or click away to
+ * save were asserting the superseded behaviour; they press Save
+ * (`saveBody`) instead, and the TSK-15/TSK-71 specs now assert that
+ * waiting and clicking away write nothing.
  *
  * **The far end is the file**, read off disk or through `loctt body`,
  * never off the screen. A "Saved" indicator is the app's claim about
@@ -134,17 +140,33 @@ async function typeInBody(page: Page, text: string): Promise<void> {
 
 const indicator = (page: Page) => page.getByTestId("save-indicator");
 
+/**
+ * Presses the description's Save button (K124). A save that lands
+ * returns to the rendered view, so callers assert on the rendered view
+ * or on disk afterwards, not on the indicator (which unmounts).
+ */
+async function saveBody(page: Page): Promise<void> {
+  await page.getByTestId("body-editor").getByTestId("body-save").click();
+}
+
+/** Saves and waits for the editor to close on a landed write. */
+async function saveAndClose(page: Page): Promise<void> {
+  await saveBody(page);
+  await expect(page.getByTestId("body-rendered")).toBeVisible({ timeout: 8000 });
+}
+
 test.describe("TSK — the body editor", () => {
   // @verifies TSK-15
-  test("TSK-15: one save fires ~1.5s after the last keystroke, not one per keystroke", async ({
+  test("TSK-15: typing writes nothing, however long the editor sits idle; Save writes once", async ({
     page, tracker,
   }) => {
+    // SUPERSEDED (K124): this spec asserted "one save fires ~1.5s after the
+    // last keystroke". Ken ruled the idle autosave out; it now asserts
+    // that no wait writes anything and that Save writes exactly once.
     const key = onlyKey(await tracker.seed([{ title: "Editable" }]));
 
-    // Count the writes the page actually makes. TSK-15's first bullet
-    // is a statement about *how many* requests a burst produces, and
-    // only counting can tell "one save after idle" apart from "a save
-    // per keystroke that happens to end in the right text".
+    // Count the writes the page actually makes: "nothing is written" is
+    // only a claim about requests, and one Save must be one request.
     const writes: string[] = [];
     await page.route(`**/api/tasks/*/body`, async route => {
       writes.push(route.request().postData() ?? "");
@@ -154,74 +176,50 @@ test.describe("TSK — the body editor", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
-    /**
-     * **Paced deliberately at 600ms per word, for 3.6s total.**
-     *
-     * Typing the burst at Playwright's default speed takes under a
-     * second, so the whole thing lands inside one 1500ms window and a
-     * *fixed-interval* save is indistinguishable from an *idle* one —
-     * measured: replacing the debounce with "schedule only if none
-     * pending" left this spec green. Six gaps of 600ms each are under
-     * the window individually and 3.6s in total, so an idle timer that
-     * re-arms fires **once, at the end**, while a fixed interval fires
-     * twice or more. That difference is the case's first bullet.
-     */
     await enterEdit(page);
     await page.getByTestId("body-editor").getByTestId("rich-editor").click();
     for (const word of ["A ", "paragraph ", "typed ", "at ", "human ", "pace."]) {
       await page.keyboard.type(word);
       await page.waitForTimeout(600);
     }
+    // Then idle, well past the old 1.5s autosave window.
+    await page.waitForTimeout(3000);
 
-    // Still nothing: every keystroke re-armed the timer, and 3.6s of
-    // continuous typing has elapsed — more than twice the window.
     expect(writes).toHaveLength(0);
     await expect(indicator(page)).toHaveAttribute("data-state", "unsaved");
+    expect(await bodyOnDisk(tracker.root, key)).not.toContain("human pace");
 
-    // Wait out the real idle window.
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
-
-    // Exactly one request for the whole burst. A build that never
-    // saves would have produced zero and never reached "saved", which
-    // is what keeps this pair from being an absence on its own.
-    expect(writes).toHaveLength(1);
-
-    // The far end.
+    // Paired positive: Save writes, once, and closes the editor.
+    await saveAndClose(page);
+    await expect(page.getByTestId("body-rendered")).toContainText("A paragraph typed at human pace.");
     expect(await bodyOnDisk(tracker.root, key)).toContain("A paragraph typed at human pace.");
+    expect(writes).toHaveLength(1);
   });
 
   // @verifies TSK-15
-  test("TSK-15: clicking outside the editor saves immediately rather than waiting", async ({
+  test("TSK-15: clicking outside the editor neither saves nor discards", async ({
     page, tracker,
   }) => {
-    const key = onlyKey(await tracker.seed([{ title: "Blur saves" }]));
+    // SUPERSEDED (K124): this spec asserted "clicking outside the editor
+    // saves immediately" — the accidental-click-out save Ken ruled out.
+    const key = onlyKey(await tracker.seed([{ title: "Blur keeps" }]));
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
-    await typeInBody(page, "Saved on blur.");
-    await expect(indicator(page)).toHaveAttribute("data-state", "unsaved");
-
-    // Click something outside the editor, well inside the idle window.
-    // Under K33 this blur both flushes the save AND returns to the
-    // rendered view (the edit surface, and its save indicator, unmount),
-    // so the proof that blur saved *immediately* is the disk write landing
-    // inside a window shorter than the 1500ms idle timer — not the
-    // indicator state, which no longer exists once we leave edit mode.
+    await typeInBody(page, "Kept through a click-away.");
     await page.getByRole("heading", { level: 1 }).first().click();
+    await page.waitForTimeout(2500);
 
-    // The disk bound comes FIRST — before any default-timeout wait — or it
-    // is vacuous. The write must land well under the 1500ms idle window:
-    // had blur done nothing and only the idle timer saved (~1.5s), this
-    // 1200ms poll would NOT converge. (This is the case's point — blur
-    // saves immediately, not on the idle timer.) Polling the rendered view
-    // first, with its 5s default timeout, would absorb that 1.5s delay and
-    // make the bound meaningless.
-    await expect
-      .poll(async () => bodyOnDisk(tracker.root, key), { timeout: 1200, intervals: [50, 100, 200] })
-      .toContain("Saved on blur.");
+    // Still editing, text intact, nothing on disk.
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor"))
+      .toContainText("Kept through a click-away.");
+    await expect(page.getByTestId("body-rendered")).toHaveCount(0);
+    await expect(indicator(page)).toHaveAttribute("data-state", "unsaved");
+    expect(await bodyOnDisk(tracker.root, key)).not.toContain("click-away");
 
-    // And the editor left edit: the rendered view shows the saved text.
-    await expect(page.getByTestId("body-rendered")).toContainText("Saved on blur.");
+    // And Save from there still writes it.
+    await saveAndClose(page);
+    expect(await bodyOnDisk(tracker.root, key)).toContain("Kept through a click-away.");
   });
 
   // @verifies TSK-17
@@ -255,7 +253,7 @@ test.describe("TSK — the body editor", () => {
       page.getByTestId("body-editor").getByTestId("rich-editor").getByRole("heading", { name: "Added in source" }),
     ).toBeVisible();
 
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
+    await saveAndClose(page);
     expect(await bodyOnDisk(tracker.root, key)).toContain("## Added in source");
   });
 
@@ -289,10 +287,10 @@ test.describe("TSK — the body editor", () => {
       await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toBeVisible();
     }
 
-    // Give any autosave that *would* have fired time to land. The
-    // assertion is that nothing was written at all — so waiting past
-    // the idle window is what makes the absence meaningful rather
-    // than merely early.
+    // Give any write that *would* have fired time to land. The
+    // assertion is that nothing was written at all — so waiting is what
+    // makes the absence meaningful rather than merely early. (Since K124
+    // only Save writes; the wait still guards against that regressing.)
     await page.waitForTimeout(2500);
 
     expect(await bodyOnDisk(tracker.root, key)).toBe(before);
@@ -320,7 +318,7 @@ test.describe("TSK — the body editor", () => {
     await page.getByText("Trailing paragraph.").click();
     await page.keyboard.press("End");
     await page.keyboard.type(" Now edited.");
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
+    await saveAndClose(page);
 
     const after = await bodyOnDisk(tracker.root, key);
     expect(after).toContain("Trailing paragraph. Now edited.");
@@ -368,7 +366,7 @@ test.describe("TSK — the body editor", () => {
     await page.keyboard.press("End");
     await page.keyboard.type(" Appended.");
 
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
+    await saveAndClose(page);
     const after = await bodyOnDisk(tracker.root, key);
     expect(after).toContain("Last paragraph. Appended.");
 
@@ -390,6 +388,10 @@ test.describe("TSK — the body editor", () => {
     page, tracker,
   }) => {
     const key = onlyKey(await tracker.seed([{ title: "Toolbar" }]));
+    // Wide enough that the bar holds every group flat; at the default
+    // 1280px the Text style group folds into its menu (TSK-72), and this
+    // case is about the button.
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
@@ -411,8 +413,102 @@ test.describe("TSK — the body editor", () => {
     await page.getByTestId("mode-raw").click();
     await expect(page.getByTestId("body-editor").getByTestId("markdown-editor")).toContainText("**make me bold**");
 
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
+    await saveAndClose(page);
     expect(await bodyOnDisk(tracker.root, key)).toContain("**make me bold**");
+  });
+
+  // @verifies TSK-72
+  test("TSK-72: the formatting bar never wraps; groups fold into menus that keep mark state", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Toolbar fold" }]));
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await typeInBody(page, "fold me");
+    const bar = page.getByTestId("body-editor").getByRole("toolbar", { name: "Formatting" });
+
+    // Sweep the BAR's width, not the window's: the fold is a container
+    // query, and the comment composer is ~400px narrower than the
+    // viewport it sits in. The old viewport breakpoint wrapped this row
+    // at every bar width below ~855px. From 480px up it is one row; below
+    // the fully folded row's own width it is deliberately two (B5, below).
+    const wrapped = await bar.evaluate((el: HTMLElement) => {
+      const bad: string[] = [];
+      for (let w = 480; w <= 1000; w += 5) {
+        el.style.width = `${w}px`;
+        const rows = new Set(
+          [...el.querySelectorAll("button,[role=combobox]")]
+            .filter(c => (c as HTMLElement).offsetParent !== null)
+            .map(c => {
+              const r = c.getBoundingClientRect();
+              return Math.round((r.top + r.height / 2) / 4);
+            }),
+        );
+        if (rows.size !== 1) bad.push(`${w}px: ${rows.size} rows`);
+      }
+      el.style.width = "";
+      return bad;
+    });
+    expect(wrapped).toEqual([]);
+
+    // B5 (K121): on a phone-width bar the layout is an intentional two
+    // rows — formatting first, then history and the attach/mode cluster —
+    // never an arbitrary wrap.
+    const rows = await bar.evaluate((el: HTMLElement) => {
+      const out: Record<number, number> = {};
+      for (const w of [320, 375, 440]) {
+        el.style.width = `${w}px`;
+        const byRow = new Map<number, string[]>();
+        for (const c of el.querySelectorAll("button,[role=combobox]")) {
+          if ((c as HTMLElement).offsetParent === null) continue;
+          const r = c.getBoundingClientRect();
+          const k = Math.round((r.top + r.height / 2) / 4);
+          byRow.set(k, [...(byRow.get(k) ?? []), c.getAttribute("aria-label") ?? ""]);
+        }
+        const sorted = [...byRow.entries()].sort((a, b) => a[0] - b[0]);
+        out[w] = sorted.length;
+        // The second row must be the history row, not a stray overflow.
+        const second = sorted[1]?.[1] ?? [];
+        if (!second.includes("Undo")) out[w] = -1;
+      }
+      el.style.width = "";
+      return out;
+    });
+    expect(rows).toEqual({ 320: 2, 375: 2, 440: 2 });
+
+    // Every glyph centred in its 16-unit box. Superscript, subscript and
+    // the numbered list are offset by design and stay within 1 unit;
+    // undo/redo were drawn 1.75 low (UI-23c).
+    await bar.evaluate((el: HTMLElement) => { el.style.width = "1000px"; });
+    const offCentre = await bar.evaluate((el: HTMLElement) =>
+      [...el.querySelectorAll("button svg")]
+        .filter(svg => (svg as SVGSVGElement).closest("button")?.offsetParent !== null)
+        .map(svg => {
+          const b = (svg as SVGSVGElement).getBBox();
+          const name = svg.closest("button")?.getAttribute("aria-label") ?? "?";
+          return { name, cy: b.y + b.height / 2 };
+        })
+        .filter(g => Math.abs(g.cy - 8) > 1)
+        .map(g => `${g.name}: ink centre ${g.cy}`),
+    );
+    expect(offCentre).toEqual([]);
+
+    // Fully folded: Bold is reached through the Text style menu, and the
+    // fold does not hide whether it applies.
+    await bar.evaluate((el: HTMLElement) => { el.style.width = "470px"; });
+    await expect(bar.getByTestId("fmt-bold")).toBeHidden();
+    await page.keyboard.press("Shift+Home");
+    const textStyle = bar.getByTestId("fmt-group-text");
+    await textStyle.click();
+    await page.getByTestId("fmt-menu-bold").click();
+    await expect(textStyle).toHaveClass(/border-accent/);
+    await textStyle.click();
+    await expect(page.getByTestId("fmt-menu-bold")).toHaveAttribute("role", "menuitemcheckbox");
+    await expect(page.getByTestId("fmt-menu-bold")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("fmt-menu-italic")).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+
+    await page.getByTestId("mode-raw").click();
+    await expect(page.getByTestId("body-editor").getByTestId("markdown-editor")).toContainText("**fold me**");
   });
 
   // @verifies XS-11
@@ -435,8 +531,9 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-editor")).toBeVisible();
     await typeInBody(page, "My addition. ");
 
-    // The CLI writes before the idle flush.
+    // The CLI writes before the user saves.
     await tracker.run(["body", key, "--append", "Note from CLI"]);
+    await saveBody(page);
 
     // The write is refused, and the user is shown both versions
     // rather than the CLI's paragraph being silently overwritten.
@@ -480,13 +577,11 @@ test.describe("TSK — the body editor", () => {
 
     /**
      * The dialog stays closed after Apply. This was unassertable
-     * until A59: the radio click blurs the editor, the blur-flush
-     * went out with the stale token, and its 409 could land after
-     * Apply and re-open the dialog over an already-resolved conflict
-     * (4 in 10 runs once this assertion existed to catch it — the
-     * known-gaps entry, now CLOSED).
-     * A59 suppresses non-resolving writes while the dialog is open,
-     * so the doomed flush never leaves and nothing can re-open it.
+     * until A59: the radio click blurred the editor, the (pre-K124)
+     * blur-flush went out with the stale token, and its 409 could land
+     * after Apply and re-open the dialog over an already-resolved
+     * conflict. A59 suppresses non-resolving writes while the dialog
+     * is open; since K124 a blur writes nothing at all.
      * Asserted after the on-disk poll above, so the write chain has
      * demonstrably drained before this claims quiescence.
      */
@@ -513,6 +608,7 @@ test.describe("TSK — the body editor", () => {
     await typeInBody(page, "My version of the text.");
 
     await tracker.run(["body", key, "--set", "Completely different text"]);
+    await saveBody(page);
 
     const dialog = page.getByTestId("body-conflict");
     await expect(dialog).toBeVisible({ timeout: 8000 });
@@ -551,7 +647,9 @@ test.describe("TSK — the body editor", () => {
     await page.getByTestId("conflict-choice-mine").click();
     await page.getByTestId("conflict-apply").click();
 
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 8000 });
+    // The resolution write landed, so the Save completes and the editor
+    // closes (K124).
+    await expect(page.getByTestId("body-rendered")).toBeVisible({ timeout: 8000 });
     const final = await bodyOnDisk(tracker.root, key);
     expect(final).toContain("My version of the text.");
     expect(final).not.toContain("Completely different text");
@@ -566,14 +664,13 @@ test.describe("TSK — the body editor", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-editor")).toBeVisible();
     await typeInBody(page, "Typed by the user.");
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
+    await saveAndClose(page);
 
     // The CLI empties the body. No further typing happens.
     await tracker.run(["body", key, "--set", ""]);
 
-    // Well past several idle windows. An autosave that were not
-    // dirty-flag driven would have re-posted the stale buffer by now
-    // and restored the old text.
+    // A while with the page open. Anything that re-posted the stale
+    // buffer on its own would have restored the old text by now.
     await page.waitForTimeout(5000);
 
     expect(await bodyOnDisk(tracker.root, key).then(b => b.trim())).toBe("");
@@ -597,6 +694,7 @@ test.describe("TSK — the body editor", () => {
      * ticket.
      */
     await typeInBody(page, "Deliberate new text.");
+    await saveBody(page);
     await expect(page.getByTestId("body-conflict")).toBeVisible({ timeout: 8000 });
     await expect(page.getByTestId("conflict-theirs")).toContainText("(empty)");
     await expect(page.getByTestId("conflict-mine")).toContainText("Deliberate new text.");
@@ -604,12 +702,12 @@ test.describe("TSK — the body editor", () => {
     // And choosing produces exactly what was promised, on disk.
     await page.getByTestId("conflict-choice-mine").click();
     await page.getByTestId("conflict-apply").click();
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 8000 });
+    await expect(page.getByTestId("body-rendered")).toBeVisible({ timeout: 8000 });
     expect(await bodyOnDisk(tracker.root, key)).toContain("Deliberate new text.");
   });
 
   // @verifies TSK-48
-  test("TSK-48: a failed auto-save never shows saved and keeps the typed text", async ({
+  test("TSK-48: a failed save never shows saved and keeps the typed text", async ({
     page, tracker,
   }) => {
     const key = onlyKey(await tracker.seed([{ title: "Failing" }]));
@@ -630,6 +728,7 @@ test.describe("TSK — the body editor", () => {
     });
 
     await typeInBody(page, "Words the user must not lose.");
+    await saveBody(page);
 
     // An explicit failed state — not "saved", not back to idle.
     await expect(indicator(page)).toHaveAttribute("data-state", "failed", { timeout: 8000 });
@@ -647,24 +746,17 @@ test.describe("TSK — the body editor", () => {
   });
 
   // @verifies TSK-48
-  test("TSK-48: BLUR with a failing save keeps the editor open, does not drop to a stale render", async ({
+  test("TSK-48: Save with a slow failing write keeps the editor open, does not drop to a stale render", async ({
     page, tracker,
   }) => {
-    // Fix-review HIGH #1: on blur, the editor flushed in a microtask but
-    // the leave-effect saw the pre-flush "unsaved" state and unmounted the
-    // edit surface BEFORE the POST started — so a failing save landed on an
-    // unmounted component and the user's text was lost with no error shown.
-    // The editor must STAY in edit (TSK-48) when the blur-triggered save
-    // fails, keeping the typed text and showing the failure.
-    const key = onlyKey(await tracker.seed([{ title: "Blur fail" }]));
+    // Fix-review HIGH #1, re-pointed at Save (K124; it was a blur-save):
+    // the leave-on-landed-write must not see the pre-write "unsaved" state
+    // and unmount the editor before a failing POST comes back.
+    const key = onlyKey(await tracker.seed([{ title: "Save fail" }]));
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-editor")).toBeVisible();
-    // A DELAYED failure. The delay is what exercises the ordering bug: the
-    // blur flushes, but the POST is still in flight when the leave-effect
-    // runs — the old code saw the pre-`saving` `unsaved` state and left
-    // (unmounting the editor) before the failure could come back, losing
-    // the text. With the fix the editor stays until the save settles, so
-    // the failure lands in a mounted editor.
+    // A DELAYED failure: the POST is still in flight when the leave
+    // effect runs.
     await page.route(`**/api/tasks/*/body`, async route => {
       await new Promise(r => setTimeout(r, 400));
       await route.fulfill({
@@ -674,39 +766,28 @@ test.describe("TSK — the body editor", () => {
       });
     });
 
-    await typeInBody(page, "Blur must not lose this.");
-    // Blur immediately (before the idle timer) by clicking outside.
-    await page.getByRole("heading", { level: 1 }).first().click();
+    await typeInBody(page, "Save must not lose this.");
+    await saveBody(page);
 
-    // Still in edit — NOT dropped to the rendered view — with the text and
-    // an explicit failure. (Before the fix: body-rendered showed the stale
-    // body, no indicator, text gone.)
     await expect(indicator(page)).toHaveAttribute("data-state", "failed", { timeout: 8000 });
-    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Blur must not lose this.");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Save must not lose this.");
     await expect(page.getByTestId("body-rendered")).toHaveCount(0);
     expect(await bodyOnDisk(tracker.root, key)).not.toContain("must not lose");
   });
 
   // @verifies TSK-71
-  test("TSK-71: Escape exits the editor keeping the text, and writes it exactly once", async ({
+  test("TSK-71: Escape with changes asks first; Discard writes nothing and shows the saved body", async ({
     page, tracker,
   }) => {
-    // SUPERSEDED PREMISE — recorded rather than quietly rewritten.
-    //
-    // This case used to assert "Escape discards the edit and writes
-    // nothing". K96 (Ken, 2026-09-19) deliberately REVERSED that: there
-    // is no discard gesture, and Escape / Cmd-Enter / Cmd-S all EXIT
-    // KEEPING the text. The rationale is in `editor/BodyEditor.tsx` —
-    // revert-to-last-autosave silently threw away everything typed in
-    // the idle window since, which was the data-loss bug the editor
-    // review found.
-    //
-    // The durable requirement underneath is unchanged and is what is
-    // asserted now: Escape leaves the editor, the user's text is NOT
-    // lost, and the exit produces exactly ONE write (the old bug was a
-    // stray second write from the unmount flush).
+    // SUPERSEDED (K124): this spec asserted K96's "Escape exits the editor
+    // keeping the text, and writes it exactly once". Ken ruled Escape is
+    // Cancel: discard and close, asking first when there are changes.
     const key = onlyKey(await tracker.seed([{ title: "Escape cancels" }]));
     await tracker.run(["body", key, "--set", "Original body.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const seeded = await bodyOnDisk(tracker.root, key);
     const writes: string[] = [];
     await page.route(`**/api/tasks/*/body`, async route => {
       writes.push(route.request().postData() ?? "");
@@ -718,24 +799,31 @@ test.describe("TSK — the body editor", () => {
     await typeInBody(page, " Escaped edit.");
     await page.keyboard.press("Escape");
 
-    // Back to the rendered read view — Escape leaves the editor.
+    const prompt = page.getByRole("dialog", { name: "Discard changes?" });
+    await expect(prompt).toBeVisible();
+    await expect(page.getByTestId("body-discard-confirm")).toHaveText("Discard");
+    await expect(page.getByTestId("body-discard-keep")).toHaveText("Keep editing");
+
+    // Keep editing: nothing changes.
+    await page.getByTestId("body-discard-keep").click();
+    await expect(prompt).toHaveCount(0);
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Escaped edit.");
+
+    // Escape again, and Discard.
+    await page.getByTestId("body-editor").getByTestId("rich-editor").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("body-discard-confirm").click();
+
     await expect(page.getByTestId("body-rendered")).toBeVisible();
-    await expect(page.getByTestId("body-editor").getByTestId("rich-editor"))
-      .toHaveCount(0);
-
-    // The text is kept, on screen and on disk — nothing the user typed
-    // is lost, which is the whole point of the reversal.
     await expect(page.getByTestId("body-rendered")).toContainText("Original body.");
-    await expect(page.getByTestId("body-rendered")).toContainText("Escaped edit.");
-    await expect
-      .poll(async () => bodyOnDisk(tracker.root, key))
-      .toContain("Escaped edit.");
-
-    // Exactly ONE write. The bug this case was originally written for was
-    // a SECOND, stray write from the unmount flush; that half still has
-    // to hold, and a count is what catches it.
+    await expect(page.getByTestId("body-rendered")).not.toContainText("Escaped edit.");
     await page.waitForTimeout(500);
-    expect(writes, writes.join("\n")).toHaveLength(1);
+    expect(writes, writes.join("\n")).toHaveLength(0);
+    expect(await bodyOnDisk(tracker.root, key)).toBe(seeded);
+
+    // Nothing lingers: re-entering edit starts from the saved body.
+    await enterEdit(page);
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).not.toContainText("Escaped edit.");
   });
 
   // @verifies TSK-40
@@ -755,18 +843,22 @@ test.describe("TSK — the body editor", () => {
     await typeInBody(page, " Edited in A.");
 
     /**
-     * Navigate **in-app**, via the list, rather than with
-     * `page.goto`. Two reasons, and the second is the one that makes
-     * this test mean anything:
+     * Navigate **in-app**, via the list, rather than with `page.goto`:
+     * the case is about moving between two tasks in the app, which is a
+     * router transition, and a hard load refetches everything so a
+     * leaked buffer and a clean one would look identical afterwards.
      *
-     *  - a hard navigation tears the document down, so React's
-     *    unmount effects — the flush that TSK-40's first bullet
-     *    requires — are not reliably run. The case is about moving
-     *    between two tasks in the app, which is a router transition.
-     *  - a hard load refetches everything, so a leaked buffer and a
-     *    clean one look identical afterwards. Exactly the reason
-     *    XS-1 was vacuous.
+     * K124: leaving with unsaved changes WARNS (the case's "or the user
+     * is warned"); nothing is flushed on the way out any more. Keep
+     * editing holds the page; the user saves, then leaves.
      */
+    await page.getByRole("link", { name: "All tasks" }).first().click();
+    await expect(page.getByRole("dialog", { name: "Discard changes?" })).toBeVisible();
+    await expect(page).not.toHaveURL(/\/list/);
+    await page.getByTestId("body-discard-keep").click();
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Edited in A.");
+    await saveAndClose(page);
+
     await page.getByRole("link", { name: "All tasks" }).first().click();
     await expect(page).toHaveURL(/\/list/);
     await page.getByRole("row").filter({ hasText: "Task B" }).first().click();
@@ -777,7 +869,7 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).not.toContainText("Edited in A.");
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).not.toContainText("Body of A.");
 
-    // A's pending edit was flushed rather than silently discarded.
+    // A's edit was saved (by the user, after the warning), not lost.
     await expect
       .poll(async () => bodyOnDisk(tracker.root, a), { timeout: 8000 })
       .toContain("Edited in A.");
@@ -790,7 +882,7 @@ test.describe("TSK — the body editor", () => {
 
 test.describe("TSK — a very large body", () => {
   // @verifies TSK-27
-  test("TSK-27: several thousand lines load interactively, edit at the bottom, and autosave once per idle window", async ({
+  test("TSK-27: several thousand lines load interactively, edit at the bottom, and save once", async ({
     page, tracker,
   }) => {
     const pageErrors: string[] = [];
@@ -850,19 +942,16 @@ test.describe("TSK — a very large body", () => {
     // top followed by insertion there would put it first instead.
     await expect(editor).toContainText(appended);
 
-    // Bullet three: a paced burst produces exactly one write, at the
-    // end of the idle window — not one per keystroke.
+    // Bullet three (amended for K124): typing sends nothing, and Save
+    // sends the document once — not one request per keystroke.
     for (const word of ["one ", "two ", "three ", "four ", "five ", "six."]) {
       await page.keyboard.type(word);
       await page.waitForTimeout(600);
     }
-    // 3.6s of continuous typing, more than twice the 1500ms window, and
-    // still nothing sent: each keystroke re-armed the timer.
+    await page.waitForTimeout(2000);
     expect(writes).toHaveLength(0);
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
-    // Exactly one request for the whole burst. Zero would mean it never
-    // saved (and never reached "saved"); more than one would be the
-    // per-keystroke resend this case forbids.
+    await saveAndClose(page);
+    // Exactly one request for the whole burst.
     expect(writes).toHaveLength(1);
 
     // The far end carries both the original bulk and the new text —
@@ -923,6 +1012,7 @@ test.describe("XS-65 — a conflict resolution that itself fails leaves the file
     // Force the XS-12 conflict: the CLI rewrites the same body the
     // editor holds a stale token for.
     await tracker.run(["body", key, "--set", "Their newer text.\n"]);
+    await saveBody(page);
     const dialog = page.getByTestId("body-conflict");
     await expect(dialog).toBeVisible({ timeout: 8000 });
 
@@ -991,5 +1081,106 @@ test.describe("XS-65 — a conflict resolution that itself fails leaves the file
     expect(await rawTaskFile(tracker.root, key)).toBe(beforeBytes);
 
     expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});
+
+/* ================================================================== *
+ * TSK-73 — unsaved description drafts (A338, for K124)
+ * ================================================================== */
+
+test.describe("TSK-73 — the unsaved draft survives a reload of the same tab", () => {
+  /**
+   * A reload with unsaved changes raises the browser's "leave site?"
+   * prompt (TSK-48's warning). Accept it, as a user reloading on
+   * purpose would; without a handler Playwright would dismiss it and
+   * the reload would not happen.
+   */
+  function acceptLeavePrompts(page: Page): void {
+    page.on("dialog", dialog => { void dialog.accept(); });
+  }
+
+  // @verifies TSK-73
+  test("TSK-73: reloading mid-edit reopens the editor on the unsaved text; nothing was written", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Draft reload" }]));
+    await tracker.run(["body", key, "--set", "Saved body.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const seeded = await bodyOnDisk(tracker.root, key);
+    acceptLeavePrompts(page);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    await typeInBody(page, " Unsaved words.");
+    await page.reload();
+
+    const rich = page.getByTestId("body-editor").getByTestId("rich-editor");
+    await expect(rich).toContainText("Unsaved words.");
+    await expect(page.getByTestId("body-rendered")).toHaveCount(0);
+    await expect(indicator(page)).toHaveAttribute("data-state", "unsaved");
+    expect(await bodyOnDisk(tracker.root, key)).toBe(seeded);
+
+    // Save from the restored draft writes it and clears it: a second
+    // reload opens on the rendered, saved body.
+    await saveAndClose(page);
+    expect(await bodyOnDisk(tracker.root, key)).toContain("Unsaved words.");
+    await page.reload();
+    await expect(page.getByTestId("body-rendered")).toContainText("Unsaved words.");
+    await expect(rich).toHaveCount(0);
+  });
+
+  // @verifies TSK-73
+  test("TSK-73: another tab does not see this tab's draft", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Draft tabs" }]));
+    await tracker.run(["body", key, "--set", "Saved body.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await typeInBody(page, " Only in tab one.");
+    // Move focus off the editor so the draft is written now (A338's
+    // blur flush) rather than at the end of the idle window.
+    await page.getByRole("heading", { level: 1 }).first().click();
+
+    const second = await page.context().newPage();
+    await second.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(second.getByTestId("body-rendered")).toContainText("Saved body.");
+    await expect(second.getByTestId("body-rendered")).not.toContainText("Only in tab one.");
+    await expect(second.getByTestId("body-editor").getByTestId("rich-editor")).toHaveCount(0);
+    await second.close();
+
+    // Tab one still has its edit.
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Only in tab one.");
+  });
+
+  // @verifies TSK-73
+  test("TSK-73: a draft whose body changed on disk opens the conflict surface, never overwriting", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Draft conflict" }]));
+    await tracker.run(["body", key, "--set", "Saved body.\n"]);
+    acceptLeavePrompts(page);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await typeInBody(page, " My draft.");
+    await page.getByRole("heading", { level: 1 }).first().click();
+
+    await tracker.run(["body", key, "--set", "Rewritten by the CLI.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const theirs = await bodyOnDisk(tracker.root, key);
+    await page.reload();
+
+    await expect(page.getByTestId("body-conflict")).toBeVisible();
+    await expect(page.getByTestId("conflict-mine")).toContainText("My draft.");
+    await expect(page.getByTestId("conflict-theirs")).toContainText("Rewritten by the CLI.");
+    // Opening the dialog wrote nothing.
+    expect(await bodyOnDisk(tracker.root, key)).toBe(theirs);
+
+    // "Keep theirs" leaves the disk as it is and closes the editor.
+    await page.getByTestId("conflict-choice-theirs").click();
+    await page.getByTestId("conflict-apply").click();
+    await expect(page.getByTestId("body-rendered")).toContainText("Rewritten by the CLI.");
+    expect(await bodyOnDisk(tracker.root, key)).toBe(theirs);
   });
 });

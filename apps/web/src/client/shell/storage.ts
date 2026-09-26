@@ -32,3 +32,37 @@ export function writeLocal(key: string, value: string): void {
     // neither should interrupt the interaction that triggered it.
   }
 }
+
+/**
+ * `sessionStorage`, with the same contract as `readLocal`/`writeLocal`.
+ *
+ * Used for per-tab state that must survive a reload but not a closed
+ * tab: the description editor's unsaved draft (A338). Blocked storage
+ * or a full quota degrades to "no draft" silently, as above.
+ */
+export function readSession(key: string): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function writeSession(key: string, value: string): void {
+  try {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Blocked, or the quota is full. Dropped, as with `writeLocal`.
+  }
+}
+
+export function removeSession(key: string): void {
+  try {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Blocked: there is nothing stored to remove.
+  }
+}

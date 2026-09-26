@@ -62,9 +62,9 @@ export class SwapRollbackError extends Error {
 
   constructor(backupDir: string, journalEntryId: string, cause: unknown) {
     super(
-      `a multi-file write failed and could not be rolled back. The originals are `
-      + `in ${backupDir} and journal entry ${journalEntryId} has been left in place. `
-      + `Restore them by hand before running further commands. `
+      `A change to several files failed and could not be undone. The next `
+      + `command will try the undo again. If it fails again, copy the files `
+      + `in ${backupDir} back by hand (journal entry ${journalEntryId}). `
       + `Cause: ${cause instanceof Error ? cause.message : String(cause)}`,
       { cause },
     );
@@ -128,7 +128,7 @@ export async function stagedSwap(
     if (!info.isFile()) {
       await rm(base, { recursive: true, force: true });
       throw new Error(
-        `${s.dest} exists and is not a regular file, so LocTT will not replace it.`,
+        `${s.dest} exists and is not a regular file. It will not be replaced.`,
       );
     }
     hadOriginal.add(s.dest);

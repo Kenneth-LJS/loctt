@@ -204,12 +204,12 @@ describe("Header avatar menu", () => {
   });
 
   /**
-   * @verifies CONFIG-5
+   * @verifies SHL-48
    *
    * P4/config-discoverability: the menu's one generic "Settings" link
    * taught nothing about *where* a user's own settings live. The menu now
    * offers differentiated deep links — My profile (to the current user's
-   * row), My preferences, Customize sidebar… — each pointing at the exact
+   * row), My preferences, Customize sidebar — each pointing at the exact
    * section that owns the concept, alongside the kept catch-all Settings.
    */
   it("deep-links the user-menu items to the sections that own them", async () => {
@@ -233,7 +233,7 @@ describe("Header avatar menu", () => {
   });
 
   /**
-   * @verifies CONFIG-5
+   * @verifies SHL-48
    *
    * "My profile" anchors at the *current* user's row, so an unknown
    * identity (SHL-40) has no row to point at — the item is omitted rather
@@ -318,7 +318,7 @@ describe("Header with an unknown identity (SHL-40)", () => {
     UNKNOWN = true;
     await renderHeader();
 
-    const trigger = screen.getByLabelText("User menu — signed-in user unknown");
+    const trigger = screen.getByLabelText("User menu, signed-in user unknown");
     // Not blank, and not initials derived from nothing.
     expect(trigger.textContent).toBe("?");
     expect(trigger.getAttribute("title")).toMatch(/could not be determined/i);
@@ -330,7 +330,7 @@ describe("Header with an unknown identity (SHL-40)", () => {
     UNKNOWN = true;
     await renderHeader();
 
-    await click(screen.getByLabelText("User menu — signed-in user unknown"));
+    await click(screen.getByLabelText("User menu, signed-in user unknown"));
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/signed-in user unknown/i);

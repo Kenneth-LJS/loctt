@@ -71,7 +71,7 @@ export interface DetachOptions {
 export class AttachmentExistsError extends Error {
   readonly name = "AttachmentExistsError" as const;
   constructor(public readonly attachmentName: string) {
-    super(`attachment already exists: ${attachmentName}`);
+    super(`Attachment already exists: ${attachmentName}`);
   }
 }
 
@@ -79,7 +79,7 @@ export class AttachmentExistsError extends Error {
 export class AttachmentNotFoundError extends Error {
   readonly name = "AttachmentNotFoundError" as const;
   constructor(public readonly attachmentName: string) {
-    super(`attachment not found: ${attachmentName}`);
+    super(`Attachment not found: ${attachmentName}`);
   }
 }
 
@@ -110,8 +110,8 @@ export class AttachmentCaseCollisionError extends Error {
     public readonly existingName: string,
   ) {
     super(
-      `an attachment named "${existingName}" already exists, which differs `
-      + `from "${requestedName}" only by letter case; attachment names must `
+      `An attachment named "${existingName}" already exists, which differs `
+      + `from "${requestedName}" only by letter case. Attachment names must `
       + `differ by more than case. Rename the file, or detach "${existingName}" `
       + `first.`,
     );
@@ -195,7 +195,7 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
     const root = opts.confineToRoot;
     const outside = (): never => {
       throw new AttachmentSourceError(
-        `source path is outside the tracker and cannot be attached over MCP: `
+        `Source path is outside the tracker and cannot be attached over MCP: `
         + `${absSource}. Stage the file inside the tracker first (under `
         + `${resolve(root)}), then attach it by its path there.`,
       );
@@ -220,22 +220,22 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   try {
     lst = await lstat(absSource);
   } catch {
-    throw new AttachmentSourceError(`source file does not exist: ${sourcePath}`);
+    throw new AttachmentSourceError(`Source file does not exist: ${sourcePath}`);
   }
   if (lst.isSymbolicLink()) {
     throw new AttachmentSourceError(
-      `source path is a symlink; attach the target file directly: ${absSource}`,
+      `Source path is a symlink. Attach the target file directly: ${absSource}`,
     );
   }
   if (lst.isDirectory()) {
-    throw new AttachmentSourceError("attachments must be regular files");
+    throw new AttachmentSourceError("Attachments must be regular files.");
   }
   if (!lst.isFile()) {
-    throw new AttachmentSourceError("attachments must be regular files");
+    throw new AttachmentSourceError("Attachments must be regular files.");
   }
   if (lst.size > maxBytes) {
     throw new AttachmentSourceError(
-      `attachment is ${lst.size} bytes; max is ${maxBytes}`,
+      `Attachment is ${lst.size} bytes. Max is ${maxBytes} bytes.`,
     );
   }
   const copySource = absSource;
@@ -246,7 +246,7 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   const name = basename(absSource);
   if (name.startsWith(".")) {
     throw new AttachmentSourceError(
-      `dotfiles cannot be attached: ${name}`,
+      `Dotfiles cannot be attached: ${name}`,
     );
   }
   // Will throw on path separators, "..", null bytes, etc.
@@ -296,10 +296,8 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENAMETOOLONG") {
       throw new AttachmentSourceError(
-        `attachment name is too long for the filesystem: "${name}" `
-        + `(${name.length} characters). Most filesystems cap a single name at `
-        + `255 characters, and the task's directory path counts toward the `
-        + `total. Rename the file and attach it again.`,
+        `Attachment name is too long for the filesystem: "${name}" `
+        + `(${name.length} characters). Rename the file and attach it again.`,
       );
     }
     throw err;

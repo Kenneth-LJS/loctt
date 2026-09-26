@@ -171,7 +171,7 @@ async function findStructuralCycle(
   while (stack.length > 0) {
     if (visited.size > MAX_CYCLE_CHECK_VISITS) {
       throw new RelationshipError(
-        `relationship graph too large to verify cycles (>${MAX_CYCLE_CHECK_VISITS} nodes); split the link or contact a maintainer`,
+        `Relationship graph is too large to verify for cycles (over ${MAX_CYCLE_CHECK_VISITS} tasks). Split the link, or contact a maintainer.`,
       );
     }
     const { id, path } = stack.pop() as { id: string; path: string[] };
@@ -249,7 +249,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     const validTypes = new Set(workflowConfig.relationships.flatMap(relationshipTypeKeys));
     if (!validTypes.has(type)) {
       throw new RelationshipError(
-        `unknown relationship type "${type}"; valid: ${[...validTypes].join(", ")}`,
+        `Unknown relationship type "${type}". Valid types: ${[...validTypes].join(", ")}.`,
       );
     }
   }
@@ -271,7 +271,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
 
     if (task.frontmatter.id === target) {
       throw new RelationshipError(
-        `cannot link a task to itself (${task.frontmatter.key})`,
+        `${task.frontmatter.key} is this task. A task can't link to itself.`,
       );
     }
 
@@ -283,7 +283,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
         );
         if (!alreadyLinked) {
           throw new RelationshipError(
-            `cannot link to archived task ${targetTask.frontmatter.key}; unarchive it first`,
+            `Cannot link to archived task ${targetTask.frontmatter.key}. Unarchive it first.`,
           );
         }
       }
@@ -361,7 +361,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     // If neither side needed to change, the relationship already fully exists.
     if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
       throw new RelationshipError(
-        `relationship ${type} -> ${target} already exists on task ${taskId}`,
+        `Relationship "${type}" to ${target} already exists on task ${taskId}.`,
       );
     }
 
@@ -469,7 +469,7 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
 
     if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
       throw new RelationshipError(
-        `relationship ${type} -> ${target} does not exist on task ${taskId}`,
+        `Relationship "${type}" to ${target} does not exist on task ${taskId}.`,
       );
     }
 

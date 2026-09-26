@@ -16,6 +16,7 @@ import {
   findView,
   unarchiveView,
   ViewError,
+  ViewNameTakenError,
 } from "./manage.js";
 
 let root: string;
@@ -116,12 +117,83 @@ describe("findView", () => {
   });
 
   it("throws on ambiguous name", async () => {
-    const a = await createView(locttDir, { name: "dup", filters: [statusNotDone] });
-    await createView(locttDir, { name: "dup", filters: [statusDone] });
+    // B21 (K129): core no longer writes a duplicate, so the pair is
+    // seeded on disk, the way a pre-K129 tracker or a hand edit has it.
+    // This test used to create both through `createView`, which asserted
+    // the superseded keep-both behaviour.
+    await seedDuplicateNames(locttDir);
     const cfg = await loadQueriesConfig(locttDir);
     expect(() => findView(cfg, "dup")).toThrow(ViewError);
     // ID still resolves cleanly.
-    expect(findView(cfg, a.id).name).toBe("dup");
+    expect(findView(cfg, DUP_A).name).toBe("dup");
+  });
+});
+
+const DUP_A = "01DUPA0000000000000000000A";
+const DUP_B = "01DUPB0000000000000000000B";
+
+/** Two views sharing the name `dup`, as a pre-K129 tracker holds them. */
+async function seedDuplicateNames(dir: string): Promise<void> {
+  const entry = (id: string): string =>
+    `  - id: ${id}\n    name: dup\n    filters:\n      - kind: simple\n        field: status\n        op: "!="\n        values: ["done"]\n`;
+  await writeFile(getQueriesConfigPath(dir), `queries:\n${entry(DUP_A)}${entry(DUP_B)}`, "utf-8");
+}
+
+describe("B21 · saved-view names are unique (K129)", () => {
+  // @verifies VUE-20
+  it("createView refuses a name another view has, and writes nothing", async () => {
+    await createView(locttDir, { name: "overdue", filters: [statusNotDone] });
+    const before = await readFile(getQueriesConfigPath(locttDir), "utf-8");
+    await expect(createView(locttDir, { name: "overdue", filters: [statusDone] }))
+      .rejects.toThrow("Another view with that name already exists.");
+    await expect(createView(locttDir, { name: "overdue", filters: [statusDone] }))
+      .rejects.toBeInstanceOf(ViewNameTakenError);
+    expect(await readFile(getQueriesConfigPath(locttDir), "utf-8")).toBe(before);
+  });
+
+  // @verifies VUE-20
+  it("compares trimmed and case-insensitively", async () => {
+    await createView(locttDir, { name: "Overdue", filters: [] });
+    await expect(createView(locttDir, { name: "  overdue ", filters: [] }))
+      .rejects.toBeInstanceOf(ViewNameTakenError);
+  });
+
+  it("an archived view still holds its name", async () => {
+    const v = await createView(locttDir, { name: "old", filters: [] });
+    await archiveView(locttDir, v.id);
+    await expect(createView(locttDir, { name: "old", filters: [] }))
+      .rejects.toBeInstanceOf(ViewNameTakenError);
+  });
+
+  // @verifies VUE-20
+  it("editView refuses a rename to another view's name, and writes nothing", async () => {
+    await createView(locttDir, { name: "first", filters: [] });
+    const second = await createView(locttDir, { name: "second", filters: [] });
+    const before = await readFile(getQueriesConfigPath(locttDir), "utf-8");
+    await expect(editView(locttDir, second.id, { name: "First" }))
+      .rejects.toThrow("Another view with that name already exists.");
+    expect(await readFile(getQueriesConfigPath(locttDir), "utf-8")).toBe(before);
+  });
+
+  it("editView allows keeping the view's own name, or changing only its case", async () => {
+    const v = await createView(locttDir, { name: "mine", filters: [] });
+    await createView(locttDir, { name: "other", filters: [] });
+    await editView(locttDir, v.id, { name: "mine", filters: [statusDone] });
+    const renamed = await editView(locttDir, v.id, { name: "Mine" });
+    expect(renamed.name).toBe("Mine");
+  });
+
+  // @verifies VUE-20
+  it("views already sharing a name load, run by id, and take edits that keep the name", async () => {
+    await seedDuplicateNames(locttDir);
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.map(q => q.id)).toEqual([DUP_A, DUP_B]);
+    // The web dialog always sends the name; an unchanged one is not a clash.
+    const edited = await editView(locttDir, DUP_B, { name: "dup", filters: [statusDone] });
+    expect(edited.filters).toEqual([statusDone]);
+    // Renaming one away resolves the clash.
+    await editView(locttDir, DUP_B, { name: "dup two" });
+    expect(findView(await loadQueriesConfig(locttDir), "dup").id).toBe(DUP_A);
   });
 });
 

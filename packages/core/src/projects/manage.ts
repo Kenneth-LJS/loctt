@@ -72,7 +72,7 @@ export class PartialRemapError extends LocttError {
       "conflict",
       `remapped ${String(remapped)} task(s); ${String(n)} could not be written `
       + `(${failedKeys.join(", ")}). The ${noun} has NOT been deleted and those `
-      + `tasks still reference it. Retry to finish — tasks already moved are skipped.`,
+      + `tasks still reference it. Retry to finish. Tasks already moved are skipped.`,
       // `saved` rather than `not_saved`: those 7 writes really did
       // land, and telling the user nothing was saved would send them
       // looking for tasks that have already moved. There is no
@@ -149,7 +149,7 @@ export function resolveProjectIdFromInput(
   if (byName.kind === "ambiguous") {
     const ids = byName.matches.map(p => p.id).join(", ");
     throw new ProjectError(
-      `project name '${input}' is ambiguous — matches ${byName.matches.length} projects (${ids}). Pass the id instead.`,
+      `Project name '${input}' is ambiguous. Matches ${byName.matches.length} projects (${ids}). Pass the id instead.`,
     );
   }
   // An *archived* project exists — saying "unknown" sends the user
@@ -165,10 +165,10 @@ export function resolveProjectIdFromInput(
   );
   if (archived?.archived === true) {
     throw new ProjectError(
-      `project "${archived.name}" is archived; unarchive it or pick another`,
+      `Project "${archived.name}" is archived. Unarchive it or pick another.`,
     );
   }
-  throw new ProjectError(`unknown project: ${input}`);
+  throw new ProjectError(`Unknown project: ${input}`);
 }
 
 /**
@@ -220,13 +220,13 @@ export function resolveProjectId(
   // The message forces an explicit choice AND names the config to repair.
   if (projectDefaultIsGhost(config)) {
     throw new ProjectError(
-      `the configured default project "${config.default ?? ""}" no longer exists `
+      `The configured default project "${config.default ?? ""}" no longer exists `
       + `(a rename or hand-edit left projects.yaml pointing at nothing). `
       + `Pass --project explicitly, and repair the default in projects.yaml.`,
     );
   }
   throw new ProjectError(
-    `no default project configured and multiple projects exist; pass --project explicitly`,
+    `No default project is configured, and multiple projects exist. Pass --project explicitly.`,
   );
 }
 
@@ -278,7 +278,7 @@ export function projectDefaultIsGhost(config: ProjectsConfig): boolean {
 /** Returns the project definition for an id, or throws. */
 export function findProject(config: ProjectsConfig, id: string): ProjectDef {
   const proj = config.projects.find(p => p.id === id);
-  if (!proj) throw new ProjectError(`unknown project: ${id}`);
+  if (!proj) throw new ProjectError(`Unknown project: ${id}`);
   return proj;
 }
 
@@ -343,7 +343,7 @@ export async function createProject(
 
     if (config.projects.some(p => p.prefix === input.prefix)) {
       throw new ProjectError(
-        `project with prefix '${input.prefix}' already exists — prefixes must be unique`,
+        `A project with prefix '${input.prefix}' already exists. Prefixes must be unique.`,
       );
     }
 
@@ -354,15 +354,15 @@ export async function createProject(
     if (input.slug !== undefined) {
       if (!isValidSlug(input.slug)) {
         throw new ProjectError(
-          `invalid project slug '${input.slug}' — must start with a letter and `
-          + `contain only lowercase letters, digits, hyphen, or underscore`,
+          `Invalid project slug '${input.slug}'. Must start with a letter and `
+          + `contain only lowercase letters, digits, hyphen, or underscore.`,
         );
       }
       const clash = config.projects.find(p => p.slug === input.slug);
       if (clash) {
         throw new ProjectError(
-          `project slug '${input.slug}' is already used by project "${clash.name}" `
-          + `— slugs must be unique`,
+          `Project slug '${input.slug}' is already used by project "${clash.name}". `
+          + `Slugs must be unique.`,
         );
       }
     }
@@ -407,7 +407,7 @@ export async function createProject(
         // Collision on a freshly-generated ULID is essentially impossible
         // (entropy >= 80 bits), but if it ever happens, surface it.
         throw new ProjectError(
-          `internal: state.keys already has an entry for generated id '${id}' — retry`,
+          `An internal error occurred: state already has an entry for id '${id}'. Retry.`,
         );
       }
       throw err;
@@ -450,12 +450,12 @@ export async function editProject(
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
     const idx = config.projects.findIndex(p => p.id === id);
-    if (idx === -1) throw new ProjectError(`unknown project: ${id}`);
+    if (idx === -1) throw new ProjectError(`Unknown project: ${id}`);
 
     if (changes.name === undefined) return; // nothing to do
 
     const existing = config.projects[idx];
-    if (!existing) throw new ProjectError(`unknown project: ${id}`);
+    if (!existing) throw new ProjectError(`Unknown project: ${id}`);
     const updated: ProjectDef = {
       ...existing,
       name: changes.name,
@@ -497,9 +497,9 @@ export async function archiveProject(locttDir: string, id: string): Promise<void
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
     const idx = config.projects.findIndex(p => p.id === id);
-    if (idx === -1) throw new ProjectError(`unknown project: ${id}`);
+    if (idx === -1) throw new ProjectError(`Unknown project: ${id}`);
     const existing = config.projects[idx];
-    if (!existing) throw new ProjectError(`unknown project: ${id}`);
+    if (!existing) throw new ProjectError(`Unknown project: ${id}`);
     if (existing.archived === true) return;
     const next = [...config.projects];
     next[idx] = { ...existing, archived: true };
@@ -519,9 +519,9 @@ export async function unarchiveProject(locttDir: string, id: string): Promise<vo
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
     const idx = config.projects.findIndex(p => p.id === id);
-    if (idx === -1) throw new ProjectError(`unknown project: ${id}`);
+    if (idx === -1) throw new ProjectError(`Unknown project: ${id}`);
     const existing = config.projects[idx];
-    if (!existing) throw new ProjectError(`unknown project: ${id}`);
+    if (!existing) throw new ProjectError(`Unknown project: ${id}`);
     if (existing.archived !== true) return;
     const cleared: ProjectDef = {
       id: existing.id,
@@ -589,11 +589,11 @@ export async function deleteProject(
   return withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
     const target = config.projects.find(p => p.id === id);
-    if (!target) throw new ProjectError(`unknown project: ${id}`);
+    if (!target) throw new ProjectError(`Unknown project: ${id}`);
 
     if (config.projects.length === 1) {
       throw new ProjectError(
-        `cannot delete the only project; create another project first`,
+        `Cannot delete the only project. Create another project first.`,
       );
     }
 
@@ -606,13 +606,13 @@ export async function deleteProject(
     if (affected.length > 0) {
       if (options.remapTo !== undefined && options.clearProjectField === true) {
         throw new ProjectError(
-          `pass either remapTo or clearProjectField, not both`,
+          `Pass either remapTo or clearProjectField, not both.`,
         );
       }
       if (options.remapTo === undefined && options.clearProjectField !== true) {
         throw new ProjectError(
-          `project '${id}' has ${affected.length} task(s); pass remapTo to migrate `
-          + `them to another project, or clearProjectField to clear their project`,
+          `Project '${id}' has ${affected.length} task(s). Pass remapTo to migrate `
+          + `them to another project, or clearProjectField to clear their project.`,
         );
       }
       if (options.clearProjectField === true) {
@@ -620,14 +620,14 @@ export async function deleteProject(
       } else {
         const remapTarget = config.projects.find(p => p.id === options.remapTo);
         if (!remapTarget) {
-          throw new ProjectError(`unknown remap target project: ${options.remapTo}`);
+          throw new ProjectError(`Unknown remap target project: ${options.remapTo}`);
         }
         if (options.remapTo === id) {
-          throw new ProjectError(`remap target must differ from the project being deleted`);
+          throw new ProjectError(`Remap target must differ from the project being deleted.`);
         }
         if (remapTarget.archived === true) {
           throw new ProjectError(
-            `remap target project '${options.remapTo}' is archived; unarchive it first or pick an active project`,
+            `Remap target project '${options.remapTo}' is archived. Unarchive it first, or pick an active project.`,
           );
         }
         remapTo = options.remapTo;

@@ -307,9 +307,25 @@
  * (`loctt-animated-64-*-color.svg`, both themes byte-identical but for
  * two `fill`s — see `LogoSpinner.tsx`): the "L" rotates about the mark's
  * center while "L" and "o" swing apart and back, all on one 1.8s loop.
+ *
+ * 2026-09-23: Ken supplied a revised pair of SVGs with new anticipation
+ * timings, ported verbatim here (colours untouched — `LogoSpinner.tsx`
+ * already themes via `var(--accent)`/`var(--text-primary)`, not the
+ * source SVG's own fills). The anticipation dip moved from 24% to 18% of
+ * the cycle and got shallower (`-22deg` to `-15deg`), and the entry
+ * easing (0%→dip) on all three keyframe sets changed to
+ * `cubic-bezier(0.4, 0, 0.4, 1)`.
  */
 .loctt-spin {
-  transform-origin: 32px 32px;
+  /* The box centre, NOT the source SVG's `32px 32px`. This class sits on
+   * the outer <svg>, where a transform-origin is measured in CSS pixels
+   * of the rendered box, not in viewBox units — `32px` was the centre
+   * only at the source's native 64px. At the 21–24px the app renders, it
+   * put the pivot past the bottom-right corner and the mark orbited
+   * instead of spinning (Ken: "misaligned"). The padded viewBox is
+   * centred on the mark's (32, 32), so the box centre IS the mark centre
+   * at every size. */
+  transform-origin: 50% 50%;
   animation: loctt-rot 1800ms infinite;
 }
 .loctt-spin-l {
@@ -319,21 +335,21 @@
   animation: loctt-o 1800ms infinite;
 }
 @keyframes loctt-rot {
-  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.42, 0, 0.35, 1); }
-  24% { transform: rotate(-22deg); animation-timing-function: cubic-bezier(0.64, 0, 0.55, 1); }
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.4, 0, 0.4, 1); }
+  18% { transform: rotate(-15deg); animation-timing-function: cubic-bezier(0.64, 0, 0.55, 1); }
   59.2% { transform: rotate(374deg); animation-timing-function: cubic-bezier(0.35, 0, 0.1, 1); }
   80% { transform: rotate(360deg); }
   100% { transform: rotate(360deg); }
 }
 @keyframes loctt-l {
-  0% { transform: translate(0, 0); animation-timing-function: cubic-bezier(0.55, 0, 0.43, 1); }
-  20% { transform: translate(-5.657px, 5.657px); animation-timing-function: cubic-bezier(0.42, 0, 0.1, 1); }
+  0% { transform: translate(0, 0); animation-timing-function: cubic-bezier(0.4, 0, 0.4, 1); }
+  18% { transform: translate(-5.657px, 5.657px); animation-timing-function: cubic-bezier(0.42, 0, 0.1, 1); }
   80% { transform: translate(0, 0); }
   100% { transform: translate(0, 0); }
 }
 @keyframes loctt-o {
-  0% { transform: translate(0, 0); animation-timing-function: cubic-bezier(0.55, 0, 0.43, 1); }
-  20% { transform: translate(5.657px, -5.657px); animation-timing-function: cubic-bezier(0.42, 0, 0.1, 1); }
+  0% { transform: translate(0, 0); animation-timing-function: cubic-bezier(0.4, 0, 0.4, 1); }
+  18% { transform: translate(5.657px, -5.657px); animation-timing-function: cubic-bezier(0.42, 0, 0.1, 1); }
   80% { transform: translate(0, 0); }
   100% { transform: translate(0, 0); }
 }
@@ -544,4 +560,55 @@
   display: flex;
   align-items: flex-start;
   gap: 0.4em;
+}
+
+/* ---------------------------------------------------------------------
+ * Disclosure (`ui/Disclosure.tsx`) — native `<details>` marker kill.
+ *
+ * Ken hit an error page reading a literal `▸ Show details`. That glyph
+ * is the browser's own `<details>` marker, not anything this repo types,
+ * so it is invisible to a source grep — it has to be suppressed in CSS.
+ *
+ * TWO rules are required and neither is redundant:
+ *  - `list-style: none` is the standards-track spelling, honoured by
+ *    Chrome and Firefox (which draw the marker as a `::marker`).
+ *  - `::-webkit-details-marker { display: none }` is what WebKit needs;
+ *    it draws the marker through a legacy pseudo-element that
+ *    `list-style` does not reach. Safari is where Ken saw the `▸`, so
+ *    dropping this rule reintroduces exactly the reported bug.
+ *
+ * Tailwind's `marker:` variant compiles to `::marker` only and cannot
+ * express the `-webkit-` pseudo-element, so this cannot be done with
+ * utilities at the call site. Kept outside `@layer` (same reasoning as
+ * `.prose-body` above) so nothing in Tailwind's utility layer has to
+ * fight it.
+ *
+ * `styles/disclosureMarker.test.ts` pins all of this in the stylesheet
+ * source: jsdom does not load the compiled CSS, so a render test cannot
+ * observe whether the marker is actually gone.
+ * ------------------------------------------------------------------ */
+.loctt-disclosure > summary {
+  list-style: none;
+}
+.loctt-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Our own caret, drawn by `<Icon name="chevronRight">`. It rotates to
+ * point down when the element is open, rather than the component
+ * swapping to `chevronDown` — a swap would need to know `open`, which
+ * means React state, which would make the component controlled and put
+ * it out of sync with the native toggles (find-in-page expands a
+ * `<details>` without any click). CSS reads `[open]` straight off the
+ * DOM, so the native element stays the single source of truth. */
+.loctt-disclosure-caret {
+  transition: transform 120ms ease;
+}
+.loctt-disclosure[open] > summary .loctt-disclosure-caret {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .loctt-disclosure-caret {
+    transition: none;
+  }
 }

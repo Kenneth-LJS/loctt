@@ -128,11 +128,11 @@ export async function copyAvatar(
   try {
     info = await stat(actualSource);
   } catch {
-    throw new UserError(`avatar source not found: ${actualSource}`);
+    throw new UserError(`Avatar source not found: ${actualSource}`);
   }
   if (info.size > MAX_AVATAR_BYTES) {
     throw new UserError(
-      `avatar source is ${info.size} bytes; max is ${MAX_AVATAR_BYTES}`,
+      `Avatar source is ${info.size} bytes. Max is ${MAX_AVATAR_BYTES} bytes.`,
     );
   }
 
@@ -149,7 +149,7 @@ export async function copyAvatar(
   // (after any UTF-8 BOM and whitespace) for the SVG signatures.
   if (looksLikeSvg(sourceBytes)) {
     throw new UserError(
-      "SVG avatars are not supported; use a raster image (PNG, JPG, WEBP, GIF, AVIF, …)",
+      "SVG avatars are not supported. Use a raster image (PNG, JPG, WEBP, GIF, AVIF, or similar).",
     );
   }
 
@@ -162,13 +162,13 @@ export async function copyAvatar(
     const meta = await sharp(sourceBytes).metadata();
     if (meta.format === "svg") {
       throw new UserError(
-        "SVG avatars are not supported; use a raster image (PNG, JPG, WEBP, GIF, AVIF, …)",
+        "SVG avatars are not supported. Use a raster image (PNG, JPG, WEBP, GIF, AVIF, or similar).",
       );
     }
   } catch (err) {
     if (err instanceof UserError) throw err;
     throw new UserError(
-      `avatar could not be decoded as an image: ${(err as Error).message}`,
+      `Avatar could not be decoded as an image: ${(err as Error).message}`,
     );
   }
 
@@ -186,7 +186,7 @@ export async function copyAvatar(
       .toBuffer();
   } catch (err) {
     throw new UserError(
-      `avatar could not be decoded as an image: ${(err as Error).message}`,
+      `Avatar could not be decoded as an image: ${(err as Error).message}`,
     );
   }
 
@@ -230,7 +230,7 @@ export async function removeAvatar(
   // value is user-editable text, and this turns into an `rm`.
   if (filename.length === 0 || filename.includes("/") || filename.includes("\\")
       || filename === "." || filename === "..") {
-    throw new UserError(`avatar filename is not a usable basename: ${filename}`);
+    throw new UserError(`Avatar filename is not a usable basename: ${filename}`);
   }
   const userDir = getUserDir(locttDir, userId);
   await rm(`${userDir}/${filename}`, { force: true });

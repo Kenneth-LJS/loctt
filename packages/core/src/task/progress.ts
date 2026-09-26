@@ -372,8 +372,13 @@ async function referenceProgressDetailed(
     if (recovered !== undefined) {
       // First failure attributed to a milestone names the reason; a
       // later one does not overwrite it — one message is enough to
-      // explain why the row cannot be computed.
-      if (!attributedFailures.has(recovered)) attributedFailures.set(recovered, u.reason);
+      // explain why the row cannot be computed. The per-row reason is
+      // the only place this file is named (it is kept out of the
+      // tracker-level list), and `u.reason` no longer carries the path
+      // (A348), so the path is prefixed here — once (A350).
+      if (!attributedFailures.has(recovered)) {
+        attributedFailures.set(recovered, `${u.path}: ${u.reason}`);
+      }
     } else {
       orphanedUnreadable.push(u);
     }

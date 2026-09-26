@@ -17,7 +17,7 @@ import { createWebApp } from "./server.js";
  *    GET /api/tasks/T-1"}`, the parse detail buried in `detail`. P4
  *    reserves `unknown` for causes that genuinely cannot be
  *    determined; this one was fully known.
- *  - key not in the index → 404 `task not found: "T-1"`, asserting the
+ *  - key not in the index → 404 `Task not found: "T-1"`, asserting the
  *    task does not exist with the file on disk. ERR-1's prohibition.
  *
  * TSK-54 wants the detail view to state that the file could not be
@@ -113,9 +113,13 @@ describe("GET /api/tasks/:ref with an unparseable task.md", () => {
     // TSK-54: which line or field, not a raw stack trace.
     expect(message).toMatch(/line \d+/);
     expect(message).not.toContain("    at ");
-    // XS-51: committed wording, no "may have been written incompletely".
-    expect(message).toContain("by hand");
+    // XS-51 as amended by K129: no hedging ("incompletely") and no
+    // general cause sentence either. This line used to assert "by hand"
+    // was present, which encoded the pre-K129 wording (A348).
+    expect(message).not.toContain("by hand");
     expect(message).not.toContain("incompletely");
+    // A348: the path is named once.
+    expect(message.split(victimPath).length - 1).toBe(1);
   });
 
   it("offers no retry control, because retrying cannot succeed", async () => {

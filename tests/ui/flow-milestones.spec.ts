@@ -26,7 +26,7 @@ import path from "node:path";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /**
- * Clicks a milestone/label row's kebab action (Edit… / Archive / Delete).
+ * Clicks a milestone/label row's kebab action (Edit / Archive / Delete).
  *
  * These rows put their per-row actions behind the shared `RowActions`
  * kebab (U26/K105): the items only exist while the menu is open, and
@@ -41,23 +41,6 @@ async function rowAction(
 ): Promise<void> {
   await row.getByRole("button", { name: /^Actions for / }).click();
   await page.getByTestId(itemTestId).click();
-}
-
-/**
- * Asserts the label a row's kebab action currently shows, then closes
- * the menu again so the surrounding test sees no state change.
- */
-async function expectRowActionText(
-  page: import("@playwright/test").Page,
-  row: import("@playwright/test").Locator,
-  itemTestId: string,
-  text: string,
-): Promise<void> {
-  const kebab = row.getByRole("button", { name: /^Actions for / });
-  await kebab.click();
-  await expect(page.getByTestId(itemTestId)).toHaveText(text);
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId(itemTestId)).toHaveCount(0);
 }
 
 /** The milestones in `milestones.yaml`, paired id → name. */
@@ -368,7 +351,14 @@ test.describe("MSL — the milestones view", () => {
   });
 
   // @verifies MSL-17
-  test("MSL-17: overdue keys off incomplete tasks, not the date, and changes no number", async ({
+  //
+  // > **Amended (K132, Ken 2026-09-26).** Milestones show no countdown and
+  // > no Overdue badge. Ken, on the countdown: "yes remove too"; on the
+  // > badge he chose "Remove the badge too". MSL-17's whole claim — a
+  // > worded overdue indication keyed off incomplete tasks — is gone: there
+  // > is no overdue indication of any kind, on a past-due milestone with
+  // > open tasks or otherwise.
+  test("MSL-17 (K132): no Overdue indication for a past-due milestone with open tasks, and the numbers are unaffected", async ({
     page,
     tracker,
   }) => {
@@ -376,32 +366,34 @@ test.describe("MSL — the milestones view", () => {
 
     await page.goto(`${tracker.baseURL}/milestones`);
     const row = page.locator(`[data-milestone-id="${alpha}"]`);
+    await expect(row).toBeVisible();
 
-    // A past date with 4 tasks still incomplete.
-    await expect(row).toHaveAttribute("data-overdue", "true");
-    // Not colour alone — the indication is a word.
-    await expect(row.getByTestId("milestone-overdue")).toHaveText("Overdue");
+    // A past date with 4 tasks still incomplete: still no badge, no
+    // `data-overdue` attribute at all (K132 — the attribute itself is
+    // retired, not merely `"false"`).
+    await expect(row).not.toHaveAttribute("data-overdue");
+    await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
+    // By text too: a relabelled badge would pass the retired testid check.
+    await expect(row).not.toContainText(/overdue|days? (left|ago)|in \d+ days?/i);
 
-    // The flag is additive: the numbers are what they were.
+    // The numbers themselves are unaffected by the removal.
     await expect(page.getByTestId(`milestone-${alpha}-readout`)).toContainText("4 / 8");
 
-    // Now complete the remaining work. Same past date; the flag must
-    // go, which is what distinguishes "driven by incomplete tasks"
-    // from "driven by the date".
+    // Completing the remaining work changes nothing about this — there
+    // was no flag to begin with, dated in the past or not.
     const keys = (await tracker.run(["list", "--query", `milestone = "${alpha}"`]))
       .trim().split("\n").map(l => l.trim().split(/\s+/)[0] ?? "").filter(Boolean);
     for (const k of keys) await tracker.run(["set", k, "status", "done"]);
 
     await page.reload();
-    await expect(row).toHaveAttribute("data-overdue", "false");
+    await expect(row).not.toHaveAttribute("data-overdue");
     await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
-    // Positive control: the row is still on the page and still dated
-    // in the past — the flag went, not the row.
+    await expect(row).not.toContainText(/overdue|days? (left|ago)|in \d+ days?/i);
     await expect(row.getByTestId("milestone-date")).toHaveText("Jan 1, 2025");
   });
 
   // @verifies MSL-18
-  test("MSL-18: a 100% milestone reads n / n, full, and completed rather than overdue", async ({
+  test("MSL-18: a 100% milestone reads n / n, full, and completed", async ({
     page,
     tracker,
   }) => {
@@ -418,10 +410,11 @@ test.describe("MSL — the milestones view", () => {
     await expect(page.getByTestId(`milestone-${alpha}-bar`))
       .toHaveAttribute("data-fill", "1.0000");
 
-    // A past target date on a complete milestone reads completed, not
-    // overdue.
+    // A past target date on a complete milestone reads completed. There
+    // is no overdue concept to distinguish it from (K132).
     await expect(row.getByTestId("milestone-complete")).toHaveText("Completed");
     await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
+    await expect(row).not.toContainText(/overdue|days? (left|ago)|in \d+ days?/i);
   });
 
   // @verifies MSL-24
@@ -456,7 +449,10 @@ test.describe("MSL — the milestones view", () => {
   });
 
   // @verifies MSL-25
-  test("MSL-25: an archived milestone is out of the default view, revealed without unarchiving", async ({
+  //
+  // Case amended under K121 #1: the view offers no way to reveal an
+  // archived milestone; Settings → Archived → Milestones lists it.
+  test("MSL-25: an archived milestone is out of the /milestones view; its detail route stays reachable", async ({
     page,
     tracker,
   }) => {
@@ -473,12 +469,8 @@ test.describe("MSL — the milestones view", () => {
     // one row, and only then assert which one it is.
     await expect(page.getByTestId("milestone-row")).toHaveCount(1);
     await expect(page.locator(`[data-milestone-id="${empty}"]`)).toHaveCount(1);
-    // Excluded from the default view.
+    // Excluded from the default view — unconditionally now, see above.
     await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(0);
-
-    // Revealed by the affordance.
-    await page.getByTestId("milestones-archived-scope-all").click();
-    await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(1);
 
     // Without unarchiving it: the file still says archived.
     const yaml = await readFile(
@@ -491,6 +483,11 @@ test.describe("MSL — the milestones view", () => {
     await page.goto(`${tracker.baseURL}/milestones/${alpha}`);
     await expect(page.getByTestId("milestone-detail-archived")).toBeVisible();
     await expect(page.getByTestId("milestone-task-row")).toHaveCount(8);
+
+    // Amended third bullet: Settings → Archived lists it.
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await page.getByTestId("archived-kind-milestones").click();
+    await expect(page.getByTestId(`archived-row-${alpha}`)).toBeVisible();
   });
 
   // @verifies MSL-29
@@ -569,13 +566,19 @@ test.describe("MSL — the milestones view", () => {
   });
 
   // @verifies MSL-40
-  test("MSL-40: a dated card shows a countdown, a past one shows overdue, undated degrades", async ({
+  //
+  // > **Amended (K132, Ken 2026-09-26).** Milestones show no countdown and
+  // > no Overdue badge. Ken, on the countdown: "yes remove too"; on the
+  // > badge he chose "Remove the badge too". MSL-40's whole claim — a
+  // > countdown or overdue duration beside the date — is gone: no card
+  // > shows one, dated in the future, dated in the past, or undated.
+  test("MSL-40 (K132): no countdown on any card — future-dated, past-dated, or undated", async ({
     page,
     tracker,
   }) => {
     // The tracker's today, read from the server, is the frame the
-    // countdown is measured in — computed here so the fixture dates are
-    // relative to it and the test does not drift with the wall clock.
+    // fixture dates are relative to, so the test does not drift with the
+    // wall clock.
     const info = await (await page.request.get(`${tracker.baseURL}/api/info`)).json() as {
       today: string;
     };
@@ -591,20 +594,34 @@ test.describe("MSL — the milestones view", () => {
     const late = ms.find(m => m.name === "Late")?.id ?? "";
     const someday = ms.find(m => m.name === "Someday")?.id ?? "";
 
-    // "Late" needs an incomplete task so it reads overdue rather than
-    // just past — MSL-40's marker rides the same overdue rule (MSL-17).
+    // "Late" has an incomplete task — under the old MSL-17 rule this
+    // would have read overdue; K132 removed the concept, so this proves
+    // absence even in the case most likely to have shown one.
     const out = await tracker.run(["create", "L task"]);
     const key = (/Created (\S+):/.exec(out)?.[1] ?? "").replace(/:$/, "");
     await tracker.run(["set", key, "milestone", late]);
 
     await page.goto(`${tracker.baseURL}/milestones`);
+    await expect(page.getByTestId("milestone-row")).toHaveCount(3);
 
-    // A future date: days-remaining.
-    await expect(page.getByTestId(`milestone-${soon}-countdown`)).toContainText("in 5 days");
-    // A past date with work left: an overdue duration.
-    await expect(page.getByTestId(`milestone-${late}-countdown`)).toContainText("3 days overdue");
-    // Undated: no countdown at all, and the date slot still says so.
+    // No countdown anywhere: future-dated, past-dated with open work, or
+    // undated.
+    await expect(page.getByTestId(`milestone-${soon}-countdown`)).toHaveCount(0);
+    await expect(page.getByTestId(`milestone-${late}-countdown`)).toHaveCount(0);
     await expect(page.getByTestId(`milestone-${someday}-countdown`)).toHaveCount(0);
+    // No Overdue badge on the past-dated, incomplete milestone either.
+    await expect(
+      page.locator(`[data-milestone-id="${late}"]`).getByTestId("milestone-overdue"),
+    ).toHaveCount(0);
+    // By text as well as by the retired testids: no countdown or overdue
+    // wording on any row.
+    for (const id of [soon, late, someday]) {
+      await expect(page.locator(`[data-milestone-id="${id}"]`)).not.toContainText(
+        /overdue|days? (left|ago)|in \d+ days?/i,
+      );
+    }
+
+    // The dates themselves are still shown as-is.
     await expect(
       page.locator(`[data-milestone-id="${someday}"]`).getByTestId("milestone-date"),
     ).toHaveText("No target date");
@@ -651,13 +668,13 @@ test.describe("MSL — the milestones view", () => {
     // milestone' affordance opening the shared create dialog … Not a
     // deep link to a Settings form" (`milestones/MilestonesView.tsx`).
     //
-    // The durable requirement — UX-15's "a view you cannot find" gap:
-    // the view must say what it is FOR and offer the management action —
-    // is what is asserted now.
-    const subhead = page.getByTestId("milestones-subhead");
-    await expect(subhead).toBeVisible();
-    await expect(subhead).toContainText(/progress toward every milestone/i);
-
+    // SUPERSEDED AGAIN under K129: the page's own subhead ("Progress
+    // toward every milestone…") was removed as a page-intro that
+    // restates what the page's own progress bars and counts already
+    // show (messaging.md §1). UX-15's durable requirement — the view
+    // must offer the management action, not just describe itself — is
+    // what remains assertable here.
+    //
     // And the management action is right here, opening in place.
     await page.getByTestId("milestones-new").click();
     await expect(page.getByTestId("milestone-create-dialog")).toBeVisible();
@@ -1099,17 +1116,12 @@ test("MSL-14: editing a milestone's target date persists, re-sorts, and clears c
   expect(pageErrors, "the SPA threw while editing a milestone date").toEqual([]);
 });
 
-// @verifies MSL-11
+// @verifies MSL-11 SET-53
 //
-// Retag (B2): this exercises the *management panel's* archive/unarchive
-// TOGGLE — the row stays visible and marked, and `archived: true`
-// reaches milestones.yaml. That is panel CRUD, MSL-11's surface. It is
-// NOT MSL-25, whose claim is that an archived milestone still *resolves
-// on tasks and by URL* (its detail route reachable, excluded from the
-// default /milestones view, revealed by a "show archived" affordance) —
-// a different surface owned by the milestones-view ticket. The mis-tag
-// made MSL-25 look verified here while its task/URL far-end was untested.
-test("the milestones panel archives and unarchives without hiding the row", async ({
+// The management panel archives (one click, reversible), and the row
+// leaves it: K121 #1 lists active milestones only there. The way back is
+// Settings → Archived, whose Restore puts it back in the panel.
+test("a milestone archived from its panel is restored from Settings → Archived", async ({
   page,
   tracker,
 }) => {
@@ -1123,33 +1135,29 @@ test("the milestones panel archives and unarchives without hiding the row", asyn
 
   await page.goto(`${tracker.baseURL}/settings/milestones`);
   const row = page.getByTestId(`milestone-row-${id}`);
-  await expect(row).toHaveAttribute("data-milestone-archived", "false");
+  await expect(row).toBeVisible();
 
   // Archive: one click, no typed confirmation (it is reversible).
-  //
-  // K107 made the panel's list scope-driven: the archived row leaves the
-  // default "active" scope rather than staying in place with a marker.
-  // The case's point — archived is a REVERSIBLE state, not a deletion,
-  // and the row is still reachable — is asserted by revealing it under
-  // "all" and reading the marker there.
   await rowAction(page, row, "milestone-archive-toggle");
   await expect(row).toHaveCount(0);
-  await page.getByTestId("milestones-archived-scope-all").click();
-  await expect(row).toHaveAttribute("data-milestone-archived", "true");
-  await expect(row.getByTestId("milestone-archived-marker")).toBeVisible();
-  await expectRowActionText(page, row, "milestone-archive-toggle", "Unarchive");
   // Far end: the flag reached milestones.yaml.
   await expect.poll(async () =>
     readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
   ).toMatch(/archived:\s*true/);
 
-  // Unarchive reverses it, and the flag leaves disk.
-  await rowAction(page, row, "milestone-archive-toggle");
-  await expect(row).toHaveAttribute("data-milestone-archived", "false");
-  await expectRowActionText(page, row, "milestone-archive-toggle", "Archive");
+  // Restore from Settings → Archived, and the flag leaves disk.
+  await page.goto(`${tracker.baseURL}/settings/archived`);
+  await page.getByTestId("archived-kind-milestones").click();
+  const archivedRow = page.getByTestId(`archived-row-${id}`);
+  await rowAction(page, archivedRow, `archived-restore-${id}`);
+  await expect(page.getByTestId("archived-outcome")).toHaveText("Restored 1 milestone.");
+  await expect(archivedRow).toHaveCount(0);
   await expect.poll(async () =>
     readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
   ).not.toMatch(/archived:\s*true/);
+
+  await page.goto(`${tracker.baseURL}/settings/milestones`);
+  await expect(row).toBeVisible();
 
   expect(pageErrors, "the SPA threw while archiving a milestone").toEqual([]);
 });

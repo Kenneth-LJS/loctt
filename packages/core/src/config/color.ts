@@ -305,7 +305,7 @@ export function resolveEntityColor(color: EntityColor, mode: ColorMode): ColorRe
           reason: "unknown_palette_id",
           paletteId: color.palette,
           message:
-            `unknown palette colour '${color.palette}' — it is not one of the built-in palette colours `
+            `unknown palette colour '${color.palette}'. It is not one of the built-in palette colours `
             + `(${BUILTIN_PALETTE.map(e => e.id).join(", ")}). `
             + `Pick a palette colour, or set an explicit colour instead.`,
         },

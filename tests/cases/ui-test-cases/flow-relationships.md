@@ -442,12 +442,15 @@ write succeeds.
 - It does not report plain success.
 
 ### REL-43 · M2 · blocker · P4
-**Linking to a nonexistent key names the key.** Type a key that doesn't
-resolve and force the add.
-- The message names the key as entered and says no task matches it.
-- It mentions that former keys resolve via `key_history`, so a typo is
-  distinguishable from a retired key.
+**Linking to a nonexistent key says nothing matched.** Type a key that
+doesn't resolve and force the add.
+- The message is "No matches found."
 - The picker keeps the typed text so the user can correct it.
+
+> **Amended (K123, Ken 2026-09-24).** This case required the message to
+> name the key and explain that former keys resolve via `key_history`.
+> Ken: *"yea this is a bad message. should just be 'No matches found.'.
+> dont editorialise."*
 
 ### REL-44 · M2 · major · P4
 **Removing an already-removed link is idempotent and honest.** Remove

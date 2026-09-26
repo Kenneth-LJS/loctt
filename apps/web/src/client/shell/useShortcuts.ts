@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { CHORD_TIMEOUT_MS, resolveShortcut, type ShortcutId } from "./shortcuts.ts";
+import { CHORD_TIMEOUT_MS, resolveShortcut, type ShortcutCommand, type ShortcutFilter } from "./shortcuts.ts";
 import { isTypingTarget } from "./typingTarget.ts";
 
 /**
@@ -33,13 +33,26 @@ import { isTypingTarget } from "./typingTarget.ts";
  * knowledge only the layers themselves have. Each dismissible layer
  * binds its own `Esc`; the stacking order falls out of the listeners
  * being added in mount order.
+ *
+ * ## The off switches (K133)
+ *
+ * `isOn` says which shortcuts may fire: the user's master switch and
+ * per-shortcut switches, resolved by core. It is read per keystroke
+ * (through a ref), so flipping a switch takes effect on the next key
+ * without reinstalling the listener. A shortcut that is off resolves to
+ * nothing and its key reaches the page untouched.
  */
-export function useShortcuts(handlers: Partial<Record<ShortcutId, () => void>>): void {
+export function useShortcuts(
+  handlers: Partial<Record<ShortcutCommand, () => void>>,
+  isOn?: ShortcutFilter,
+): void {
   // Held in a ref so the listener is installed once. Re-installing on
   // every render would drop a chord prefix mid-chord, and would also
   // mean the `keydown` listener churns on every parent re-render.
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
+  const isOnRef = useRef(isOn);
+  isOnRef.current = isOn;
 
   useEffect(() => {
     let pendingPrefix: string | null = null;
@@ -61,7 +74,7 @@ export function useShortcuts(handlers: Partial<Record<ShortcutId, () => void>>):
         return;
       }
 
-      const resolution = resolveShortcut(e.key, pendingPrefix);
+      const resolution = resolveShortcut(e.key, pendingPrefix, isOnRef.current);
 
       if (resolution.kind === "chord-start") {
         e.preventDefault();
@@ -79,7 +92,7 @@ export function useShortcuts(handlers: Partial<Record<ShortcutId, () => void>>):
 
       if (resolution.kind === "none") return;
 
-      const handler = handlersRef.current[resolution.id];
+      const handler = handlersRef.current[resolution.command];
       if (handler === undefined) return;
       // Only prevent default once something will actually run. A key
       // with no handler registered on this route must reach the page.

@@ -171,7 +171,7 @@ describe("createProject slug allocation", () => {
   it("an unresolvable slug throws rather than silently widening", async () => {
     const config = await loadProjectsConfig(locttDir());
     expect(() => resolveProjectIdFromInput(config, "no-such-slug"))
-      .toThrow(/unknown project/);
+      .toThrow("Unknown project: no-such-slug");
   });
 });
 

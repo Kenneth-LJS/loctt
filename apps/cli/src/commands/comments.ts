@@ -74,7 +74,7 @@ export async function add(args: string[], root: string): Promise<void> {
     // (CMT-C2).
     if (err instanceof CommentError && /no current user/i.test(err.message)) {
       throw new CommentError(
-        `no current user set — run 'loctt user switch <name>' (or `
+        `no current user set. Run 'loctt user switch <name>' (or `
         + `'loctt user create <name> --switch') and post again.\n`
         + `Your comment text was:\n${body}`,
       );

@@ -709,7 +709,7 @@ function TreeGroup({
           className="mb-1 px-1 text-[0.8571rem] text-danger-fg"
         >
           This “{group.label}” hierarchy contains a cycle. The rows marked
-          below repeat a task that already appears above them; remove one of
+          below repeat a task that already appears above them. Remove one of
           the two links to break it.
         </p>
       )}

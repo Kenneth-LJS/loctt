@@ -93,7 +93,7 @@ function parseSimpleFilter(raw: string): Filter {
   }
   throw new UsageError(
     `--filter "${raw}" has no recognised operator `
-    + `(one of: ${FILTER_OPS.join(", ")}) — values with spaces are fine, e.g. --filter "title ~ my task"`,
+    + `(one of: ${FILTER_OPS.join(", ")}). Values with spaces are fine, e.g. --filter "title ~ my task"`,
   );
 }
 

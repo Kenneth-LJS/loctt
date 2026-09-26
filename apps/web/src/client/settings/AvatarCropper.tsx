@@ -23,7 +23,7 @@ import {
  *
  * PRU-29: an animated GIF decodes to its first frame in the `<img>`, so
  * the crop and preview show exactly the frame that will be stored, and
- * the caller shows the "stored as a single frame" notice.
+ * the caller shows the "saved as a single frame" notice.
  */
 
 /** A larger initial default reads as "adjust me" rather than "done". */
@@ -129,8 +129,7 @@ export function AvatarCropper({
             data-testid={`avatar-animated-note-${testIdSuffix}`}
             className="text-[0.8571rem] text-text-secondary"
           >
-            Animated images are stored as a single frame — the frame shown
-            below is what will be saved.
+            Animated images are saved as a single frame.
           </p>
         )}
 

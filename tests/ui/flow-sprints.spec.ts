@@ -225,7 +225,7 @@ test.describe("SPR — sprints overview", () => {
       await expect(page.getByTestId(`sprint-window-${String(id)}`)).toBeVisible();
     }
 
-    // The archived sprint is absent with no "show archived" enabled.
+    // The archived sprint is absent, and nothing can reveal it (K121 #1).
     const retiredId = byName.get("Retired");
     await expect(page.getByTestId(`sprint-column-${String(retiredId)}`)).toHaveCount(0);
   });
@@ -444,7 +444,7 @@ test.describe("SPR — sprints overview", () => {
     await expect(alert).toBeVisible();
     await expect(alert).toContainText(String(key));
     await expect(alert).toContainText("To");
-    await expect(alert).toContainText("not saved");
+    await expect(alert).toContainText("wasn't saved");
 
     // The card is back, and both counts reverted.
     await expect(page.getByTestId(`sprint-count-${fromId}`)).toHaveText("1");
@@ -452,6 +452,40 @@ test.describe("SPR — sprints overview", () => {
     // And nothing was written.
     const file = await readTaskFile(tracker.root, String(key));
     expect(file).toMatch(new RegExp(`^sprint: ${fromId}$`, "m"));
+  });
+
+  // A348: a write the server never answered may have landed, so the
+  // banner must not say the assignment "wasn't saved" and then quote
+  // the timeout envelope saying the outcome is unknown. K127's wording.
+  // @verifies SPR-5
+  test("SPR-5: a write that times out says the move may not have happened", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run(["sprint", "create", "From", "--start", "2026-01-01", "--end", "2026-01-14", "--state", "active"]);
+    await tracker.run(["sprint", "create", "To", "--start", "2026-02-01", "--end", "2026-02-14", "--state", "active"]);
+    const byName = new Map((await readSprints(tracker.root)).map(s => [s.name, s.id]));
+    const toId = String(byName.get("To"));
+    const [key] = await tracker.seed([{ title: "mover" }]);
+    await assign(tracker, [[String(key), "From"]]);
+
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_SET_FIELD_TIMEOUT_MS__?: number })
+        .__LOCTT_SET_FIELD_TIMEOUT_MS__ = 1_000;
+    });
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await page.route("**/api/tasks/**/set", async () => {
+      await new Promise(() => { /* hangs */ });
+    });
+
+    await dragCard(page, String(key), await columnPoint(page, toId));
+
+    const alert = page.getByTestId("sprints-move-error");
+    await expect(alert).toBeVisible({ timeout: 10_000 });
+    await expect(alert.locator("span").first()).toHaveText(
+      "Your changes may not have been saved. Please try again.",
+    );
+    await expect(alert).not.toContainText("wasn't saved");
   });
 
   // @verifies SPR-6
@@ -575,7 +609,7 @@ test.describe("SPR — sprints overview", () => {
   });
 
   // @verifies SPR-20
-  test("SPR-20: an active sprint whose window has passed stays active, with an informational hint", async ({
+  test("SPR-20: an active sprint whose window has passed stays active, with no hint", async ({
     tracker,
     page,
   }) => {
@@ -591,11 +625,10 @@ test.describe("SPR — sprints overview", () => {
     await expect(page.getByTestId(`sprint-column-${id}`)).toHaveAttribute("data-active", "true");
     await expect(page.getByTestId(`sprint-toggle-${id}`)).toHaveAttribute("aria-expanded", "true");
 
-    // The discrepancy is surfaced as a hint, not as an error.
-    const hint = page.getByTestId(`sprint-window-hint-${id}`);
-    await expect(hint).toBeVisible();
-    await expect(hint).toContainText("active");
-    await expect(hint).not.toHaveAttribute("role", "alert");
+    // K130 / P11: no hint, warning or message about the dates. This
+    // test used to require an informational hint, which is superseded.
+    await expect(page.getByTestId(`sprint-window-hint-${id}`)).toHaveCount(0);
+    await expect(page.getByText(/still marked|do not include today/i)).toHaveCount(0);
 
     // Nothing rewrote `state` on the user's behalf.
     await page.waitForTimeout(300);
@@ -709,10 +742,11 @@ test.describe("SPR — sprints overview", () => {
     // Names the file, the offending sprint (by its id), and the rule.
     await expect(err).toContainText("sprints.yaml");
     await expect(err).toContainText("01M1AQ6K96WRM6WNESPCN4WQEP");
-    await expect(err).toContainText("must not be before start_date");
-    // Tells the user to fix the file and reload; offers no repair.
+    // K129 pattern: the plain rule, not the internal field names.
+    await expect(err).toContainText("End date is before the start date.");
+    // Tells the user to fix the file and reload; the "LocTT will not
+    // repair the file for you" reassurance is gone (K129).
     await expect(err).toContainText("reload");
-    await expect(err).toContainText("will not repair");
 
     // A138 "tell broken from none": a tracker whose only sprint is
     // corrupt must NOT read as an empty one — the empty state would say
@@ -765,7 +799,8 @@ test.describe("SPR — sprints overview", () => {
     await page.goto(`${tracker.baseURL}/sprints`);
     const empty = page.getByTestId("sprints-empty");
     await expect(empty).toBeVisible();
-    await expect(empty).toContainText("No sprints yet");
+    // K129: "No sprints yet." trimmed to "No sprints found."
+    await expect(empty).toContainText("No sprints found");
     // The empty state still teaches the next step, but K105 (b7a39db7)
     // replaced "go to Settings" prose with the action itself: a
     // "+ New sprint" button that creates in place. Same claim — the
@@ -819,12 +854,10 @@ test.describe("SPR — sprints overview", () => {
   });
 
   // @verifies SPR-39
-  test("SPR-39: the overview card surfaces progress, dates, days-remaining, and a mini-bar", async ({
+  test("SPR-39: the overview card surfaces progress, dates and a mini-bar, and no countdown", async ({
     tracker,
     page,
   }) => {
-    // An end well in the future so the countdown reads "days left", not
-    // overdue, whatever the tracker's clock is.
     await tracker.run(["sprint", "create", "Cadence", "--start", "2020-01-01", "--end", "2099-12-31", "--state", "active"]);
     const id = String((await readSprints(tracker.root))[0]?.id);
 
@@ -852,9 +885,9 @@ test.describe("SPR — sprints overview", () => {
     const bar = page.getByTestId(`sprint-progress-bar-${id}`);
     await expect(bar).toHaveAttribute("data-fill", (2 / 3).toFixed(4));
 
-    // The date range and the days-remaining countdown are both shown.
+    // The date range is shown; there is no countdown to it (K131).
     await expect(page.getByTestId(`sprint-window-${id}`)).toBeVisible();
-    await expect(page.getByTestId(`sprint-countdown-${id}`)).toContainText(/days left/);
+    await expect(page.getByTestId(`sprint-card-${id}`)).not.toContainText(/days? left|overdue|ends today/i);
 
     // K-14: the whole at-a-glance card opens the detail route.
     await page.getByTestId(`sprint-card-${id}`).click();
@@ -878,8 +911,8 @@ test.describe("SPR — sprints overview", () => {
     expect(new URL(page.url()).pathname).toBe(`/sprints/${id}`);
   });
 
-  // @verifies SPR-40
-  test("SPR-40: the overview hides archived sprints until the archived-scope control is set to show them", async ({
+  // @verifies SPR-40 SET-52
+  test("SPR-40: the overview never shows an archived sprint and has no reveal", async ({
     tracker,
     page,
   }) => {
@@ -891,27 +924,22 @@ test.describe("SPR — sprints overview", () => {
     const retiredId = String(byName.get("Retired"));
 
     await page.goto(`${tracker.baseURL}/sprints`);
-
-    // Archived is hidden by default; the live one shows.
     await expect(page.getByTestId(`sprint-column-${liveId}`)).toBeVisible();
     await expect(page.getByTestId(`sprint-column-${retiredId}`)).toHaveCount(0);
+    // K121 #1 (amended SPR-1/SPR-40): no "Show archived" checkbox.
+    await expect(page.getByTestId("sprints-show-archived")).toHaveCount(0);
+    await expect(page.getByText(/show archived/i)).toHaveCount(0);
 
-    // The toggle reveals it in place — a local view state, no write.
-    const yamlBefore = await readFile(
-      path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
-    );
-    // The overview's reveal is a checkbox ("Show archived (n)"), not the
-    // Settings panel's tri-state `sprints-archived-scope` select — see
-    // `SprintsView.tsx`, which cites SPR-1/SPR-40 for it. The claim this
-    // case makes (hidden by default, revealed by a LOCAL toggle that
-    // writes nothing) is unchanged; the yaml comparison below is what
-    // enforces the "no write" half.
-    await page.getByTestId("sprints-show-archived").check();
-    await expect(page.getByTestId(`sprint-column-${retiredId}`)).toBeVisible();
-    const yamlAfter = await readFile(
-      path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
-    );
-    expect(yamlAfter).toBe(yamlBefore);
+    // Settings → Sprints lists active sprints only, with no reveal...
+    await page.goto(`${tracker.baseURL}/settings/sprints`);
+    await expect(page.getByTestId(`sprint-row-${liveId}`)).toBeVisible();
+    await expect(page.getByTestId(`sprint-row-${retiredId}`)).toHaveCount(0);
+    await expect(page.getByTestId("sprints-archived-scope-reveal")).toHaveCount(0);
+
+    // ...and Settings → Archived → Sprints is where it is.
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await page.getByTestId("archived-kind-sprints").click();
+    await expect(page.getByTestId(`archived-row-${retiredId}`)).toContainText("Retired");
   });
 
   // @verifies SPR-40
@@ -933,14 +961,7 @@ test.describe("SPR — sprints overview", () => {
 
     // Lands on the Settings Sprints panel, where the roster actions live.
     await expect(page.getByTestId("sprints-panel")).toBeVisible();
-    // The archived-scope control is DEMOTED behind an icon reveal (Ken's
-    // 2026-09-22 archive ruling: archiving is a one-way door, and the
-    // option to look at archived rows must not read as another filter).
-    // It is still here — this panel is the admin/recovery surface, the
-    // only place the policy allows it — but it is not on screen until
-    // asked for. Open the reveal, then assert the control.
-    await page.getByTestId("sprints-archived-scope-reveal").click();
-    await expect(page.getByTestId("sprints-archived-scope")).toBeVisible();
+    await expect(page.getByTestId("sprint-create-open")).toBeVisible();
 
     // And creating is reachable without going there at all (K105).
     await page.goto(`${tracker.baseURL}/sprints`);
@@ -1190,7 +1211,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
   });
 
   // @verifies SPR-33
-  test("SPR-33: an end_date before start_date is rejected inline, naming both values", async ({
+  test("SPR-33: an end_date before start_date is rejected inline, with the plain message", async ({
     tracker,
     page,
   }) => {
@@ -1209,10 +1230,12 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     // The error is next to the end_date control, not only a toast.
     const problem = page.getByTestId("sprint-meta-end_date-problem");
     await expect(problem).toBeVisible();
-    // It names the constraint and BOTH offending values.
-    await expect(problem).toContainText("2026-07-01");
-    await expect(problem).toContainText("2026-08-03");
-    await expect(problem).toContainText(/before/i);
+    // K130: the plain message. This used to require both dates in the
+    // message, which the amended SPR-33 no longer asks for; the two
+    // values stay visible in the date fields beside it.
+    await expect(problem).toContainText("End date is before the start date.");
+    await expect(page.getByTestId("sprint-meta-end_date")).toHaveValue("2026-07-01");
+    await expect(page.getByTestId("sprint-meta-start_date")).toHaveValue("2026-08-03");
 
     // The previous valid value is what is still on disk (SPR-33): the
     // rejected write did not land.
@@ -1283,17 +1306,15 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     await expectSprintName(page, "Flaky");
   });
 
-  // @verifies SPR-37
-  test("SPR-37: a rejected state transition names the STATE field, not End date", async ({
+  // @verifies SPR-37 SPR-20
+  test("SPR-37: a completed sprint reopens freely; an end before the start is named under End date", async ({
     tracker,
     page,
   }) => {
-    // A real, field-attributable rejection (not a 500): a completed sprint
-    // cannot go back to active without force. SPR-37 asks the failure to
-    // say which field — and it must be the field it is actually about, not
-    // End date. The server stamps every SprintError `field: "end_date"`,
-    // so this exercises the client's message-based re-attribution (A147
-    // follow-up): the error anchors under State, never under End date.
+    // K130 / P11: this test used to assert that completed -> active was
+    // refused (the transition guard), which is superseded behaviour. Ken:
+    // "just let users update state however they want." The field-
+    // attributable rejection that remains is the window rule.
     await tracker.run([
       "sprint", "create", "Done", "--start", "2026-11-01", "--end", "2026-11-12", "--state", "completed",
     ]);
@@ -1304,14 +1325,24 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     await pickCombo(page, "sprint-meta-state", "active");
     await page.getByTestId("sprint-meta-save").click();
 
-    // Anchored under State, naming the transition; NOT under End date.
-    const stateProblem = page.getByTestId("sprint-meta-state-problem");
-    await expect(stateProblem).toBeVisible();
-    await expect(stateProblem).toContainText(/not allowed|transition/i);
-    await expect(page.getByTestId("sprint-meta-end_date-problem")).toHaveCount(0);
+    // Saved, with no problem shown and no confirmation step.
+    await expect(page.getByTestId("sprint-meta")).toHaveAttribute("data-sprint-meta-mode", "read");
+    await expect(page.getByTestId("sprint-meta-state-problem")).toHaveCount(0);
+    await expect.poll(async () => (await readSprintRecord(tracker.root, id))["state"]).toBe("active");
+
+    // An end date before the start date is refused, named under End date
+    // (the server stamps every SprintError `field: "end_date"`, and here
+    // that is the right field), never under State.
+    await page.getByTestId("sprint-meta-edit").click();
+    await page.getByTestId("sprint-meta-end_date").fill("2026-10-01");
+    await page.getByTestId("sprint-meta-save").click();
+    const endProblem = page.getByTestId("sprint-meta-end_date-problem");
+    await expect(endProblem).toBeVisible();
+    await expect(endProblem).toContainText("End date is before the start date.");
+    await expect(page.getByTestId("sprint-meta-state-problem")).toHaveCount(0);
     // Editor stays open; disk unchanged.
     await expect(page.getByTestId("sprint-meta")).toHaveAttribute("data-sprint-meta-mode", "edit");
-    expect((await readSprintRecord(tracker.root, id))["state"]).toBe("completed");
+    expect((await readSprintRecord(tracker.root, id))["end_date"]).toBe("2026-11-12");
   });
 
   // @verifies SPR-38

@@ -246,7 +246,7 @@ describe("saved views are addressable (QRY-C6)", () => {
       // entry happened to come first, and nothing saying so.
       expect(result.exitCode).not.toBe(0);
       const text = `${result.stdout}${result.stderr}`;
-      expect(text).toMatch(/multiple views named/);
+      expect(text).toMatch(/multiple views named/i);
       // Both ids, so the suggested fallback is actionable.
       expect(text).toContain("01M0AAAAAAAAAAAAAAAAAAAAA1");
       expect(text).toContain("01M0AAAAAAAAAAAAAAAAAAAAA2");

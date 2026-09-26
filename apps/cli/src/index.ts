@@ -66,7 +66,7 @@ export function resolveRoot(
     if (r !== c) {
       throw new UsageError(
         `--root and --cwd were both given but point at different directories ` +
-        `(${r} vs ${c}). They are aliases for the same thing — pass only one, ` +
+        `(${r} vs ${c}). They are aliases for the same thing. Pass only one, ` +
         `or make them agree. --root is the canonical name.`,
       );
     }

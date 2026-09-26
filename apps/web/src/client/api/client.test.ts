@@ -157,12 +157,25 @@ describe("apiRequest", () => {
     expect((err as ApiError).message).toBe("/api/info responded with 502");
   });
 
-  it("forwards an AbortSignal to fetch", async () => {
+  it("forwards an AbortSignal to fetch, combined with the default deadline (K115)", async () => {
+    // K115: a GET with no explicit `timeoutMs` now gets the default
+    // read deadline rather than an omitted one, so the signal passed to
+    // `fetch` is no longer the caller's raw signal unchanged — it is
+    // `AbortSignal.any([caller, deadline])`. This test asserted the OLD
+    // "unbounded by default" behaviour (identity equality with the
+    // caller's own signal); it was not asserting a bug so much as
+    // pinning the exact shape K115 was asked to change. What still
+    // matters, and what this now checks, is that the caller's own
+    // abort still reaches `fetch` — aborting `ctrl` must abort the
+    // signal actually passed through.
     mockFetchOnce({ body: {} });
     const ctrl = new AbortController();
     await apiClient.get("/api/info", { signal: ctrl.signal });
     const [, init] = fetchCalls()[0] ?? [] as unknown as FetchArgs;
-    expect(init?.signal).toBe(ctrl.signal);
+    expect(init?.signal).not.toBe(ctrl.signal);
+    expect(init?.signal?.aborted).toBe(false);
+    ctrl.abort();
+    expect(init?.signal?.aborted).toBe(true);
   });
 
   it("merges extra headers alongside the CSRF marker", async () => {

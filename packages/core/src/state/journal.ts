@@ -199,8 +199,8 @@ export class JournalUnreadableError extends Error {
   readonly name = "JournalUnreadableError" as const;
   constructor(path: string, cause: unknown) {
     super(
-      `${path} could not be read, so LocTT cannot tell whether a previous `
-      + `operation was interrupted. Refusing to continue: proceeding could `
+      `${path} could not be read. Whether a previous `
+      + `operation was interrupted cannot be determined. Refusing to continue: proceeding could `
       + `overwrite a half-applied write. `
       + `Cause: ${cause instanceof Error ? cause.message : String(cause)}`,
       { cause },

@@ -65,7 +65,7 @@ const SURFACES = new Set<string>(["CLI", "MCP", "UI"]);
 
 /** Case headings are `### <ID> · …`; section headings like `### A.1 Foo` are not. */
 const CASE_HEADING = /^###\s+([A-Z][A-Z0-9]*-C?\d+)\s+·\s+(.+?)\s*$/;
-const PRINCIPLE = /^P([1-9]|10)$/;
+const PRINCIPLE = /^P([1-9]|1[01])$/;
 /** A closed gap keeps its case; the suffix records that it is no longer outstanding. */
 const RESOLVED_SUFFIX = /\s+—\s+\*\*resolved\*\*$/;
 
@@ -155,7 +155,7 @@ function parseTags(
     throw new CaseParseError(file, line, "no severity tag (blocker/major/minor)");
   }
   if (principles.length === 0) {
-    throw new CaseParseError(file, line, "no principle tags (P1–P10)");
+    throw new CaseParseError(file, line, "no principle tags (P1–P11)");
   }
 
   if (tree === "ui") {

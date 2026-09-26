@@ -225,131 +225,48 @@ describe("history actor attribution", () => {
     for (const e of entries) expect(e.actor).toBe(activeId);
   });
 
-  describe("body_edited coalescing (CW-16)", () => {
-    it("coalesces a same-actor body_edited burst into one entry", async () => {
-      // Three appends within the 15-min window: only one entry on disk.
+  /**
+   * K128 (Ken, 2026-09-24): one entry per body write.
+   *
+   * SUPERSEDED: this block was "body_edited coalescing (CW-16)" — nine
+   * tests asserting that same-actor `body_edited` appends within 15
+   * minutes merge into one entry (rolling, capped at 60 minutes). They
+   * were green and asserted the rule Ken removed; under K124 every body
+   * write is a deliberate Save, and merging folded Saves minutes apart
+   * into one entry. Replaced, not kept alongside.
+   */
+  describe("body_edited — one entry per write (K128)", () => {
+    // @verifies TSK-16
+    it("records every same-actor body write as its own entry, each with its own before/after", async () => {
       const t0 = "2026-05-21T10:00:00Z";
-      const t1 = "2026-05-21T10:05:00Z";
-      const t2 = "2026-05-21T10:14:30Z";
-      await appendHistory(locttDir, "t1", [{ timestamp: t0, kind: "body_edited" }]);
-      await appendHistory(locttDir, "t1", [{ timestamp: t1, kind: "body_edited" }]);
-      await appendHistory(locttDir, "t1", [{ timestamp: t2, kind: "body_edited" }]);
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries).toHaveLength(1);
-      // Timestamp rolled forward to the most recent.
-      expect(entries[0]?.timestamp).toBe(t2);
-    });
+      const t1 = "2026-05-21T10:00:30Z";
+      const t2 = "2026-05-21T10:05:00Z";
+      await appendHistory(locttDir, "t1", [{ timestamp: t0, kind: "body_edited", before: "", after: "one" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: t1, kind: "body_edited", before: "one", after: "one two" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: t2, kind: "body_edited", before: "one two", after: "one two three" }]);
 
-    it("spans the whole burst — `before` from the first edit, `after` from the last", async () => {
-      // A coalesced entry keeps the earlier row and drops the newer one,
-      // so `after` has to be advanced explicitly. Left alone, the entry
-      // would describe only the burst's first keystroke, and replaying
-      // it would restore a body the user never stopped at.
-      const t0 = "2026-05-21T10:00:00Z";
-      const t1 = "2026-05-21T10:05:00Z";
-      await appendHistory(locttDir, "t1", [
-        { timestamp: t0, kind: "body_edited", before: "original", after: "half-typed" },
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries.map(e => [e.timestamp, e.before, e.after])).toEqual([
+        [t0, "", "one"],
+        [t1, "one", "one two"],
+        [t2, "one two", "one two three"],
       ]);
-      await appendHistory(locttDir, "t1", [
-        { timestamp: t1, kind: "body_edited", before: "half-typed", after: "finished" },
-      ]);
-
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries).toHaveLength(1);
-      expect(entries[0]?.before).toBe("original");
-      expect(entries[0]?.after).toBe("finished");
+      // Nothing is stamped as a merged burst any more.
+      for (const e of entries) expect(e.meta?.coalesce_started_at).toBeUndefined();
     });
 
-    it("does not let a later entry erase the burst's `after`", async () => {
-      // A coalesceable entry carrying no newer state must not blank out
-      // what the burst had reached. Guarding on `"after" in next` would
-      // treat an explicit `undefined` as a value to adopt, leaving the
-      // merged entry replaying to nothing.
-      const t0 = "2026-05-21T10:00:00Z";
-      const t1 = "2026-05-21T10:05:00Z";
-      await appendHistory(locttDir, "t1", [
-        { timestamp: t0, kind: "body_edited", before: "original", after: "typed" },
-      ]);
-      await appendHistory(locttDir, "t1", [
-        { timestamp: t1, kind: "body_edited", after: undefined },
-      ]);
-
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries).toHaveLength(1);
-      expect(entries[0]?.before).toBe("original");
-      expect(entries[0]?.after).toBe("typed");
-    });
-
-    it("caps a rolling burst at 60 minutes", async () => {
-      // The window rolls — each merged save advances it — so a chain of
-      // sub-15-minute gaps would otherwise collapse forever. Five saves
-      // 14 minutes apart span 56 minutes and stay one entry; the sixth
-      // crosses the 60-minute cap and starts a fresh one.
-      const base = Date.parse("2026-05-21T10:00:00Z");
-      const at = (min: number): string => new Date(base + min * 60_000).toISOString();
-
-      for (const m of [0, 14, 28, 42, 56]) {
-        await appendHistory(locttDir, "t1", [{ timestamp: at(m), kind: "body_edited" }]);
-      }
-      expect(await readHistory(locttDir, "t1")).toHaveLength(1);
-
-      // 70 min from the burst start, only 14 from the last save.
-      await appendHistory(locttDir, "t1", [{ timestamp: at(70), kind: "body_edited" }]);
+    it("keeps an entry written by the old merge rule readable and appends after it", async () => {
+      // Files written before K128 carry `meta.coalesce_started_at` on a
+      // merged entry. It stays as written; the next write is a new row.
+      await appendHistory(locttDir, "t1", [{
+        timestamp: "2026-05-21T10:14:00Z", kind: "body_edited", before: "a", after: "c",
+        meta: { coalesce_started_at: "2026-05-21T10:00:00Z" },
+      }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:15:00Z", kind: "body_edited", before: "c", after: "d" }]);
       const entries = await readHistory(locttDir, "t1");
       expect(entries).toHaveLength(2);
-      // The capped entry keeps the burst's own span, not the new save's.
-      expect(entries[0]?.timestamp).toBe(at(56));
-      expect(entries[1]?.timestamp).toBe(at(70));
-    });
-
-    it("measures the cap from the burst start, not the last save", async () => {
-      // Guards the difference between the two readings: with the cap
-      // measured from the previous entry it would never trigger, since
-      // every individual gap is under 15 minutes.
-      const base = Date.parse("2026-05-21T10:00:00Z");
-      const at = (min: number): string => new Date(base + min * 60_000).toISOString();
-
-      for (let m = 0; m <= 84; m += 12) {
-        await appendHistory(locttDir, "t1", [{ timestamp: at(m), kind: "body_edited" }]);
-      }
-      // 0..84 in 12-min steps: every gap is 12 min, so a per-gap-only
-      // rule yields one entry. The cap splits it at the 60-min boundary.
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries.length).toBeGreaterThan(1);
-      for (const e of entries) {
-        expect(e.kind).toBe("body_edited");
-      }
-    });
-
-    it("starts a fresh entry when the window expires", async () => {
-      const t0 = "2026-05-21T10:00:00Z";
-      const t1 = "2026-05-21T10:20:00Z"; // 20 min later — past the window
-      await appendHistory(locttDir, "t1", [{ timestamp: t0, kind: "body_edited" }]);
-      await appendHistory(locttDir, "t1", [{ timestamp: t1, kind: "body_edited" }]);
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries).toHaveLength(2);
-    });
-
-    it("does not coalesce across actors", async () => {
-      // Force-stamp distinct actors by passing them on the entry directly.
-      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:00:00Z", kind: "body_edited", actor: "u-ken" }]);
-      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:05:00Z", kind: "body_edited", actor: "u-sara" }]);
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries).toHaveLength(2);
-    });
-
-    it("does not coalesce non-body_edited kinds", async () => {
-      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:00:00Z", kind: "field_change", field: "title", before: "a", after: "b" }]);
-      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:01:00Z", kind: "field_change", field: "title", before: "b", after: "c" }]);
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries).toHaveLength(2);
-    });
-
-    it("never coalesces entries carrying bulk_op_id", async () => {
-      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:00:00Z", kind: "body_edited", bulk_op_id: "op1" }]);
-      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:01:00Z", kind: "body_edited", bulk_op_id: "op2" }]);
-      const entries = await readHistory(locttDir, "t1");
-      expect(entries).toHaveLength(2);
+      expect(entries[0]?.meta?.coalesce_started_at).toBe("2026-05-21T10:00:00Z");
+      expect(entries[1]?.after).toBe("d");
     });
   });
 

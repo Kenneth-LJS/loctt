@@ -26,7 +26,7 @@ import {
  *    `The server failed while handling GET /api/tasks/T-1` with the
  *    only useful sentence buried in `detail`.
  *  - key **not** in the index (the file was already bad when the fold
- *    ran, so `readKeyHeader` swallowed it) → `task not found: "T-1"`,
+ *    ran, so `readKeyHeader` swallowed it) → `Task not found: "T-1"`,
  *    asserting the task did not exist with the file sitting on disk.
  *
  * The second is ERR-1's prohibition exactly: a failure and an absence
@@ -111,9 +111,16 @@ describe("lookup distinguishes an unreadable task from an absent one", () => {
     expect(unreadable.message).toContain("could not be parsed");
     // ERR-1: never the absence wording.
     expect(unreadable.message).not.toContain("not found");
-    // XS-51: writes are atomic, so the message commits to a hand edit
-    // rather than hedging about a half-written file.
-    expect(unreadable.message).toContain("by hand");
+    // XS-51 as amended by K129: no general cause sentence, and no
+    // hedging about a half-written file either. This line used to
+    // assert "by hand" was present, which encoded the pre-K129 wording.
+    expect(unreadable.message).not.toContain("by hand");
+    expect(unreadable.message).not.toContain("half-written");
+    // A348: the path is named once. `readTask` puts it in its own
+    // message; the headline here names it too, so the reason must be
+    // the unwrapped parse error or the path is said twice.
+    expect(unreadable.message.split(path).length - 1).toBe(1);
+    expect(unreadable.reason).not.toContain(path);
   });
 
   it("does not report a corrupt task as absent when the key never reached the index", async () => {
@@ -130,11 +137,16 @@ describe("lookup distinguishes an unreadable task from an absent one", () => {
     expect(unreadable.code).toBe("io_failed");
     expect(unreadable.paths).toEqual([path]);
     expect(unreadable.message).toContain(path);
+    // A348: once, on the indeterminate path too.
+    expect(unreadable.message.split(path).length - 1).toBe(1);
     expect(unreadable.message).toMatch(/line \d+/);
     // The key cannot be matched to the file whose key would not parse,
     // so the error says so rather than asserting either way.
     expect(unreadable.indeterminate).toBe(true);
-    expect(unreadable.message).toContain("cannot confirm");
+    // K129 pass: "so it cannot confirm that the task does not exist"
+    // reworded to "so whether the task exists is unknown" (drops the
+    // self-reference, avoids the double-negative).
+    expect(unreadable.message).toContain("whether the task exists is unknown");
   });
 
   it("still reports a genuinely absent key as not found when every file parses", async () => {
@@ -146,7 +158,7 @@ describe("lookup distinguishes an unreadable task from an absent one", () => {
     // missing key as a read failure would be the same conflation
     // pointed the other way.
     expect(err).toBeInstanceOf(TaskNotFoundError);
-    expect((err as Error).message).toContain("task not found");
+    expect((err as Error).message).toContain("Task not found");
   });
 
   it("does not claim a missing key was found when an unrelated file is corrupt", async () => {
@@ -161,7 +173,7 @@ describe("lookup distinguishes an unreadable task from an absent one", () => {
     expect(err).toBeInstanceOf(UnreadableTaskError);
     expect((err as UnreadableTaskError).indeterminate).toBe(true);
     expect((err as Error).message).toContain("T-99");
-    expect((err as Error).message).toContain("cannot confirm");
+    expect((err as Error).message).toContain("whether the task exists is unknown");
   });
 
   it("one corrupt task does not stop the fold from indexing its neighbours", async () => {

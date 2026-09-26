@@ -41,7 +41,7 @@ export type MilestoneByNameResult =
 
 export function findMilestone(config: MilestonesConfig, id: string): MilestoneDef {
   const def = config.milestones.find(m => m.id === id);
-  if (!def) throw new MilestoneError(`unknown milestone: ${id}`);
+  if (!def) throw new MilestoneError(`Unknown milestone: ${id}`);
   return def;
 }
 
@@ -72,10 +72,10 @@ export function resolveMilestoneIdFromInput(
   if (byName.kind === "ambiguous") {
     const ids = byName.matches.map(m => m.id).join(", ");
     throw new MilestoneError(
-      `milestone name '${input}' is ambiguous — matches ${byName.matches.length} milestones (${ids}). Pass the id instead.`,
+      `Milestone name '${input}' is ambiguous. Matches ${byName.matches.length} milestones (${ids}). Pass the id instead.`,
     );
   }
-  throw new MilestoneError(`unknown milestone: ${input}`);
+  throw new MilestoneError(`Unknown milestone: ${input}`);
 }
 
 export interface CreateMilestoneInput {
@@ -113,9 +113,9 @@ export async function editMilestone(
   await withStateLock(locttDir, async () => {
     const config = await loadMilestonesConfig(locttDir);
     const idx = config.milestones.findIndex(m => m.id === id);
-    if (idx === -1) throw new MilestoneError(`unknown milestone: ${id}`);
+    if (idx === -1) throw new MilestoneError(`Unknown milestone: ${id}`);
     const existing = config.milestones[idx];
-    if (!existing) throw new MilestoneError(`unknown milestone: ${id}`);
+    if (!existing) throw new MilestoneError(`Unknown milestone: ${id}`);
 
     const updated: MilestoneDef = {
       id: existing.id,
@@ -159,7 +159,7 @@ export async function deleteMilestone(
 ): Promise<{ affectedTaskCount: number }> {
   if (options.hard !== true) {
     if (options.remapTo !== undefined) {
-      throw new MilestoneError(`--remap-to only applies to --hard delete`);
+      throw new MilestoneError(`--remap-to only applies to --hard delete.`);
     }
     await archiveMilestone(locttDir, id);
     return { affectedTaskCount: 0 };
@@ -167,19 +167,19 @@ export async function deleteMilestone(
   return withStateLock(locttDir, async () => {
     const config = await loadMilestonesConfig(locttDir);
     if (!config.milestones.some(m => m.id === id)) {
-      throw new MilestoneError(`unknown milestone: ${id}`);
+      throw new MilestoneError(`Unknown milestone: ${id}`);
     }
     if (options.remapTo !== undefined) {
       if (options.remapTo === id) {
-        throw new MilestoneError(`remap target must differ from the milestone being deleted`);
+        throw new MilestoneError(`Remap target must differ from the milestone being deleted.`);
       }
       const target = config.milestones.find(m => m.id === options.remapTo);
       if (!target) {
-        throw new MilestoneError(`unknown remap target milestone: ${options.remapTo}`);
+        throw new MilestoneError(`Unknown remap target milestone: ${options.remapTo}`);
       }
       if (target.archived === true) {
         throw new MilestoneError(
-          `remap target milestone '${options.remapTo}' is archived; unarchive it first or pick an active milestone`,
+          `Remap target milestone '${options.remapTo}' is archived. Unarchive it first, or pick an active milestone.`,
         );
       }
     }

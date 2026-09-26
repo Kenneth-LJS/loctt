@@ -1,11 +1,13 @@
 import type { EntityColor, PriorityDef, StatusDef, TaskTypeDef, WorkflowConfig } from "@loctt/contracts";
-import { useState } from "react";
+import { useIsMutating } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
   ConcurrentWorkflowEditError,
   useSaveWorkflowCollection,
 } from "../api/hooks/useWorkflowMutations.ts";
+import { WORKFLOW_SAVE_KEY } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { type EntryDialogResult,EntryEditDialog } from "./EntryEditDialog.tsx";
 import { type RemapChoice,RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
@@ -53,25 +55,37 @@ const NOUN: Record<Collection, string> = {
 };
 
 export function EnumCollectionPanel({ collection }: { readonly collection: Collection }) {
+  // A329: the create button moved into the header actions slot; its open
+  // state is lifted here so the header button and the body agree on it.
+  const [dialogOpen, setDialogOpen] = useState(false);
+  // The save mutation lives in the body below the header, so the header
+  // button reads "a workflow save is in flight" by its mutation key.
+  const saving = useIsMutating({ mutationKey: WORKFLOW_SAVE_KEY }) > 0;
   return (
     <WorkflowPanelFrame
       title={
         collection === "statuses" ? "Statuses"
           : collection === "priorities" ? "Priorities" : "Task types"
       }
-      description={
-        collection === "statuses"
-          ? "The states a task moves through. Order here is the board's column order and the order of every status dropdown in the app."
-          : collection === "priorities"
-            ? "Each priority's numeric value is recomputed from its position, so a priority sort matches this order."
-            : "Task types carry no built-in behaviour — nothing special-cases any particular type."
-      }
+      actions={(
+        <Button
+          variant="primary"
+          size="sm"
+          data-testid={`${collection}-create`}
+          disabled={saving}
+          onClick={() => { setDialogOpen(true); }}
+        >
+          New {NOUN[collection]}
+        </Button>
+      )}
     >
       {({ workflow, usage }) => (
         <CollectionEditor
           collection={collection}
           workflow={workflow}
           counts={usage?.[collection] ?? {}}
+          dialogOpen={dialogOpen}
+          setDialogOpen={setDialogOpen}
         />
       )}
     </WorkflowPanelFrame>
@@ -82,17 +96,28 @@ function CollectionEditor({
   collection,
   workflow,
   counts,
+  dialogOpen,
+  setDialogOpen,
 }: {
   readonly collection: Collection;
   readonly workflow: WorkflowConfig;
   readonly counts: Readonly<Record<string, number>>;
+  readonly dialogOpen: boolean;
+  readonly setDialogOpen: (open: boolean) => void;
 }) {
   const save = useSaveWorkflowCollection<Collection>();
   const [deleting, setDeleting] = useState<Row | null>(null);
-  /** The row an Edit dialog is open over, or "create" for a new one. */
-  const [dialog, setDialog] = useState<
-    { readonly mode: "create" } | { readonly mode: "edit"; readonly row: Row } | null
-  >(null);
+  /** The row an Edit dialog is open over, `null` when the create dialog
+   * (driven by the lifted `dialogOpen`) is the one showing, if either. */
+  const [editingRow, setEditingRow] = useState<Row | null>(null);
+  const dialog: { readonly mode: "create" } | { readonly mode: "edit"; readonly row: Row } | null =
+    editingRow !== null ? { mode: "edit", row: editingRow } : dialogOpen ? { mode: "create" } : null;
+  const closeDialog = (): void => { setEditingRow(null); setDialogOpen(false); };
+  const wasOpen = useRef(dialogOpen);
+  useEffect(() => {
+    if (dialogOpen && !wasOpen.current) save.reset();
+    wasOpen.current = dialogOpen;
+  }, [dialogOpen, save]);
   /**
    * SET-34: the order shown while a write is in flight. On failure it
    * is dropped, so the list snaps back to `workflow[collection]` — the
@@ -138,10 +163,8 @@ function CollectionEditor({
             && entryChangedOnDisk(opts.staleBaseline, freshRows)
           ) {
             throw new ConcurrentWorkflowEditError(
-              `These settings changed outside the app while this dialog was `
-              + `open — the ${NOUN[collection]} "${opts.staleBaseline.key}" is not `
-              + `what it was. Reload the panel, then re-apply `
-              + `your change. Your edit was not saved.`,
+              `"${opts.staleBaseline.key}" changed on disk while this was open, `
+              + `so your edit wasn't saved. Reload and try again.`,
             );
           }
           // Rows this panel edited, in the order it put them…
@@ -213,7 +236,7 @@ function CollectionEditor({
       if (collection === "statuses" && result.makeDefault === true) {
         next = setDefaultStatus(next as readonly StatusDef[], built.key);
       }
-      commit(next, { onDone: () => { setDialog(null); } });
+      commit(next, { onDone: closeDialog });
       return;
     }
     // Edit: replace the row, carrying the un-editable fields through and
@@ -245,7 +268,7 @@ function CollectionEditor({
       // document with none, which the schema rejects — so it is kept.
       next = next.map(r => (r.key === target.key ? { ...r, default: true } as Row : r));
     }
-    commit(next, { staleBaseline: target, onDone: () => { setDialog(null); } });
+    commit(next, { staleBaseline: target, onDone: closeDialog });
   };
 
   return (
@@ -265,23 +288,10 @@ function CollectionEditor({
           </p>
           <p className="mt-1 text-text-secondary">{saveError}</p>
           <p className="mt-1 text-text-tertiary">
-            The list below is the order still on disk. Check the file&apos;s
-            permissions, then try again — nothing is disabled.
+            Check the file&apos;s permissions and try again.
           </p>
         </div>
       )}
-
-      <div className="mb-3 flex justify-end">
-        <Button
-          variant="secondary"
-          size="sm"
-          data-testid={`${collection}-create`}
-          disabled={save.isPending}
-          onClick={() => { save.reset(); setDialog({ mode: "create" }); }}
-        >
-          + Add {NOUN[collection]}
-        </Button>
-      </div>
 
       {/* SET-20: 25 statuses scroll rather than clip. The panel owns a
           bounded height so the page chrome stays reachable. */}
@@ -305,7 +315,7 @@ function CollectionEditor({
               count={counts[row.key] ?? 0}
               disabled={save.isPending}
               onlyRow={stored.length === 1}
-              onEdit={() => { save.reset(); setDialog({ mode: "edit", row }); }}
+              onEdit={() => { save.reset(); setEditingRow(row); }}
               onDelete={() => { save.reset(); setDeleting(row); }}
             />
           )}
@@ -321,7 +331,7 @@ function CollectionEditor({
           pending={save.isPending}
           error={dialogError}
           onSubmit={applyDialog}
-          onClose={() => { setDialog(null); save.reset(); }}
+          onClose={() => { closeDialog(); save.reset(); }}
         />
       )}
 
@@ -406,20 +416,21 @@ function RowFields({
         <span
           data-testid={`priorities-value-${row.key}`}
           className="text-[0.8571rem] text-text-tertiary"
-          title="Recomputed from position — lower sorts first."
+          title="Recomputed from position. Lower sorts first."
         >
           value {String((row as PriorityDef).value ?? "—")}
         </span>
       )}
 
       {isStatus && (
-        // SET-3: the default marker stays visible and says what it decides.
+        // SET-3: the default marker stays visible. Just "Default" — what a
+        // default status decides is not explained on screen (messaging.md).
         <span
           data-testid={`statuses-default-${row.key}`}
           data-default-status={isDefault ? "true" : "false"}
           className="text-[0.8571rem] text-text-secondary"
         >
-          {isDefault ? "default — new tasks land here" : ""}
+          {isDefault ? "Default" : ""}
         </span>
       )}
 

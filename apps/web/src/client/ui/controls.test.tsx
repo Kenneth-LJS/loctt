@@ -6,26 +6,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Callout } from "./Callout.tsx";
 import { Chip } from "./Chip.tsx";
 import { cn } from "./cn.ts";
-import { ICON } from "./icons.ts";
 import { Select } from "./Select.tsx";
 import { TextArea } from "./TextArea.tsx";
 import { TextField } from "./TextField.tsx";
 
 afterEach(cleanup);
 
+// An arbitrary node for the leadingIcon slot. These tests are about the
+// slot's layout, not about what is in it, so a plain letter keeps them
+// clear of the glyph ban.
+const LEADING_ICON = "F";
+
 describe("cn", () => {
   it("drops falsy entries and space-joins the rest", () => {
     const off = false;
     expect(cn("a", false, undefined, null, "b", off && "c")).toBe("a b");
-  });
-});
-
-describe("icons", () => {
-  it("has one canonical glyph per affordance (no star/close drift)", () => {
-    expect(ICON.star).toBe("⭑");
-    expect(ICON.close).toBe("✕");
-    expect(ICON.caretDown).toBe("▾");
-    expect(ICON.more).toBe("⋯");
   });
 });
 
@@ -94,7 +89,6 @@ describe("Select", () => {
     );
     // The caret is an overlaid SVG icon so it follows the theme token; a
     // bare <select> would rely on the OS arrow that ignores dark mode.
-    // (Migrated from the ICON.caretDown glyph to the <Icon> component.)
     const chevron = container.querySelector("svg.absolute");
     expect(chevron).not.toBeNull();
   });
@@ -146,8 +140,8 @@ describe("TextField", () => {
   });
 
   it("renders a leadingIcon slot and pads the input for it", () => {
-    render(<TextField placeholder="Find" leadingIcon={ICON.more} />);
-    expect(screen.getByText(ICON.more)).toBeTruthy();
+    render(<TextField placeholder="Find" leadingIcon={LEADING_ICON} />);
+    expect(screen.getByText(LEADING_ICON)).toBeTruthy();
     expect(screen.getByPlaceholderText("Find").className).toContain("pl-7");
   });
 
@@ -174,7 +168,7 @@ describe("TextField", () => {
 
   it("respects fullWidth=false on the leadingIcon wrapper too", () => {
     render(
-      <TextField fullWidth={false} leadingIcon={ICON.more} placeholder="find" />,
+      <TextField fullWidth={false} leadingIcon={LEADING_ICON} placeholder="find" />,
     );
     // The wrapper (the input's parent span) must not force full width.
     const input = screen.getByPlaceholderText("find");
@@ -184,7 +178,7 @@ describe("TextField", () => {
   });
 
   it("keeps the leadingIcon wrapper full-width by default", () => {
-    render(<TextField leadingIcon={ICON.more} placeholder="find2" />);
+    render(<TextField leadingIcon={LEADING_ICON} placeholder="find2" />);
     const wrapper = screen.getByPlaceholderText("find2").parentElement as HTMLElement;
     expect(wrapper.className).toContain("w-full");
   });

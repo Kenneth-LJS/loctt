@@ -309,7 +309,7 @@ ${filtersBlock([{ kind: "advanced", query: "status = = = done AND" }])}
       // The message must be the same one a run-time attempt produces
       // (filtersToNode → FilterError), so a user never sees two different
       // messages for one fault.
-      expect(config.broken?.[0]?.error).toMatch(/advanced filter does not parse/);
+      expect(config.broken?.[0]?.error).toMatch(/advanced filter does not parse/i);
       expect(config.broken?.[0]?.rawText).toContain("status = = = done AND");
     });
 

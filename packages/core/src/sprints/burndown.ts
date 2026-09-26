@@ -112,7 +112,7 @@ export async function readBurndownSeries(
   ]);
   const sprint = sprintsCfg.sprints.find(s => s.id === sprintId);
   if (!sprint) {
-    throw new BurndownError(`unknown sprint: ${sprintId}`);
+    throw new BurndownError(`Unknown sprint: ${sprintId}`);
   }
   const tasks = await loadAllTasks(locttDir);
   const historiesByTaskId = new Map<string, readonly HistoryEntry[]>();

@@ -125,4 +125,52 @@ describe("MCP sidebar_groups (stdio)", () => {
       expect(file).toContain("theme: dark");
     });
   });
+
+  // @verifies SHL-45 — A346: `resolved` goes through the grouped
+  // resolver the web sidebar uses (K125 migration), not the flat order.
+  it("resolves a pre-K125 stored order the way the sidebar renders it", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await writeFile(
+        await settingsPath(root),
+        "sidebar_groups:\n  order: [overdue, projects]\n",
+        "utf8",
+      );
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("get_sidebar_groups", {});
+        expect(result.isError).toBeFalsy();
+        const payload = JSON.parse(String(result.content[0]?.text)) as SidebarGroupsPayload;
+        const ids = payload.resolved.map(r => r.id);
+        expect(ids.slice(0, 3)).toEqual(["filters", "overdue", "assigned-to-me"]);
+        expect(ids.indexOf("projects")).toBe(7);
+        expect(ids[8]).toBe("views");
+        // The stored value is reported as stored, unmigrated.
+        expect(payload.stored.order).toEqual(["overdue", "projects"]);
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
+  // @verifies SHL-45 — A346: a hidden Filters group hides every built-in.
+  it("reports every built-in filter hidden when the Filters group is hidden", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const client = await startMcpClient(root);
+      try {
+        const set = await client.callTool("set_sidebar_groups", { hidden: ["filters"] });
+        expect(set.isError).toBeFalsy();
+        const payload = JSON.parse(String(set.content[0]?.text)) as SidebarGroupsPayload;
+        const hidden = payload.resolved.filter(r => r.hidden).map(r => r.id).sort();
+        expect(hidden).toEqual([
+          "assigned-to-me", "due-this-week", "filters", "high-priority",
+          "mentions-me", "overdue", "reported-by-me",
+        ]);
+        const get = await client.callTool("get_sidebar_groups", {});
+        const getPayload = JSON.parse(String(get.content[0]?.text)) as SidebarGroupsPayload;
+        expect(getPayload.resolved.find(r => r.id === "overdue")?.hidden).toBe(true);
+      } finally {
+        await client.close();
+      }
+    });
+  });
 });

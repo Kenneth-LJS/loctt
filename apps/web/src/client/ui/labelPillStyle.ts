@@ -47,9 +47,15 @@ export function readableOn(hex: string): string {
   return luma > 0.75 || luma < 0.25 ? "var(--text-primary)" : hex;
 }
 
-/** The pill's class list — identical for the real pill and the preview. */
+/**
+ * The pill's class list — identical for the real pill and the preview.
+ *
+ * `min-h-[24px]`: in the list a pill is a `<button>` that filters by its
+ * label (LST-5), so it is a tap target and WCAG 2.5.8's 24px minimum
+ * applies. It measured 21.2px on padding alone (B4, K121).
+ */
 export const LABEL_PILL_CLASS =
-  "inline-flex items-center rounded border border-border-subtle px-1.5 py-0.5 text-[0.7857rem]";
+  "inline-flex min-h-[24px] items-center rounded border border-border-subtle px-1.5 py-0.5 text-[0.7857rem]";
 
 /**
  * The pill's inline style for one already-resolved colour.

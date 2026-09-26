@@ -71,10 +71,12 @@ describe("init and tracker state over HTTP", () => {
     const res = await post(base, { prefix: "WEB", projectLabel: "Website", docs: false });
     expect(res.status).toBe(201);
 
-    // The far end. Core refuses an existing `.loctt/` unless repairing,
-    // so without the `empty` → repair branch this 400s and the wizard
-    // offers a button that cannot work.
+    // The far end. Core sets up an empty `.loctt/` like a missing one
+    // (B22, K129): the full fresh set, not the repair subset the server
+    // used to ask for, which left out .gitignore and the default user.
     const locttDir = join(root, ".loctt");
+    await expect(stat(join(locttDir, ".gitignore"))).resolves.toBeTruthy();
+    await expect(stat(join(locttDir, "users"))).resolves.toBeTruthy();
     await expect(stat(join(locttDir, "state.yaml"))).resolves.toBeTruthy();
     await expect(stat(join(locttDir, ".schema-version"))).resolves.toBeTruthy();
     const projects = await readFile(join(locttDir, "config", "projects.yaml"), "utf8");

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook } from "@testing-library/react";
+import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CHORD_TIMEOUT_MS } from "./shortcuts.ts";
@@ -19,6 +19,9 @@ function press(key: string, target: EventTarget = window, init: KeyboardEventIni
 }
 
 afterEach(() => {
+  // Unmount every hook: without it each test's window listener
+  // outlives the test and answers the next test's keys.
+  cleanup();
   document.body.innerHTML = "";
   vi.useRealTimers();
 });
@@ -240,5 +243,59 @@ describe("dispatch and chords", () => {
     unmount();
     press("n");
     expect(onNew).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * K133's off switches at the DOM level: an off shortcut does not fire,
+ * its key reaches the page, and a switch flipped while mounted takes
+ * effect on the next key.
+ */
+describe("off switches", () => {
+  // @verifies A11Y-43
+  it("fires nothing and defaults nothing away when every shortcut is off", () => {
+    const onNew = vi.fn();
+    const list = vi.fn();
+    renderHook(() => useShortcuts({ "new-task": onNew, "goto-list": list }, () => false));
+
+    const n = new KeyboardEvent("keydown", { key: "n", bubbles: true, cancelable: true });
+    window.dispatchEvent(n);
+    press("g");
+    press("l");
+    expect(onNew).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    // The key reaches the page: nothing swallowed it.
+    expect(n.defaultPrevented).toBe(false);
+  });
+
+  // @verifies A11Y-43
+  // The real caller hands a NEW filter function each time the settings
+  // change (a fresh `useCallback` over new state), never mutating the
+  // old one. The previous version of this test flipped a variable the
+  // first function closed over, so it passed even with the filter
+  // captured once at install (A350).
+  it("reads the switches per keystroke, so a change applies without remounting", () => {
+    const onNew = vi.fn();
+    const allOn: (id: string) => boolean = () => true;
+    const newTaskOff: (id: string) => boolean = id => id !== "new-task";
+    const { rerender } = renderHook(
+      ({ isOn }: { isOn: (id: string) => boolean }) => useShortcuts({ "new-task": onNew }, isOn),
+      { initialProps: { isOn: allOn } },
+    );
+    press("n");
+    expect(onNew).toHaveBeenCalledTimes(1);
+    rerender({ isOn: newTaskOff });
+    press("n");
+    // The second `n` is ignored: the new filter was read on that key.
+    expect(onNew).toHaveBeenCalledTimes(1);
+  });
+
+  // @verifies A11Y-43
+  it("does not let a dead `g` swallow the next key when Go to is off", () => {
+    const onTheme = vi.fn();
+    renderHook(() => useShortcuts({ "cycle-theme": onTheme }, id => id !== "goto"));
+    press("g");
+    press("t");
+    expect(onTheme).toHaveBeenCalledTimes(1);
   });
 });

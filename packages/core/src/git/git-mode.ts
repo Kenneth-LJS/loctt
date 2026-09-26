@@ -140,7 +140,7 @@ export async function enableGit(
   options?: EnableGitOptions,
 ): Promise<EnableGitResult> {
   if (!isGitRepo(root)) {
-    throw new Error("not inside a Git repository — cannot enable Git-backed mode");
+    throw new Error("Not inside a Git repository. Cannot enable Git-backed mode.");
   }
 
   // Publish refuses to adopt a branch holding content LocTT did not
@@ -162,7 +162,7 @@ export async function enableGit(
     const foreign = branchHasForeignContent(root, branch);
     if (foreign.length > 0) {
       throw new Error(
-        `branch '${branch}' already exists and holds content LocTT did not write `
+        `Branch '${branch}' already exists and holds content this tracker did not write `
         + `(${foreign.slice(0, 5).join(", ")}${foreign.length > 5 ? ", …" : ""}). `
         + `Publishing would delete it. Choose a different branch with `
         + `'loctt config set git.branch <name>' before enabling, or delete `
@@ -296,7 +296,7 @@ export async function getGitStatus(
     const foreign = branchHasForeignContent(root, branch);
     if (foreign.length > 0) {
       throw new Error(
-        `branch '${branch}' already exists and holds content LocTT did not write `
+        `Branch '${branch}' already exists and holds content this tracker did not write `
         + `(${foreign.slice(0, 5).join(", ")}${foreign.length > 5 ? ", …" : ""}). `
         + `Publishing would delete it. Choose a different branch with `
         + `'loctt config set git.branch <name>' before enabling, or delete `

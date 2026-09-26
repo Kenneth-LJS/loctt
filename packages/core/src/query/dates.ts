@@ -68,10 +68,10 @@ export function offsetError(raw: string): string | null {
   }
   const unit = raw.slice(-1);
   if (!/[0-9]/.test(raw.slice(1, -1)) || !/^[+-]\d+[a-z]$/.test(raw)) {
-    return `invalid offset "${raw}" — expected e.g. "+1w", "-3d", "+2m"`;
+    return `invalid offset "${raw}": expected e.g. "+1w", "-3d", "+2m"`;
   }
   if (unit !== "d" && unit !== "w" && unit !== "m") {
-    return `unknown offset unit "${unit}" — use d (days), w (weeks), or m (months)`;
+    return `unknown offset unit "${unit}": use d (days), w (weeks), or m (months)`;
   }
   return null;
 }

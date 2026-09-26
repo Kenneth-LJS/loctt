@@ -318,6 +318,19 @@ instead.**
   order-dependent (real); a strict-mode "resolved to 2 elements" is a
   locator defect that can never be load-dependent — the failure mode is
   the tell.
+- **"Flake" is a hypothesis, not a finding.** Of five e2e failures once
+  written off as "pre-existing flake, passes on re-run", two (NEW-10,
+  SPR-6) were real bugs that failed in isolation on an idle machine. A
+  test is not a flake until it has been run alone, repeatedly, and still
+  passes; until then it is an open defect.
+- **Playwright is only trustworthy at 2 workers.** Each worker boots its
+  own tracker server; above 2 the machine contends and the suite
+  reports failures that are not defects (measured: 56 at 5 workers, 23
+  then 5 at 3, 0 at 2). `tests/ui/playwright.config.ts` now pins
+  `workers: 2` by default, overridable via `LOCTT_E2E_WORKERS` (an
+  explicit `--workers` on the Playwright CLI still wins over both). Note
+  that Playwright exits 0 even when tests fail — read the `N failed`
+  line, not the exit code.
 - **A "hang" in a component test is often a render loop or a stray
   timer, not slowness — no `testTimeout` fixes either.** A `useEffect`
   whose dependency is a per-render new array/object loops forever; a

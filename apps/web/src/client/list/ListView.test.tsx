@@ -550,10 +550,10 @@ describe("ListView", () => {
     );
     // Mounted *with* a filter. This previously loaded a bare `/list`
     // and asserted the filtered-empty copy, which was the wrong screen
-    // for an unfiltered empty tracker — ONB-8 wants "No tasks yet" and
-    // no suggestion to clear filters the user never set. Per CLAUDE.md
-    // a fix that requires editing a green test means that test was
-    // asserting the bug.
+    // for an unfiltered empty tracker — ONB-8 wants "No tasks found."
+    // (K129) and no suggestion to clear filters the user never set. Per
+    // CLAUDE.md a fix that requires editing a green test means that
+    // test was asserting the bug.
     expect(await screen.findByText(/No tasks match these filters/)).toBeTruthy();
   });
 
@@ -589,7 +589,10 @@ describe("ListView", () => {
   it("truly-empty list shows a create button that opens the modal (first-run)", async () => {
     mountEmptyList("");
     const add = await screen.findByTestId("list-empty-add-task");
-    expect(screen.getByText(/No tasks yet/)).toBeTruthy();
+    // K129 pass: "No tasks yet. Create your first one to get started."
+    // became "No tasks found." — the create button beside it is the
+    // affordance now, per Ken's empty-state ruling.
+    expect(screen.getByText(/No tasks found/)).toBeTruthy();
     // No filter is active, so the Clear-filters affordance is absent —
     // that belongs to a filtered-empty view, not a fresh tracker.
     expect(screen.queryByText(/Clear filters/)).toBeNull();
@@ -785,7 +788,7 @@ describe("ListView pagination", () => {
  * The desktop `<table>` had a three-way split (skeleton / ErrorState /
  * empty), but the narrow `<ul>` card layout rendered results with NO
  * loading and NO error branch — a failed initial fetch fell straight
- * through to "No tasks match these filters" / "No tasks yet", which reads
+ * through to "No tasks match these filters" / "No tasks found.", which reads
  * as data loss on a phone (ERR-1). These assert the card layout now
  * matches the table's handling. Both are red-proven: on the pre-fix code
  * the empty copy rendered and neither the error nor the skeleton existed.
@@ -871,7 +874,7 @@ describe("ListView mobile card layout — loading and error", () => {
       // ...and does NOT fall through to either empty message. This is the
       // pre-fix bug: a down server read as "no tasks".
       expect(view.queryByText(/No tasks match these filters/i)).toBeNull();
-      expect(view.queryByText(/No tasks yet/i)).toBeNull();
+      expect(view.queryByText(/No tasks found/i)).toBeNull();
     });
   });
 
@@ -887,7 +890,7 @@ describe("ListView mobile card layout — loading and error", () => {
       expect((await view.findAllByTestId("task-card-skeleton")).length).toBeGreaterThan(0);
       // ...and the empty copy is NOT shown (the pre-fix bug: loading read
       // as "no tasks yet").
-      expect(view.queryByText(/No tasks yet/i)).toBeNull();
+      expect(view.queryByText(/No tasks found/i)).toBeNull();
       expect(view.queryByText(/No tasks match these filters/i)).toBeNull();
     });
   });
@@ -923,8 +926,12 @@ describe("ListView with a deleted saved view", () => {
 
     const notice = screen.getByRole("status");
     expect(notice.textContent).toContain("v_gone");
-    expect(notice.textContent).toMatch(/no longer exists/i);
-    expect(notice.textContent).toContain("queries.yaml");
+    expect(notice.textContent).toContain("no longer exists");
+    // K129 pass: "It was probably deleted from .loctt/config/queries.yaml"
+    // was trimmed as speculation the user cannot act on differently
+    // (messaging.md §1); the notice now states only what happened and
+    // what the app is doing about it.
+    expect(notice.textContent).toContain("Showing every task instead");
     // It is an explanation, not an error — P7's distinction.
     expect(screen.queryByRole("alert")).toBeNull();
   });

@@ -10,7 +10,7 @@ import { type RefObject, useLayoutEffect, useState } from "react";
  * child had two defects:
  *   1. It was clipped by any ancestor with `overflow` — the sidebar's
  *      scroll container (`overflow-y-auto`) sliced the saved-filter row
- *      kebab menu, so "Edit…", "Pin to top", "Delete…" were unreadable.
+ *      kebab menu, so "Edit", "Pin to top", "Delete" were unreadable.
  *   2. A CSS-only anchor cannot flip or clamp to the viewport, so an
  *      `align="end"` panel next to a kebab near the sidebar's right edge
  *      ran off the *left* of the viewport.

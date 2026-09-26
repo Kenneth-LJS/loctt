@@ -188,3 +188,65 @@ describe("MilestoneDetail — header edit affordance (K105 / UI-17)", () => {
     expect(screen.getByTestId("milestone-detail-back")).toBeTruthy();
   });
 });
+
+/**
+ * A208 / K111. The back-link's arrow is DRAWN (an `<Icon>` SVG), never
+ * typed as a Unicode `←`. Two things must hold together: the glyph is
+ * really an svg in the DOM, and it is decorative — `aria-hidden`, so the
+ * link's accessible name stays the label alone. A typed "←" would satisfy
+ * neither; an `<Icon>` that lost its `aria-hidden` would satisfy only the
+ * first, and a screen reader would announce a stray arrow.
+ */
+describe("MilestoneDetail — back-link arrow is a drawn Icon (A208 / K111)", () => {
+  it("draws the back arrow as an aria-hidden svg, leaving the accessible name as the label alone", async () => {
+    MILESTONES = [{ id: "ms_1", name: "Beta launch" }];
+    await renderDetail("ms_1");
+
+    const back = await screen.findByTestId("milestone-detail-back");
+    const svg = back.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    // No typed glyph survived, and the arrow contributes nothing to the
+    // name a screen reader reads out.
+    expect(back.textContent).toBe("All milestones");
+    expect(back.textContent).not.toContain("←");
+  });
+});
+
+/**
+ * K132 (2026-09-26), superseding MSL-17's "Overdue" badge on this header.
+ * Ken, asked about the badge specifically: "Remove the badge too". There
+ * was never a countdown on this page (MSL-40 only ever applied to the
+ * list row), so this only needs to prove the badge is gone.
+ */
+describe("MilestoneDetail — no Overdue badge (K132, superseding MSL-17)", () => {
+  it("shows no Overdue badge for a milestone whose target date has passed with open tasks", async () => {
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "Beta launch",
+        target_date: "2020-01-01",
+        progress: { done: 1, total: 4, discarded: 0, fraction: 0.25 },
+      },
+    ];
+    await renderDetail("ms_1");
+
+    await screen.findByTestId("milestone-detail-name");
+    expect(screen.queryByTestId("milestone-detail-overdue")).toBeNull();
+  });
+
+  it("shows no Overdue badge for a milestone dated ahead of today", async () => {
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "Beta launch",
+        target_date: "2099-01-01",
+        progress: { done: 1, total: 4, discarded: 0, fraction: 0.25 },
+      },
+    ];
+    await renderDetail("ms_1");
+
+    await screen.findByTestId("milestone-detail-name");
+    expect(screen.queryByTestId("milestone-detail-overdue")).toBeNull();
+  });
+});

@@ -187,3 +187,49 @@ test.describe("XS-55 — the current user is shared across surfaces", () => {
     expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
   });
 });
+
+test.describe("XS-3 — reloading the page is the refresh", () => {
+  /**
+   * Q4 builds no refresh button; F5 is the refresh (K122). So a reload
+   * must show the CLI's change AND land on the same view: every piece of
+   * view state (filters, sort) lives in the URL, not only in React.
+   * Red-proof: drop `dir` from the list's URL writes, or hold a filter in
+   * component state only — the post-reload URL/row assertions go red.
+   */
+  // @verifies XS-3
+  test("XS-3: F5 shows a CLI change in the same filtered, sorted view and on the task page", async ({
+    page,
+    tracker,
+  }) => {
+    const [a, b] = await tracker.seed([
+      { title: "Alpha reload", fields: { status: "in_progress" } },
+      { title: "Beta reload", fields: { status: "in_progress" } },
+    ]);
+    if (a === undefined || b === undefined) throw new Error("seed returned no keys");
+
+    const listUrl = `${tracker.baseURL}/list?status=in_progress&sort=title&dir=desc`;
+    await page.goto(listUrl);
+    const rows = page.locator("tbody tr");
+    await expect(rows).toHaveCount(2);
+    // Sorted descending by title: Beta first.
+    await expect(rows.first()).toContainText("Beta reload");
+
+    // Outside the browser: move Beta out of the filter.
+    await tracker.run(["set", b, "status", "done"]);
+
+    await page.reload();
+    // Same view: the URL survived the reload untouched.
+    expect(page.url()).toBe(listUrl);
+    // Fresh data: Beta left the in-progress filter; Alpha remains.
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("Alpha reload");
+
+    // The task page: a CLI edit shows after a reload, on the same task.
+    await page.goto(`${tracker.baseURL}/tasks/${a}`);
+    await expect(page.getByTestId("meta-edit-status")).toContainText("In progress");
+    await tracker.run(["set", a, "status", "done"]);
+    await page.reload();
+    await expect(page).toHaveURL(new RegExp(`/tasks/${a}$`));
+    await expect(page.getByTestId("meta-edit-status")).toContainText("Done");
+  });
+});

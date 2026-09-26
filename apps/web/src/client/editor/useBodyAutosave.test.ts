@@ -1,23 +1,32 @@
 // @vitest-environment jsdom
-import { act, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BODY_IDLE_MS, useBodyAutosave } from "./useBodyAutosave.ts";
+import { type BodyDraft, draftKey } from "./bodyDraft.ts";
+import { BODY_IDLE_MS, type BodyAutosaveOptions, useBodyAutosave } from "./useBodyAutosave.ts";
 
 /**
- * Autosave timing, the dirty flag, and the K2 precondition.
+ * The description's save flow: explicit Save (K124), the draft store
+ * (A338), and the K2 precondition.
  *
- * Timers are faked here and only here. That is a real limitation and
- * worth naming: a fake timer proves the hook *schedules* at 1.5s, not
- * that the wall clock elapses — so this file is paired with a UI spec
- * that types into the real editor and waits out the real interval
- * against the real file. Neither alone is enough. The unit test cannot
- * see the network, and the UI test cannot distinguish "saved once
- * after idle" from "saved on a 1.5s interval that happened to fire
- * once" without counting requests, which is what this file does.
+ * Timers are faked here and only here, and they now drive only the
+ * draft cadence — since K124 no timer ever writes to disk. The request
+ * count is what these tests assert on: "nothing was written" is only
+ * meaningful next to a paired positive showing the hook does write when
+ * the user saves.
+ *
+ * SUPERSEDED (K124, Ken 2026-09-24): this file used to assert TSK-15's
+ * idle autosave ("fires one save after the idle window"), the save on
+ * blur, the re-armed save of keystrokes typed mid-flight (TSK-38), and
+ * A246's unmount flush + `flushForNav`. Those tests were green and
+ * asserted the behaviour Ken ruled out — *"a lot of accidental
+ * click-outs are happening which saves unintentionally"* — and are
+ * rewritten below to the Save/Cancel model rather than kept.
  */
 
 interface Recorded { readonly body: string; readonly expectedToken: unknown }
+
+const TASK_ID = "01TESTTASK000000000000000A";
 
 function mockApi() {
   const writes: Recorded[] = [];
@@ -49,55 +58,67 @@ function mockApi() {
 }
 
 /**
- * Lets pending promises settle while timers are faked.
- *
- * `waitFor` polls on a real timer, which never advances here, so it
- * deadlocks against `vi.useFakeTimers`. Advancing the fake clock by
- * zero flushes the microtask queue and any timer already due, which is
- * all a settled fetch needs — and unlike a poll it cannot mask a
- * missing state transition by waiting longer.
+ * Lets pending promises settle while timers are faked. `waitFor` polls
+ * on a real timer, which never advances here, so it deadlocks against
+ * `vi.useFakeTimers`.
  */
 async function settle(): Promise<void> {
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 }
 
-function harness(body = "start") {
-  return renderHook(() =>
-    useBodyAutosave({ taskRef: "T-1", loadedBody: body, loadedToken: "tok-1" }),
+type Props = Omit<BodyAutosaveOptions, "taskRef" | "taskId">;
+
+function harness(body = "start", extra: Partial<Props> = {}) {
+  return renderHook(
+    (p: Props) => useBodyAutosave({ taskRef: "T-1", taskId: TASK_ID, ...p }),
+    { initialProps: { loadedBody: body, loadedToken: "tok-1", ...extra } },
   );
 }
+
+function storedDraft(): BodyDraft | null {
+  const raw = window.sessionStorage.getItem(draftKey(TASK_ID));
+  return raw === null ? null : JSON.parse(raw) as BodyDraft;
+}
+
+const CONFLICT_409 = {
+  code: "conflict",
+  message: "T-1 changed since you read it. Your text has NOT been saved.",
+  data_state: "not_saved",
+  detail: JSON.stringify({ theirs: "the CLI's text", bodyToken: "tok-cli" }),
+};
 
 let api: ReturnType<typeof mockApi>;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  window.sessionStorage.clear();
   api = mockApi();
 });
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  window.sessionStorage.clear();
 });
 
-describe("TSK-15 — idle autosave", () => {
+describe("K124 — only Save writes (TSK-15 amended)", () => {
   // @verifies TSK-15
-  it("fires one save after the idle window, not one per keystroke", async () => {
+  it("typing writes nothing to disk however long the user waits; Save writes once", async () => {
     const { result } = harness();
 
-    // Five keystrokes, each well inside the idle window.
     for (const text of ["s1", "s12", "s123", "s1234", "s12345"]) {
       act(() => { result.current.edit(text); });
       await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS / 3); });
     }
+    // Far past the old 1.5s idle window, several times over.
+    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS * 10); });
 
-    // Nothing yet: every keystroke re-armed the timer. This absence is
-    // paired with the positive assertion below — a build that never
-    // saves at all would also produce zero here, and would then fail
-    // the next two expectations.
     expect(api.writes).toHaveLength(0);
     expect(result.current.state.kind).toBe("unsaved");
+    expect(result.current.hasUnsavedWork).toBe(true);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
-
+    // Paired positive: the hook is alive and does write — on Save.
+    await act(async () => { await result.current.save(); });
     expect(api.writes).toHaveLength(1);
     expect(api.writes[0]?.body).toBe("s12345");
     await settle();
@@ -105,63 +126,131 @@ describe("TSK-15 — idle autosave", () => {
   });
 
   // @verifies TSK-15
-  it("saves immediately on blur rather than waiting out the timer", async () => {
+  it("reports unsaved, then saving while the write is in flight, then saved", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>(r => { release = r; });
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", async (u: string | URL, init?: RequestInit) => {
+      await gate;
+      return original(u, init);
+    });
+
     const { result } = harness();
-    act(() => { result.current.edit("typed"); });
-    // Deliberately less than the idle window: if the flush were only
-    // arming the timer rather than writing, nothing would have landed.
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS / 4); });
-    expect(api.writes).toHaveLength(0);
-
-    await act(async () => { await result.current.flush(); });
-
-    expect(api.writes).toHaveLength(1);
-    expect(api.writes[0]?.body).toBe("typed");
-    // And the pending timer was cancelled — no second write follows.
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS * 2); });
-    expect(api.writes).toHaveLength(1);
-  });
-
-  // @verifies TSK-15
-  it("reports saving while in flight and saved once it lands", async () => {
-    const { result } = harness();
-    act(() => { result.current.edit("x") });
+    act(() => { result.current.edit("x"); });
     expect(result.current.state.kind).toBe("unsaved");
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+
+    let saving: Promise<void> = Promise.resolve();
+    act(() => { saving = result.current.save(); });
+    await settle();
+    expect(result.current.state.kind).toBe("saving");
+
+    act(() => { release?.(); });
+    await act(async () => { await saving; });
     await settle();
     expect(result.current.state.kind).toBe("saved");
   });
+
+  // @verifies TSK-15
+  it("typing back to the saved text is not a change", () => {
+    const { result } = harness("start");
+    act(() => { result.current.edit("start!"); });
+    expect(result.current.hasUnsavedWork).toBe(true);
+    act(() => { result.current.edit("start"); });
+    expect(result.current.state.kind).toBe("saved");
+    expect(result.current.hasUnsavedWork).toBe(false);
+  });
 });
 
-describe("XS-14 — autosave is dirty-flag driven", () => {
-  // @verifies XS-14
-  it("does not write when nothing was typed since the last save", async () => {
-    const { result } = harness();
-    act(() => { result.current.edit("typed once"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
-    expect(api.writes).toHaveLength(1);
+describe("K124 — Cancel discards without writing", () => {
+  // @verifies TSK-71
+  it("cancel drops the text and the draft and writes nothing", async () => {
+    const { result } = harness("on disk");
+    act(() => { result.current.edit("typed and regretted"); });
+    act(() => { result.current.flushDraft(); });
+    expect(storedDraft()?.text).toBe("typed and regretted");
 
-    // An idle editor: flush repeatedly with no new keystrokes. Before
-    // the guard, each of these would re-POST the stale buffer, which
-    // is precisely how a CLI `body --set ""` got silently undone.
-    await act(async () => { await result.current.flush(); });
-    await act(async () => { await result.current.flush(); });
+    act(() => { result.current.cancel(); });
+
+    expect(result.current.state.kind).toBe("saved");
+    expect(result.current.hasUnsavedWork).toBe(false);
+    expect(storedDraft()).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS * 3); });
+    expect(api.writes).toHaveLength(0);
+    // And the idle draft timer armed by the edit did not bring it back.
+    expect(storedDraft()).toBeNull();
 
+    // A Save after cancelling has nothing to write: the buffer is the base.
+    await act(async () => { await result.current.save(); });
+    expect(api.writes).toHaveLength(0);
+  });
+
+  /**
+   * A346 (review M1): a Cancel while a Save is in flight cannot recall the
+   * write, so it is ignored. Before, it reset the buffer to the old base;
+   * when the POST landed the hook saw "newer" text (the old body) and
+   * flushed it as a draft against the new token, and the next open
+   * silently restored the old text as "Unsaved changes".
+   */
+  // @verifies TSK-71
+  it("cancel during an in-flight save leaves no draft and reverts nothing", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>(r => { release = r; });
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", async (u: string | URL, init?: RequestInit) => {
+      await gate;
+      return original(u, init);
+    });
+
+    const { result } = harness("old text");
+    act(() => { result.current.edit("new text"); });
+    let saving: Promise<void> = Promise.resolve();
+    act(() => { saving = result.current.save(); });
+    await settle();
+    expect(result.current.state.kind).toBe("saving");
+
+    act(() => { result.current.cancel(); });
+
+    act(() => { release?.(); });
+    await act(async () => { await saving; });
+    await settle();
+
+    expect(api.writes.map(w => w.body)).toEqual(["new text"]);
+    expect(storedDraft()).toBeNull();
+    expect(result.current.state.kind).toBe("saved");
+    expect(result.current.hasUnsavedWork).toBe(false);
+    // Nothing reverts: a further Save has nothing to write.
+    await act(async () => { await result.current.save(); });
+    expect(api.writes).toHaveLength(1);
+  });
+});
+
+describe("XS-14 — Save is dirty-flag driven", () => {
+  // @verifies XS-14
+  it("does not write when nothing changed since the last save", async () => {
+    const { result } = harness();
+    // Save on an untouched editor (Cmd/Ctrl+Enter with no changes).
+    await act(async () => { await result.current.save(); });
+    expect(api.writes).toHaveLength(0);
+
+    act(() => { result.current.edit("typed once"); });
+    await act(async () => { await result.current.save(); });
     expect(api.writes).toHaveLength(1);
 
-    // Paired positive: the hook is not simply refusing to write. One
-    // more keystroke and it writes again.
+    await act(async () => { await result.current.save(); });
+    await act(async () => { await result.current.save(); });
+    expect(api.writes).toHaveLength(1);
+
+    // Paired positive: one more change and it writes again.
     act(() => { result.current.edit("typed twice"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await act(async () => { await result.current.save(); });
     expect(api.writes).toHaveLength(2);
     expect(api.writes[1]?.body).toBe("typed twice");
   });
 });
 
-describe("TSK-38 — an in-flight save does not resurrect old text", () => {
+describe("TSK-38 — a save in flight does not resurrect old text", () => {
   // @verifies TSK-38
-  it("sends the later keystrokes and does not read 'saved' while they are pending", async () => {
+  it("keystrokes typed mid-save stay unsaved, are not auto-saved, and Save sends them", async () => {
     let release: (() => void) | null = null;
     const gate = new Promise<void>(r => { release = r; });
     const original = globalThis.fetch;
@@ -172,30 +261,32 @@ describe("TSK-38 — an in-flight save does not resurrect old text", () => {
 
     const { result } = harness();
     act(() => { result.current.edit("first"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    let first: Promise<void> = Promise.resolve();
+    act(() => { first = result.current.save(); });
+    await settle();
 
     // The write is in flight. Type more before it settles.
     act(() => { result.current.edit("first and second"); });
-    expect(result.current.state.kind).toBe("unsaved");
 
-    // Let *only the first response* land, with the newer keystrokes
-    // still unsaved. This is the moment TSK-38's third bullet is
-    // about: the request that just succeeded carried "first", but the
-    // buffer says "first and second", so the indicator must NOT read
-    // "saved". Asserting after both writes settle would miss it
-    // entirely — the state reaches "saved" legitimately by then.
     act(() => { release?.(); });
+    await act(async () => { await first; });
     await settle();
     expect(api.writes.at(-1)?.body).toBe("first");
-    expect(result.current.state.kind).not.toBe("saved");
+    // Not "saved" while newer keystrokes exist.
+    expect(result.current.state.kind).toBe("unsaved");
     expect(result.current.hasUnsavedWork).toBe(true);
 
-    // Now let the re-armed save for the newer text go through.
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS * 2); });
-    await settle();
+    // K124: nothing re-saves them on its own. (Pre-K124 the hook re-armed
+    // an autosave here.)
+    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS * 4); });
+    expect(api.writes).toHaveLength(1);
+    // Their draft is re-based on what just landed.
+    expect(storedDraft()).toEqual({
+      text: "first and second", baseToken: "tok-2", baseBody: "first",
+    });
 
-    // The final stored body includes the later keystrokes, and the
-    // buffer was never snapped back to "first".
+    await act(async () => { await result.current.save(); });
+    await settle();
     expect(api.writes.at(-1)?.body).toBe("first and second");
     expect(result.current.state.kind).toBe("saved");
   });
@@ -206,36 +297,55 @@ describe("K2 — the precondition rides on every write", () => {
   it("sends the token it loaded, and the fresh token after a save", async () => {
     const { result } = harness();
     act(() => { result.current.edit("one"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await act(async () => { await result.current.save(); });
     expect(api.writes[0]?.expectedToken).toBe("tok-1");
-
-    // The token from the response replaces it, so the *next* write is
-    // conditional on what this one produced rather than on the
-    // original read — without that, the second autosave of any editing
-    // session would conflict with its own first.
     await settle();
-    expect(result.current.state.kind).toBe("saved");
+
     act(() => { result.current.edit("two"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await act(async () => { await result.current.save(); });
     await settle();
     expect(api.writes).toHaveLength(2);
     expect(api.writes[1]?.expectedToken).toBe("tok-2");
   });
 
+  // @verifies XS-11
+  it("a refetch while editing keeps the base token when the body changed on disk", async () => {
+    // Under K124 an edit can stay open across a window refocus, which
+    // refetches the task. If the CLI appended in the meantime, adopting
+    // the refetched token would let Save overwrite the append silently.
+    const { result, rerender } = harness("Original.");
+    act(() => { result.current.edit("Original. My addition."); });
+
+    rerender({ loadedBody: "Original.\n\nNote from CLI", loadedToken: "tok-cli" });
+
+    await act(async () => { await result.current.save(); });
+    expect(api.writes[0]?.expectedToken).toBe("tok-1");
+  });
+
+  // @verifies XS-11
+  it("a refetch while editing adopts the new token when only frontmatter moved", async () => {
+    // A status change in the meta panel bumps `updated_at`, so the token,
+    // without touching the body. That must not turn Save into a conflict.
+    const { result, rerender } = harness("Original.");
+    act(() => { result.current.edit("Original. Mine."); });
+
+    rerender({ loadedBody: "Original.", loadedToken: "tok-status-changed" });
+
+    await act(async () => { await result.current.save(); });
+    expect(api.writes[0]?.expectedToken).toBe("tok-status-changed");
+    // And the user's text survived the refetch.
+    expect(api.writes[0]?.body).toBe("Original. Mine.");
+  });
+
   // @verifies XS-12
-  it("raises a conflict carrying both versions and writes nothing", async () => {
+  it("a refused Save raises a conflict carrying both versions and writes nothing", async () => {
     const { result } = harness();
-    api.failWith(409, {
-      code: "conflict",
-      message: "T-1 changed since you read it — your text has NOT been saved.",
-      data_state: "not_saved",
-      detail: JSON.stringify({ theirs: "the CLI's text", bodyToken: "tok-cli" }),
-    });
+    api.failWith(409, CONFLICT_409);
 
     act(() => { result.current.edit("my draft"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
-
+    await act(async () => { await result.current.save(); });
     await settle();
+
     expect(result.current.conflict).not.toBeNull();
     expect(result.current.conflict?.mine).toBe("my draft");
     expect(result.current.conflict?.theirs).toBe("the CLI's text");
@@ -246,13 +356,9 @@ describe("K2 — the precondition rides on every write", () => {
   // @verifies XS-12
   it("dismissing the conflict writes nothing and keeps the text", async () => {
     const { result } = harness();
-    api.failWith(409, {
-      code: "conflict",
-      message: "changed",
-      detail: JSON.stringify({ theirs: "theirs", bodyToken: "tok-cli" }),
-    });
+    api.failWith(409, CONFLICT_409);
     act(() => { result.current.edit("mine"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await act(async () => { await result.current.save(); });
     await settle();
     expect(result.current.conflict).not.toBeNull();
 
@@ -261,32 +367,51 @@ describe("K2 — the precondition rides on every write", () => {
 
     expect(api.writes).toHaveLength(before);
     expect(result.current.conflict).toBeNull();
-    // XS-65: the user still has a way back — the state says unsaved,
-    // not "saved", so nothing suggests the text landed.
+    // XS-65: the state still says unsaved, not "saved".
     expect(result.current.state.kind).toBe("failed");
   });
 
   // @verifies XS-12
   it("resolving writes the chosen text against the conflicting version's token", async () => {
     const { result } = harness();
-    api.failWith(409, {
-      code: "conflict",
-      message: "changed",
-      detail: JSON.stringify({ theirs: "theirs", bodyToken: "tok-cli" }),
-    });
+    api.failWith(409, CONFLICT_409);
     act(() => { result.current.edit("mine"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await act(async () => { await result.current.save(); });
     await settle();
-    expect(result.current.conflict).not.toBeNull();
 
     api.succeed();
-    await act(async () => { await result.current.resolve("theirs\n\nmine"); });
+    await act(async () => { await result.current.resolve("the CLI's text\n\nmine"); });
 
     const last = api.writes.at(-1);
-    expect(last?.body).toBe("theirs\n\nmine");
+    expect(last?.body).toBe("the CLI's text\n\nmine");
     // Still conditional — a third writer between the refusal and this
     // resolution must not be clobbered by the resolution itself.
     expect(last?.expectedToken).toBe("tok-cli");
+  });
+
+  // @verifies XS-12
+  it("'keep theirs' writes nothing — the disk already holds it — and leaves the editor clean", async () => {
+    const { result } = harness();
+    api.failWith(409, CONFLICT_409);
+    act(() => { result.current.edit("mine"); });
+    await act(async () => { await result.current.save(); });
+    await settle();
+    const before = api.writes.length;
+
+    api.succeed();
+    await act(async () => { await result.current.resolve("the CLI's text"); });
+    await settle();
+
+    // No write, so no history entry for a change nobody made (K124).
+    expect(api.writes).toHaveLength(before);
+    expect(result.current.conflict).toBeNull();
+    expect(result.current.state.kind).toBe("saved");
+    expect(storedDraft()).toBeNull();
+
+    // The editor is based on theirs now: the next Save carries its token.
+    act(() => { result.current.edit("the CLI's text, then more"); });
+    await act(async () => { await result.current.save(); });
+    expect(api.writes.at(-1)?.expectedToken).toBe("tok-cli");
   });
 });
 
@@ -302,35 +427,28 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     });
 
     act(() => { result.current.edit("precious words"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
-
+    await act(async () => { await result.current.save(); });
     await settle();
+
     expect(result.current.state.kind).toBe("failed");
-    // ERR-12: the cause is named rather than reported generically, and
-    // the message says the text was not saved.
     const failed = result.current.state;
     expect(failed.kind === "failed" && failed.message).toContain("No space left on device");
     expect(failed.kind === "failed" && failed.message).toContain("not been saved");
     expect(result.current.hasUnsavedWork).toBe(true);
+    // The draft keeps the text for this tab too (A338).
+    expect(storedDraft()?.text).toBe("precious words");
 
-    // The retry control is not decorative: once the cause clears, it
-    // writes the *same* text the user still has.
     api.succeed();
     await act(async () => { await result.current.retry(); });
     expect(api.writes.at(-1)?.body).toBe("precious words");
     await settle();
     expect(result.current.state.kind).toBe("saved");
+    expect(storedDraft()).toBeNull();
   });
 
   // @verifies ERR-12
   it("names disk-full as the cause and keeps the buffer for a retry", async () => {
     const { result } = harness();
-    // ERR-12's first bullet: the message must *identify the disk being
-    // full*, not report a generic write failure. The errno lives
-    // server-side, so the client's job is to relay the server's cause
-    // rather than substitute its own wording — a client that replaced
-    // this with "Could not save" would satisfy a weaker test while
-    // failing the case.
     api.failWith(507, {
       code: "io_failed",
       message: "There is no space left on the disk, so the change was not saved.",
@@ -340,18 +458,14 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     });
 
     act(() => { result.current.edit("a long body the user wrote"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await act(async () => { await result.current.save(); });
     await settle();
 
     const failed = result.current.state;
     expect(failed.kind).toBe("failed");
     expect(failed.kind === "failed" && failed.message).toContain("no space left on the disk");
-    // The technical detail is carried for a "Show details" affordance
-    // rather than becoming the headline (ERR-16).
     expect(failed.kind === "failed" && failed.detail).toContain("ENOSPC");
 
-    // Nothing cleared the buffer: freeing space and retrying is the
-    // actual fix, so the text has to still be there to retry *with*.
     api.succeed();
     await act(async () => { await result.current.retry(); });
     expect(api.writes.at(-1)?.body).toBe("a long body the user wrote");
@@ -360,18 +474,10 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
   // @verifies ERR-11
   it("names a permission problem at save time and keeps the buffer", async () => {
     const { result } = harness();
-    // ERR-11's client half: when an unwritable `.loctt/` is discovered
-    // *at save time*, the message must identify it as a permissions
-    // problem (not "save failed"), and the typed content stays on screen
-    // so the user can copy it out. The errno lives server-side, so — as
-    // with ERR-12's disk-full — the client relays the server's cause
-    // rather than substituting a generic phrase. This is a DISTINCT case
-    // from ERR-12: a client that only handled disk-full would still pass
-    // ERR-12 while leaving a permission-denied save unnamed.
     api.failWith(500, {
       code: "io_failed",
       message:
-        "LocTT does not have permission to write to this file "
+        "Permission denied writing to this file "
         + "(.loctt/tasks/T-1/task.md). Check the file's permissions and "
         + "the ownership of the .loctt directory.",
       data_state: "not_saved",
@@ -380,26 +486,18 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     });
 
     act(() => { result.current.edit("work the user does not want to lose"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await act(async () => { await result.current.save(); });
     await settle();
 
     const failed = result.current.state;
     expect(failed.kind).toBe("failed");
-    // Named as a permissions/ownership problem, not a generic write fail.
     expect(failed.kind === "failed" && failed.message).toMatch(/permission/i);
     expect(failed.kind === "failed" && failed.message).toContain(".loctt");
-    // Says the change was not saved.
     expect(failed.kind === "failed" && failed.message).toContain("not been saved");
-    // ERR-16: the raw errno rides in detail, never the headline.
     expect(failed.kind === "failed" && failed.detail).toContain("EACCES");
     expect(failed.kind === "failed" && failed.message).not.toContain("EACCES");
-    // The buffer is retained: there is unsaved work, and a retry (after
-    // the user fixes permissions) issues a FRESH write of the same text —
-    // nothing cleared it on failure. Asserting a new write appears (not
-    // just that the last recorded body matches) is what distinguishes a
-    // retained buffer from one clobbered back to the saved baseline: a
-    // clobbered buffer equals `savedRef`, so retry's dirty-flag guard
-    // would skip the POST entirely and no new write would be recorded.
+    // A retry issues a FRESH write of the same text: a buffer clobbered
+    // back to the base would equal it and skip the POST entirely.
     expect(result.current.hasUnsavedWork).toBe(true);
     const writesBeforeRetry = api.writes.length;
     api.succeed();
@@ -409,36 +507,75 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
   });
 
   // @verifies ERR-27
-  it("an auto-save failure is reported without the user clicking anything", async () => {
+  it("a save failure is reported and persists — it is not a toast that clears itself", async () => {
     const { result } = harness();
     api.failWith(500, { code: "io_failed", message: "Write failed.", data_state: "not_saved" });
 
     act(() => { result.current.edit("typed"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
-
+    await act(async () => { await result.current.save(); });
     await settle();
     expect(result.current.state.kind).toBe("failed");
-    // And it persists — it is not a toast that clears itself.
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(result.current.state.kind).toBe("failed");
+  });
+
+  // K129 (Ken: "Description not saved. i think just leave it concise."):
+  // a failure with no server envelope (the request itself threw) says
+  // only that, and the text stays in the editor for a retry.
+  // @verifies ERR-27
+  it("a failure with no server envelope reads exactly 'Description not saved.'", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    const { result } = harness();
+    act(() => { result.current.edit("kept"); });
+    await act(async () => { await result.current.save(); });
+    await settle();
+    expect(result.current.state).toEqual({ kind: "failed", message: "Description not saved." });
+    expect(result.current.hasUnsavedWork).toBe(true);
+  });
+
+  // A348: a save the server never answered may have landed. The copy
+  // used to join the timeout envelope ("... cannot tell whether this
+  // was saved") to "Your text has not been saved." with no period
+  // between them, asserting both outcomes at once. K134's wording
+  // replaces the whole line.
+  // @verifies ERR-27
+  it("a save that times out reads exactly the K134 unknown-outcome line", async () => {
+    vi.stubGlobal("fetch", vi.fn((_url: string | URL, init?: RequestInit) =>
+      new Promise<Response>((_res, rej) => {
+        init?.signal?.addEventListener("abort", () => {
+          rej(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      })));
+    const { result } = harness();
+    act(() => { result.current.edit("maybe landed"); });
+    const saving = act(async () => { await result.current.save(); });
+    // Past the client's 15s write deadline.
+    await act(async () => { await vi.advanceTimersByTimeAsync(16_000); });
+    await saving;
+    await settle();
+    expect(result.current.state).toEqual({
+      kind: "failed",
+      message: "Your changes may not have been saved. Please try again.",
+    });
+  });
+
+  // A348: a server sentence with no closing period no longer runs into
+  // the next one.
+  // @verifies ERR-27
+  it("puts a period between a server message and 'Your text has not been saved.'", async () => {
+    const { result } = harness();
+    api.failWith(500, { code: "io_failed", message: "Write failed", data_state: "not_saved" });
+    act(() => { result.current.edit("typed"); });
+    await act(async () => { await result.current.save(); });
+    await settle();
+    expect(result.current.state).toEqual({
+      kind: "failed",
+      message: "Write failed. Your text has not been saved.",
+    });
   });
 });
 
 describe("A59 — no write leaves while the conflict dialog is open", () => {
-  /**
-   * The measured race (known-gaps, "A resolved body conflict can
-   * re-open its own dialog"): clicking a choice radio blurs the
-   * editor, the blur-flush fires with the stale token, and its 409
-   * lands after Apply — re-opening the dialog over a conflict the
-   * user already resolved.
-   *
-   * The e2e reproduction is a timing accident (~1–2 in 10 runs);
-   * here the response ordering is scripted, so the race is
-   * deterministic in both directions. The 409 envelope mirrors what
-   * the server actually sends (see server.ts's conflict response and
-   * the K2 tests above).
-   */
-
   /** A fetch whose responses land only when the test releases them. */
   function heldFetch() {
     const writes: Recorded[] = [];
@@ -451,20 +588,15 @@ describe("A59 — no write leaves while the conflict dialog is open", () => {
         held.push({
           token: parsed.expectedToken,
           release: () => {
-            // The real server's rule: a stale token is refused, the
-            // conflicting version's token is accepted.
             if (parsed.expectedToken === "tok-cli") {
               res(new Response(JSON.stringify({ ok: true, bodyToken: "tok-3" }), {
                 status: 200, headers: { "Content-Type": "application/json" },
               }));
               return;
             }
-            res(new Response(JSON.stringify({
-              code: "conflict",
-              message: "changed",
-              data_state: "not_saved",
-              detail: JSON.stringify({ theirs: "the CLI's text", bodyToken: "tok-cli" }),
-            }), { status: 409, headers: { "Content-Type": "application/json" } }));
+            res(new Response(JSON.stringify(CONFLICT_409), {
+              status: 409, headers: { "Content-Type": "application/json" },
+            }));
           },
         });
       });
@@ -472,82 +604,60 @@ describe("A59 — no write leaves while the conflict dialog is open", () => {
     return { writes, held };
   }
 
-  /** Drives the hook into an open conflict via a refused idle flush. */
   async function openConflict(
     result: { current: ReturnType<typeof useBodyAutosave> },
     held: ReturnType<typeof heldFetch>["held"],
   ): Promise<void> {
     act(() => { result.current.edit("mine"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    act(() => { void result.current.save(); });
+    await settle();
     expect(held).toHaveLength(1);
     held.shift()?.release();
     await settle();
     expect(result.current.conflict).not.toBeNull();
   }
 
-  // @verifies XS-12 (bullet 1: "The UI does not write" while the
-  // conflict surface is up) — and closes the known-gaps race.
-  it("a stale 409 landing after Apply does not re-open the resolved dialog", async () => {
+  // @verifies XS-12
+  it("a Save pressed while the dialog is open sends nothing, and Apply is not re-opened", async () => {
     const { writes, held } = heldFetch();
     const { result } = harness();
     await openConflict(result, held);
 
-    // The user clicks a choice radio. That click blurs the editor,
-    // and BodyEditor flushes on blur — with the same stale token.
-    let blurFlush: Promise<void> = Promise.resolve();
-    act(() => { blurFlush = result.current.flush(); });
+    // A second Save (Cmd/Ctrl+S behind the dialog) while it is open.
+    let second: Promise<void> = Promise.resolve();
+    act(() => { second = result.current.save(); });
     await settle();
 
-    // Apply. `resolve` closes the dialog synchronously and chains the
-    // merged write behind anything in flight.
     let applied: Promise<void> = Promise.resolve();
     act(() => { applied = result.current.resolve("the CLI's text\n\nmine"); });
     expect(result.current.conflict).toBeNull();
 
-    // Only now do the held responses land — the doomed blur-flush's
-    // 409 (if it was sent at all) arrives AFTER Apply, which is the
-    // ordering that re-opened the dialog. Settle first each time:
-    // the resolution write's fetch is issued in a microtask, so a
-    // synchronous look at `held` would miss it and deadlock.
     for (let i = 0; i < 5; i += 1) {
       await settle();
       if (held.length > 0) held.shift()?.release();
     }
-    await act(async () => { await blurFlush; await applied; });
+    await act(async () => { await second; await applied; });
     await settle();
 
-    // The user resolved this conflict. Nothing may re-open it.
     expect(result.current.conflict).toBeNull();
     expect(result.current.state.kind).toBe("saved");
-
-    // And the doomed write never left: the refused idle flush and the
-    // resolution write are the only two. A third write here is the
-    // blur-flush going out with a token already known to be stale —
-    // guaranteed 409, pure noise, and the trigger of the race.
+    // The refused Save and the resolution are the only two writes.
     expect(writes).toHaveLength(2);
     expect(writes.at(-1)?.body).toBe("the CLI's text\n\nmine");
     expect(writes.at(-1)?.expectedToken).toBe("tok-cli");
   });
 
-  // The guard must suppress, not wedge: once the conflict is closed —
-  // by either path — the machine writes again. Without this, an
-  // overbroad guard (a conflict flag that never clears) would pass the
-  // test above by never writing anything again.
-  it("dismiss then retry still re-raises the conflict, and edits still save", async () => {
+  // The guard must suppress, not wedge.
+  it("dismiss then retry still re-raises the conflict", async () => {
     const { writes, held } = heldFetch();
     const { result } = harness();
     await openConflict(result, held);
 
-    // Blur while the dialog is open: nothing leaves.
-    let blurFlush: Promise<void> = Promise.resolve();
-    act(() => { blurFlush = result.current.flush(); });
+    act(() => { void result.current.save(); });
     await settle();
-    await act(async () => { await blurFlush; });
     expect(writes).toHaveLength(1);
-    // And nothing was lost: the state still says so (XS-65).
     expect(result.current.hasUnsavedWork).toBe(true);
 
-    // Dismiss without writing, then Retry — XS-65's re-entry path.
     act(() => { result.current.dismissConflict(); });
     let retried: Promise<void> = Promise.resolve();
     act(() => { retried = result.current.retry(); });
@@ -560,92 +670,143 @@ describe("A59 — no write leaves while the conflict dialog is open", () => {
   });
 });
 
-describe("A246 — in-app navigation keeps the text (unmount flush + flushForNav)", () => {
-  // @verifies A246
-  it("re-flushes a dirty FAILED buffer on unmount even with no pending timer", async () => {
-    // The bug: the unmount flush was gated on `timerRef.current !== null`
-    // (a pending idle timer). A `failed` write leaves NO timer — the idle
-    // save already fired and was refused — so unmounting the editor (an
-    // in-app navigation tears the route down) dropped the user's text
-    // silently. Red-proof: against the old timer-gated guard, no second
-    // write is attempted on unmount here (the assertion goes red).
-    const { result, unmount } = harness();
+describe("K124 — leaving writes nothing to disk", () => {
+  // SUPERSEDED: A246's "re-flushes a dirty FAILED buffer on unmount" and
+  // its `flushForNav` tests asserted a write on leaving. Under K124
+  // leaving never writes; the unsaved text goes to the draft store.
+  // @verifies TSK-71
+  it("unmounting with unsaved text sends no write and keeps a draft", async () => {
+    const { result, unmount } = harness("base");
+    act(() => { result.current.edit("unsaved words"); });
 
-    api.failWith(500, {
-      code: "io_failed",
-      message: "No space left on device.",
-      data_state: "not_saved",
-      detail: "ENOSPC",
-    });
+    await act(async () => { unmount(); await vi.advanceTimersByTimeAsync(BODY_IDLE_MS * 2); });
 
-    // Type, let the idle save fire and FAIL. Now: buffer dirty, state
-    // failed, and — crucially — no pending timer.
-    act(() => { result.current.edit("precious words"); });
+    expect(api.writes).toHaveLength(0);
+    expect(storedDraft()).toEqual({ text: "unsaved words", baseToken: "tok-1", baseBody: "base" });
+  });
+
+  it("unmounting a clean editor writes nothing and leaves no draft", async () => {
+    const { unmount } = harness();
+    await act(async () => { unmount(); await vi.advanceTimersByTimeAsync(0); });
+    expect(api.writes).toHaveLength(0);
+    expect(storedDraft()).toBeNull();
+  });
+
+  // @verifies TSK-48
+  it("beforeunload with unsaved text is prevented (the browser warns) and flushes the draft", () => {
+    const { result } = harness("base");
+    act(() => { result.current.edit("mid-edit"); });
+    // Before the idle window: no draft yet.
+    expect(storedDraft()).toBeNull();
+
+    const ev = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(ev);
+
+    expect(ev.defaultPrevented).toBe(true);
+    expect(storedDraft()?.text).toBe("mid-edit");
+  });
+
+  it("beforeunload on a clean editor does not warn", () => {
+    harness("base");
+    const ev = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+  });
+});
+
+describe("A338 — the unsaved draft in sessionStorage", () => {
+  // @verifies TSK-73
+  it("is written on the idle cadence, once for a burst, with the base it is against", async () => {
+    const { result } = harness("base");
+    act(() => { result.current.edit("b"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS / 2); });
+    act(() => { result.current.edit("bu"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS / 2); });
+    // Re-armed by the second keystroke: still inside the window.
+    expect(storedDraft()).toBeNull();
+
     await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
-    await settle();
-    expect(result.current.state.kind).toBe("failed");
-    expect(api.writes).toHaveLength(1);
-
-    // The disk clears; the write would now succeed. Navigating away
-    // (unmount) must ATTEMPT the flush rather than discard the text.
-    api.succeed();
-    await act(async () => { unmount(); await vi.advanceTimersByTimeAsync(0); });
-
-    // A second write was attempted on unmount, carrying the very text the
-    // user would otherwise have lost.
-    expect(api.writes.length).toBeGreaterThanOrEqual(2);
-    expect(api.writes.at(-1)?.body).toBe("precious words");
+    expect(storedDraft()).toEqual({ text: "bu", baseToken: "tok-1", baseBody: "base" });
+    // The draft is not the disk.
+    expect(api.writes).toHaveLength(0);
   });
 
-  // @verifies A246
-  it("does NOT flush again on unmount when the buffer is already saved", async () => {
-    // The guard is "dirty OR failed", not "always". A clean editor
-    // (nothing typed, or everything saved) writes nothing on unmount, so
-    // navigating away from an untouched description issues no spurious
-    // POST. Red-proof: an unconditional unmount flush would send a write
-    // here and fail this assertion.
-    const { result, unmount } = harness();
-    act(() => { result.current.edit("typed"); });
-    await act(async () => { await result.current.flush(); });
-    await settle();
-    expect(result.current.state.kind).toBe("saved");
-    const before = api.writes.length;
-
-    await act(async () => { unmount(); await vi.advanceTimersByTimeAsync(0); });
-    expect(api.writes.length).toBe(before);
+  // @verifies TSK-73
+  it("flushDraft writes it at once (blur, Escape, Cmd/Ctrl+Enter)", () => {
+    const { result } = harness("base");
+    act(() => { result.current.edit("now"); });
+    act(() => { result.current.flushDraft(); });
+    expect(storedDraft()?.text).toBe("now");
   });
 
-  // @verifies A246
-  it("flushForNav returns false on a failed write (block the nav) and true when clean", async () => {
-    // `flushForNav` is what the router guard awaits: it flushes and reports
-    // whether the editor is safe to unmount. A refused write must report
-    // `false` so the navigation is blocked and the failed UI stays up;
-    // once the write can land it reports `true` and the nav proceeds.
-    // Red-proof: a `flushForNav` that ignored the outcome and always
-    // returned true would let the nav through over a failed save, failing
-    // the first assertion.
-    const { result } = harness();
+  // @verifies TSK-73
+  it("is cleared by a Save that lands", async () => {
+    const { result } = harness("base");
+    act(() => { result.current.edit("saved text"); });
+    act(() => { result.current.flushDraft(); });
+    await act(async () => { await result.current.save(); });
+    await settle();
+    expect(storedDraft()).toBeNull();
+  });
 
-    api.failWith(500, {
-      code: "io_failed",
-      message: "No space left on device.",
-      data_state: "not_saved",
+  // @verifies TSK-73
+  it("reopening with a draft whose base matches restores it, unsaved, and Save writes it", async () => {
+    const { result } = harness("on disk", {
+      initialDraft: { text: "restored words", baseToken: "tok-1", baseBody: "on disk" },
     });
-    act(() => { result.current.edit("mine"); });
 
-    let blocked: boolean | undefined;
-    await act(async () => { blocked = await result.current.flushForNav(); });
-    // The write was refused: not safe to leave → block (false).
-    expect(blocked).toBe(false);
+    expect(result.current.state.kind).toBe("unsaved");
+    expect(result.current.conflict).toBeNull();
+    expect(result.current.hasUnsavedWork).toBe(true);
+    expect(api.writes).toHaveLength(0);
+
+    await act(async () => { await result.current.save(); });
+    expect(api.writes[0]).toEqual({ body: "restored words", expectedToken: "tok-1" });
+  });
+
+  // @verifies TSK-73
+  it("a draft whose token moved but whose base body is unchanged restores silently with the fresh token", async () => {
+    // Only frontmatter moved (a status change): the draft cannot
+    // overwrite anyone's text.
+    const { result } = harness("on disk", {
+      loadedToken: "tok-after-status-change",
+      initialDraft: { text: "restored words", baseToken: "tok-1", baseBody: "on disk" },
+    });
+    expect(result.current.conflict).toBeNull();
+    expect(result.current.state.kind).toBe("unsaved");
+
+    await act(async () => { await result.current.save(); });
+    expect(api.writes[0]?.expectedToken).toBe("tok-after-status-change");
+  });
+
+  // @verifies TSK-73
+  it("a draft whose base body changed on disk opens the conflict (mine = draft, theirs = disk) and writes nothing", async () => {
+    const { result } = harness("changed on disk by the CLI", {
+      loadedToken: "tok-cli",
+      initialDraft: { text: "my draft", baseToken: "tok-1", baseBody: "the old body" },
+    });
+
+    expect(result.current.conflict).toEqual({
+      mine: "my draft", theirs: "changed on disk by the CLI", theirToken: "tok-cli",
+    });
     expect(result.current.state.kind).toBe("failed");
+    expect(api.writes).toHaveLength(0);
 
-    // The cause clears; flushing for nav now lands and reports safe.
-    api.succeed();
-    let safe: boolean | undefined;
-    await act(async () => { safe = await result.current.flushForNav(); });
-    expect(safe).toBe(true);
-    expect(api.writes.at(-1)?.body).toBe("mine");
-    await settle();
+    // A Save behind the dialog is suppressed (A59) — never a silent overwrite.
+    await act(async () => { await result.current.save(); });
+    expect(api.writes).toHaveLength(0);
+
+    // "Keep mine" writes the draft against the disk version's token.
+    await act(async () => { await result.current.resolve("my draft"); });
+    expect(api.writes[0]).toEqual({ body: "my draft", expectedToken: "tok-cli" });
+  });
+
+  // @verifies TSK-73
+  it("a draft identical to what is on disk restores nothing", () => {
+    const { result } = harness("same", {
+      initialDraft: { text: "same", baseToken: "tok-0", baseBody: "older" },
+    });
     expect(result.current.state.kind).toBe("saved");
+    expect(result.current.conflict).toBeNull();
   });
 });

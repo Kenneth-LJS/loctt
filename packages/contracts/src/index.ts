@@ -84,6 +84,7 @@ export {
   ComparisonOpSchema,
   DEFAULT_ARCHIVED_SCOPE,
   FilterSchema,
+  isViewNameTaken,
   QueriesConfigSchema,
   QuerySortSchema,
   QueryValueSchema,
@@ -92,6 +93,8 @@ export {
   SavedViewModeSchema,
   SimpleFilterSchema,
   SortDirectionSchema,
+  VIEW_NAME_TAKEN_MESSAGE,
+  viewNameKey,
 } from "./query.js";
 export type {
   AutoMergedField,
@@ -179,6 +182,18 @@ export {
   PutWorkflowRequestSchema,
   ValidateQueryRequestSchema,
 } from "./service-schemas.js";
+export type {
+  KeyboardShortcuts,
+  ShortcutBinding,
+  ShortcutCommand,
+  ShortcutId,
+  ShortcutSpec,
+} from "./shortcuts.js";
+export {
+  GLOBAL_SHORTCUTS,
+  KeyboardShortcutsSchema,
+  SHORTCUT_IDS,
+} from "./shortcuts.js";
 export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";
 export {
   SprintDefSchema,

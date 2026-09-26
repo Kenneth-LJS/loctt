@@ -15,6 +15,7 @@ import {
   useSprints,
   useUsers,
 } from "../api/hooks/sidebarData.ts";
+import { activityQueryKey } from "../api/hooks/useActivity.ts";
 import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
@@ -34,9 +35,9 @@ import { buildLookups } from "../list/lookups.ts";
 import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
 import { takeTaskOrigin } from "../router/taskOrigin.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
-import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
@@ -138,7 +139,6 @@ export function TaskDetail({
   const taskGraph = useTaskGraph();
 
   const [confirming, setConfirming] = useState<"delete" | "move" | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
   /**
    * The archive/move failure is held here rather than read off the
    * mutation, so dismissing it is possible and so a *stale* failure
@@ -170,13 +170,6 @@ export function TaskDetail({
   const move = useMoveTask(taskRef);
   const duplicate = useDuplicateTask(taskRef);
 
-  // The confirmation toast is transient; a permanent "Copied" would
-  // stop meaning anything after the first copy (TSK-19).
-  useEffect(() => {
-    if (copied === null) return undefined;
-    const t = setTimeout(() => { setCopied(null); }, 2500);
-    return () => { clearTimeout(t); };
-  }, [copied]);
 
   /**
    * GIT-19 — follow a rekey that happened in another tab.
@@ -316,19 +309,6 @@ export function TaskDetail({
         : undefined;
   const navigatedByRetired = retiredKey !== undefined;
 
-  const copy = async (text: string, label: string): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(label);
-    } catch {
-      // A clipboard the browser refused is not a silent no-op: the
-      // user would otherwise paste whatever was there before.
-      setCopied(null);
-      setWriteError(
-        "The browser would not give LocTT access to the clipboard.",
-      );
-    }
-  };
 
   /**
    * One field, one request. XS-54 rests on this: two tabs editing
@@ -463,12 +443,17 @@ export function TaskDetail({
     );
   };
 
+  // One page scroll (Ken, 2026-09-24): the header and the task body
+  // scroll together in the shell's <main>. This used to be a fixed-height
+  // column with its own inner scroller under the header, so the body
+  // scrolled in a box and the page's scroll restoration never applied.
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex flex-col">
       {/* UI-12: back to wherever this task was opened FROM — absent
           entirely on a cold load (Ken: "if cold load then no back
           button"), never a disabled control or a fallback destination.
-          Same visual treatment as MilestoneDetail's "← All milestones",
+          Same visual treatment as MilestoneDetail's "All milestones"
+          back-link (the same decorative `arrowLeft` Icon beside the label),
           but the destination and label are the actual origin route
           (including its filters/sort/page) rather than a hardcoded one.
           This is independent of the "All tasks" breadcrumb inside the
@@ -484,9 +469,10 @@ export function TaskDetail({
           to={origin.pathname}
           search={router.options.parseSearch(origin.search) as Record<string, unknown>}
           data-testid="task-detail-back"
-          className="self-start px-6 pt-4 text-[0.8571rem] text-text-tertiary no-underline hover:underline"
+          className="inline-flex items-center gap-1 self-start px-6 pt-4 text-[0.8571rem] text-text-tertiary no-underline hover:underline"
         >
-          ← {origin.label}
+          <Icon name="arrowLeft" size={12} />
+          {origin.label}
         </Link>
       )}
       <header className="border-b border-border-subtle px-6 py-4">
@@ -585,54 +571,27 @@ export function TaskDetail({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {copied !== null && (
-              <span role="status" className="text-[0.8571rem] text-text-tertiary">
-                {copied} copied
-              </span>
-            )}
             <Menu
               aria-label={`Actions for ${fm.key}`}
               align="end"
+              // Ken, 2026-09-24: a ⋯ icon like every other action menu,
+              // not a "More" text button.
               trigger={t => (
-                <Button
+                <IconButton
                   variant="secondary"
+                  aria-label="Task actions"
+                  testId="task-actions"
                   onClick={t.toggle}
                   aria-haspopup={t["aria-haspopup"]}
                   aria-expanded={t["aria-expanded"]}
                   id={t.id}
                 >
-                  More
-                </Button>
+                  <Icon name="more" size={16} />
+                </IconButton>
               )}
             >
               {({ close }) => (
                 <>
-                  <MenuItem
-                    onSelect={() => {
-                      // The bare key — no URL, no prefix noise, no
-                      // surrounding whitespace (TSK-19).
-                      void copy(fm.key, "Key");
-                      close();
-                    }}
-                  >
-                    <Icon name="copy" size={14} />
-                    Copy key
-                  </MenuItem>
-                  <MenuItem
-                    onSelect={() => {
-                      // Absolute, and built from the *current* key so
-                      // the pasted link does not re-enter through a
-                      // retired one.
-                      void copy(
-                        `${window.location.origin}/tasks/${encodeURIComponent(fm.key)}`,
-                        "Link",
-                      );
-                      close();
-                    }}
-                  >
-                    <Icon name="link" size={14} />
-                    Copy link
-                  </MenuItem>
                   <MenuItem
                     onSelect={() => {
                       onDuplicate();
@@ -650,7 +609,7 @@ export function TaskDetail({
                     }}
                   >
                     <Icon name="chevronRight" size={14} />
-                    Move to project…
+                    Move to project
                   </MenuItem>
                   <MenuItem
                     onSelect={() => {
@@ -673,7 +632,7 @@ export function TaskDetail({
                     }}
                   >
                     <Icon name="trash" size={14} />
-                    Delete…
+                    Delete
                   </MenuItem>
                 </>
               )}
@@ -699,7 +658,7 @@ export function TaskDetail({
           right. `min-w-0` on the left column for the same reason as
           the header — without it a long unbroken word in the body or
           the title pushes the grid wider than the pane (TSK-24). */}
-      <div className="flex-1 overflow-auto">
+      <div>
         <div className="grid grid-cols-1 gap-6 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
           {/* On a single column (mobile) the meta panel is ordered FIRST so
               Status / Priority / Assignee / Due sit directly under the
@@ -718,6 +677,7 @@ export function TaskDetail({
                   re-render by design. */}
               <BodyEditor
                 key={task.data.frontmatter.id}
+                taskId={task.data.frontmatter.id}
                 taskRef={taskRef}
                 body={task.data.body}
                 bodyToken={task.data.bodyToken}
@@ -732,6 +692,8 @@ export function TaskDetail({
                   void queryClient.invalidateQueries({ queryKey: ["task", taskRef] });
                   void queryClient.invalidateQueries({ queryKey: ["tasks"] });
                   void queryClient.invalidateQueries({ queryKey: ["tasks-feed"] });
+                  // The save adds a `body_edited` history entry.
+                  void queryClient.invalidateQueries({ queryKey: activityQueryKey(taskRef) });
                 }}
                 mentionCandidates={(users.data?.items ?? []).map(u => ({
                   id: u.id,

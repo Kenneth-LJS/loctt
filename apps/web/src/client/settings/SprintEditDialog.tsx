@@ -196,13 +196,12 @@ export function SprintEditDialog(props: SprintDialogProps) {
 
         {!windowOk && (
           <p role="alert" data-testid={tid("window-invalid")} className="text-[0.8571rem] text-danger-fg">
-            End date must not be before the start date.
+            End date is before the start date.
           </p>
         )}
 
         <Field
           label="Goal"
-          hint="Optional — what this sprint is for"
         >
           <TextArea
             aria-label={isEdit ? "Sprint goal" : "New sprint goal"}

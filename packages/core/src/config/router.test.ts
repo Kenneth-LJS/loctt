@@ -47,9 +47,9 @@ describe("config router", () => {
 
   it("rejects unknown keys with a helpful message", async () => {
     await enableGit(locttDir, root);
-    await expect(getConfigValue(locttDir, "bogus.key")).rejects.toThrow(/unknown config key/);
-    await expect(setConfigValue({ locttDir, root }, "bogus.key", "x")).rejects.toThrow(/unknown config key/);
-    await expect(unsetConfigValue({ locttDir, root }, "bogus.key")).rejects.toThrow(/unknown config key/);
+    await expect(getConfigValue(locttDir, "bogus.key")).rejects.toThrow(/unknown config key/i);
+    await expect(setConfigValue({ locttDir, root }, "bogus.key", "x")).rejects.toThrow(/unknown config key/i);
+    await expect(unsetConfigValue({ locttDir, root }, "bogus.key")).rejects.toThrow(/unknown config key/i);
   });
 
   it("get returns defaults when sync.yaml is absent (never throws)", async () => {
@@ -62,10 +62,10 @@ describe("config router", () => {
 
   it("set/unset error cleanly when git mode is not enabled", async () => {
     await expect(setConfigValue({ locttDir, root }, "git.remote", "upstream")).rejects.toThrow(
-      /git mode is not enabled/,
+      /git mode is not enabled/i,
     );
     await expect(unsetConfigValue({ locttDir, root }, "git.remote")).rejects.toThrow(
-      /git mode is not enabled/,
+      /git mode is not enabled/i,
     );
   });
 
@@ -102,7 +102,7 @@ describe("config router", () => {
       const nonGitLocttDir = resolveLocttDir(nonGitRoot);
       await expect(
         setConfigValue({ locttDir: nonGitLocttDir, root: nonGitRoot }, "git.enabled", "true"),
-      ).rejects.toThrow(/not inside a Git repository/);
+      ).rejects.toThrow(/not inside a Git repository/i);
     } finally {
       await rm(nonGitRoot, { recursive: true, force: true }).catch(() => {});
     }

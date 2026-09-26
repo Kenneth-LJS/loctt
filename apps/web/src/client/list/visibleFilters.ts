@@ -119,6 +119,14 @@ export function buildFilterCatalog(
  * hidden facets (a scoped route — the sprint detail — withholds `sprint`
  * regardless of what a stored set names). Ordering follows the catalog so
  * the toolbar is stable no matter what order ids were stored in.
+ *
+ * B2 (K121): a custom field is only judged "removed" once the workflow
+ * has actually loaded. While it is loading or has failed, the catalog
+ * has no custom entries at all, so dropping every `field.*` id would make
+ * the user's custom filters vanish with no explanation. With
+ * `customFieldsKnown` false, stored `field.*` ids are kept (after the
+ * catalog entries, in stored order) and the toolbar renders them as
+ * unavailable, the way a built-in facet degrades when its source fails.
  */
 export function resolveVisibleFilters(input: {
   /** The active view's stored set, when the URL names a view that has one. */
@@ -129,6 +137,12 @@ export function resolveVisibleFilters(input: {
   readonly catalog: readonly FilterCatalogEntry[];
   /** Facets a scoped route withholds (never shown even if a set names them). */
   readonly hidden?: readonly FilterId[];
+  /**
+   * True once the workflow (the custom-field source) has loaded. Until
+   * then a `field.*` id missing from the catalog is unknown, not removed.
+   * Defaults to true, the pre-B2 behaviour.
+   */
+  readonly customFieldsKnown?: boolean;
 }): readonly FilterId[] {
   const chosen: readonly FilterId[] =
     input.viewSet ?? input.userSet ?? BUILTIN_DEFAULT_VISIBLE;
@@ -137,9 +151,15 @@ export function resolveVisibleFilters(input: {
   // Walk the catalog so the order is canonical and stale ids are dropped;
   // an id in `wanted` but absent from the catalog (a removed custom field)
   // simply never matches.
-  return input.catalog
+  const fromCatalog = input.catalog
     .filter(e => wanted.has(e.id) && !hidden.has(e.id))
     .map(e => e.id);
+  if (input.customFieldsKnown !== false) return fromCatalog;
+  const inCatalog = new Set(input.catalog.map(e => e.id));
+  const unknownCustom = chosen.filter(
+    id => id.startsWith("field.") && !inCatalog.has(id) && !hidden.has(id),
+  );
+  return [...fromCatalog, ...unknownCustom];
 }
 
 /**

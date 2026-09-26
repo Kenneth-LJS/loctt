@@ -76,7 +76,7 @@ describe("GET /api/config/:key (SET-43)", () => {
     expect(body.field).toBe("nonsense");
     // CFG-C3 (blocker): the error lists the valid keys — the same list
     // core gives every surface — so a typo is diagnosable.
-    expect(body.message).toContain("valid keys");
+    expect(body.message).toMatch(/valid keys/i);
     expect(body.message).toContain("git.branch");
   });
 });

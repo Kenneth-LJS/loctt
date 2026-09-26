@@ -152,7 +152,7 @@ test.describe("PRU-4 — the create form defaults to the active project", () => 
 
 test.describe("PRU-21 — a 30-project switcher stays usable", () => {
   // @verifies PRU-21
-  test("PRU-21: the switcher is searchable, All projects is pinned, the rest truncate", async ({
+  test("PRU-21: the switcher is searchable, List stays reachable, the rest truncate", async ({
     page,
     tracker,
   }) => {
@@ -170,9 +170,10 @@ test.describe("PRU-21 — a 30-project switcher stays usable", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // The list truncates rather than rendering all 30: a "+N more"
-    // toggle is present, and All projects is reachable at the top.
-    const all = page.getByTestId("project-all");
-    await expect(all).toBeVisible();
+    // toggle is present, and the sidebar's List link (K125 removed the
+    // "All projects" row) stays reachable at the top regardless.
+    const listLink = page.locator("aside").getByRole("link", { name: "List", exact: true });
+    await expect(listLink).toBeVisible();
     const more = page.getByTestId("project-more");
     await expect(more).toBeVisible();
     // The truncation hid rows — not every project is on screen.
@@ -321,7 +322,7 @@ test.describe("PRU-41 — assigning an archived user through a stale picker", ()
 
 test.describe("PRU-24 — the current user is archived mid-session", () => {
   // @verifies PRU-24
-  test("PRU-24: the header marks the archived actor and prompts a switch", async ({
+  test("PRU-24: the header marks the archived actor; no switch prompt (K130)", async ({
     page,
     tracker,
   }) => {
@@ -360,11 +361,17 @@ test.describe("PRU-24 — the current user is archived mid-session", () => {
     // The current-user block now carries an "(archived)" marker…
     await expect(page.getByTestId("user-menu-current-archived")).toBeVisible();
     await expect(page.getByTestId("user-menu-current-archived")).toContainText("archived");
-    // …and a prompt to switch to an active user.
-    await expect(page.getByTestId("user-menu-archived-prompt")).toBeVisible();
-    await expect(page.getByTestId("user-menu-archived-prompt")).toContainText(/switch/i);
+    // …and the avatar's title says so. K130 (A-100) removed the menu's
+    // switch prompt: Ken, "no need then? users should know their
+    // settings change if they switch user." It must stay gone.
+    await expect(page.getByTestId("user-menu-archived-prompt")).toHaveCount(0);
+    await expect(page.getByTestId("user-menu-trigger")).toHaveAttribute(
+      "title",
+      "Carol is archived. Switch to an active user.",
+    );
 
-    // Switching to the active user clears the state without a reload.
+    // Switching to the active user from the menu's Switch user list
+    // clears the state without a reload.
     await page.getByText("Active Alice").click();
     await page.getByTestId("user-menu-trigger").click();
     await expect(page.getByTestId("user-menu-current")).toContainText("Active Alice");

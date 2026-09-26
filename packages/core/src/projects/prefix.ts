@@ -31,7 +31,7 @@ export function assertValidPrefix(prefix: string): void {
   if (!PREFIX_RE.test(prefix)) {
     throw new ProjectError(
       `invalid key prefix "${prefix}": use 1–10 uppercase letters (A–Z) `
-      + `with no dash — the "-" separator is added automatically, so "WEB" `
+      + `with no dash. The "-" separator is added automatically, so "WEB" `
       + `produces keys like "WEB-1".`,
     );
   }
@@ -73,7 +73,7 @@ export async function readPrefixRenameState(
     return PrefixRenameStateSchema.parse(parseYaml(content));
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new ProjectError(formatZodIssues("prefix rename state", err));
+      throw new ProjectError(`prefix-rename.yaml is not valid: ${formatZodIssues("prefix rename state", err)}`);
     }
     throw err;
   }
@@ -162,7 +162,7 @@ export async function setProjectPrefix(
     if (clash) {
       throw new ProjectError(
         `prefix '${newPrefix}' is already used by project "${clash.name}" ` +
-        `(${clash.id}) — prefixes must be unique`,
+        `(${clash.id}). Prefixes must be unique`,
       );
     }
 

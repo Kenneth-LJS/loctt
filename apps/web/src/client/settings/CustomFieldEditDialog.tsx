@@ -7,6 +7,7 @@ import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { IconColorFields } from "../ui/IconColorFields.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
@@ -222,9 +223,6 @@ export function CustomFieldEditDialog({
                 onChange={e => { setKeyTouched(true); setKey(e.target.value); }}
                 aria-label="Field key"
               />
-              <span className="mt-1 block text-[0.8571rem] text-text-tertiary">
-                A key is permanent — task files store values under it.
-              </span>
               {problems.key !== undefined && (
                 <span data-testid="custom-field-dialog-key-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.key}
@@ -265,21 +263,24 @@ export function CustomFieldEditDialog({
             aria-describedby={mode === "edit" ? "custom-field-dialog-type-lock" : undefined}
             onChange={e => { setMulti(e.target.checked); }}
           />
-          Multi — a task can hold more than one value.
+          Allow multiple values
         </label>
 
+        {/* A298 pattern: this used to be an always-visible paragraph
+            (Ken's removal ruling); the reason for the disabled Type/Multi
+            controls must still reach assistive tech, so it stays as a
+            permanent sr-only node the controls' aria-describedby points
+            at, rather than a dangling id. SET-16 requires the disabled
+            control to state why — see workflowPanels.test.tsx and
+            flow-settings-workflow.spec.ts "custom-field-dialog-type-lock". */}
         {mode === "edit" && (
-          <p
+          <span
             id="custom-field-dialog-type-lock"
             data-testid="custom-field-dialog-type-lock"
-            className="text-[0.7857rem] text-text-tertiary"
+            className="sr-only"
           >
-            Type and multi are fixed after creation: existing task values
-            were stored under this type. To change it, create a new field
-            and migrate the values across — there is no in-place
-            conversion, and the server rejects one even if this control is
-            re-enabled.
-          </p>
+            Type and multiple values can&rsquo;t be changed after creation.
+          </span>
         )}
 
         <label className="flex items-center gap-2 text-text-secondary">
@@ -288,7 +289,7 @@ export function CustomFieldEditDialog({
             checked={searchable}
             onChange={e => { setSearchable(e.target.checked); }}
           />
-          Searchable — this field is matched by full-text search.
+          Include in search
         </label>
 
         {/* K91/TSK-12: scope the field to specific task types. Empty =
@@ -325,12 +326,6 @@ export function CustomFieldEditDialog({
               </ComboboxButton>
             )}
           />
-          <span
-            data-testid="custom-field-dialog-scope-hint"
-            className="mt-1 block text-[0.8571rem] text-text-tertiary"
-          >
-            Leave empty to show this field for every task type.
-          </span>
         </div>
 
         {type === "enum" && (
@@ -395,7 +390,7 @@ export function CustomFieldEditDialog({
                     className="text-danger-fg"
                     aria-label={`Remove value ${i + 1}`}
                   >
-                    ✕
+                    <Icon name="close" />
                   </IconButton>
                 </div>
               ))}

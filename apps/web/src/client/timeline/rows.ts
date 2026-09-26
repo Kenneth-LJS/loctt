@@ -174,9 +174,9 @@ export function dateProblemNote(problem: DateProblem): string {
       // corrupt so the row is not read as a plain missing date.
       return `${problem.field} is corrupt: ${problem.rawText}`;
     case "open_start":
-      return `No due date — starts ${problem.start}`;
+      return `No due date, starts ${problem.start}`;
     case "open_due":
-      return `No start date — due ${problem.due}`;
+      return `No start date, due ${problem.due}`;
     case "undated":
       return "No start or due date";
   }

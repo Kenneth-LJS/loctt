@@ -51,7 +51,7 @@ export function IntegrityBadge() {
       // screen reader the full sentence rather than a bare number + glyph.
       role="status"
       aria-live="polite"
-      aria-label={`${label} — open Diagnostics`}
+      aria-label={`${label}, open Diagnostics`}
       data-testid="integrity-badge"
       data-integrity-total={total}
       className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-warn-fg/40 bg-warn-bg px-2.5 text-[0.8571rem] font-medium text-warn-fg no-underline hover:bg-warn-fg/10"

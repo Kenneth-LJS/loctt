@@ -239,19 +239,12 @@ export function LinkPicker({
                        it matched this task — and saying "no task
                        matches" would send the user hunting for a typo
                        in a key that is right in front of them. */
-                    <>
-                      “{trimmed}” is this task ({selfKey}). A task cannot link
-                      to itself; search for a different one.
-                    </>
+                    <>{selfKey} is this task. A task can&rsquo;t link to itself.</>
                   )
                 : (
-                    /* REL-43's first two bullets. The typed text is named
-                       back, and `key_history` is mentioned so a typo reads
-                       differently from a key that was retired. */
-                    <>
-                      No task matches “{trimmed}”. Former keys resolve too, so
-                      a retired key would have been found — check the spelling.
-                    </>
+                    /* REL-43 (amended, K123): just the outcome. The typed
+                       text stays in the field for the user to correct. */
+                    <>No matches found.</>
                   )}
             </li>
           )}

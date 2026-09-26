@@ -253,7 +253,7 @@ export function RichEditor({
     // branch is dead there; `CreateTaskModal` is the one caller that
     // omits it, which is why this instance outlived the first fix.
     const related = e.relatedTarget as Element | null;
-    if (related?.closest("[data-dropdown-panel]") != null) return;
+    if (related?.closest("[data-portal-panel]") != null) return;
     setFocused(false);
   };
 

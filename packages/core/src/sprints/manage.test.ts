@@ -60,15 +60,16 @@ describe("createSprint validation", () => {
     ).rejects.toThrow(SprintError);
   });
 
-  it("rejects end_date before start_date", async () => {
-    await expect(
-      createSprint(locttDir, {
-        name: "Sprint",
-        start_date: "2026-01-14",
-        end_date: "2026-01-01",
-        state: "future",
-      }),
-    ).rejects.toThrow(SprintError);
+  // @verifies SPR-20
+  it("rejects end_date before start_date with the plain K130 message", async () => {
+    const attempt = createSprint(locttDir, {
+      name: "Sprint",
+      start_date: "2026-01-14",
+      end_date: "2026-01-01",
+      state: "future",
+    });
+    await expect(attempt).rejects.toThrow(SprintError);
+    await expect(attempt).rejects.toThrow(/^End date is before the start date\.$/);
   });
 
   it("rejects an unknown state", async () => {
@@ -89,28 +90,30 @@ describe("createSprint validation", () => {
   });
 });
 
+/**
+ * K130 / P11: sprint state moves freely. Ken: "users can specify, and
+ * the can make active or inactive or close or whatever, i dont care."
+ * The tests that blocked completed -> active without force, and allowed
+ * it only with `force: true`, asserted superseded behaviour and were
+ * rewritten to this.
+ */
 describe("editSprint state transitions", () => {
-  it("allows future -> active without force", async () => {
+  it("allows future -> active", async () => {
     const s = await createSampleSprint();
     await editSprint(locttDir, s.id, { state: "active" });
     const cfg = await loadSprintsConfig(locttDir);
     expect(cfg.sprints[0]?.state).toBe("active");
   });
 
-  it("blocks completed -> active without force", async () => {
+  // @verifies SPR-20
+  it("allows completed -> active and completed -> future, with no force flag", async () => {
     const s = await createSampleSprint();
     await editSprint(locttDir, s.id, { state: "completed" });
-    await expect(
-      editSprint(locttDir, s.id, { state: "active" }),
-    ).rejects.toThrow(/not allowed/);
-  });
-
-  it("allows completed -> active with force: true", async () => {
-    const s = await createSampleSprint();
+    await editSprint(locttDir, s.id, { state: "active" });
+    expect((await loadSprintsConfig(locttDir)).sprints[0]?.state).toBe("active");
     await editSprint(locttDir, s.id, { state: "completed" });
-    await editSprint(locttDir, s.id, { state: "active", force: true });
-    const cfg = await loadSprintsConfig(locttDir);
-    expect(cfg.sprints[0]?.state).toBe("active");
+    await editSprint(locttDir, s.id, { state: "future" });
+    expect((await loadSprintsConfig(locttDir)).sprints[0]?.state).toBe("future");
   });
 
   it("treats no-op state changes as fine even when completed", async () => {
@@ -123,9 +126,9 @@ describe("editSprint state transitions", () => {
 
   it("rejects an edit that would put end_date before start_date", async () => {
     const s = await createSampleSprint();
-    await expect(
-      editSprint(locttDir, s.id, { end_date: "2025-12-31" }),
-    ).rejects.toThrow(SprintError);
+    const attempt = editSprint(locttDir, s.id, { end_date: "2025-12-31" });
+    await expect(attempt).rejects.toThrow(SprintError);
+    await expect(attempt).rejects.toThrow(/^End date is before the start date\.$/);
   });
 });
 

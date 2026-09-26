@@ -415,7 +415,7 @@ export const TOOLS: readonly ToolDef[] = [
       // complete answer (P-4).
       const notes: string[] = [];
       if (warnings.length > 0) {
-        notes.push(`Warning: saved view "${view ?? ""}" — ${warnings.join("; ")}`);
+        notes.push(`Warning: saved view "${view ?? ""}": ${warnings.join("; ")}`);
       }
       if (unreadable.length > 0) {
         notes.push(

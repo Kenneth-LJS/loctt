@@ -155,7 +155,7 @@ export function BodyConflictDialog({
             testId="conflict-dismiss"
             onClick={onDismiss}
           >
-            Cancel — save nothing
+            Cancel
           </Button>
           <Button
             variant="primary"

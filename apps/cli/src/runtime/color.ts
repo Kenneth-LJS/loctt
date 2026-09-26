@@ -92,7 +92,7 @@ export function parseEntityColorArg(raw: string, flag = "--color"): EntityColor 
   const parsed = EntityColorSchema.safeParse(candidate);
   if (!parsed.success) {
     throw new UsageError(
-      `${flag} is not a valid colour (got "${raw}") — expected ${COLOR_ARG_SYNTAX}`,
+      `${flag} is not a valid colour (got "${raw}"). Expected ${COLOR_ARG_SYNTAX}`,
     );
   }
   return parsed.data;
@@ -124,8 +124,8 @@ function toColorCandidate(raw: string, flag: string): unknown {
     }
     if (pair["light"] === undefined || pair["dark"] === undefined) {
       throw new UsageError(
-        `${flag} per-mode value needs BOTH light: and dark: (got "${raw}") — `
-        + `pass a bare hex for one colour in both modes`,
+        `${flag} per-mode value needs BOTH light: and dark: (got "${raw}"). `
+        + `Pass a bare hex for one colour in both modes`,
       );
     }
     return { light: pair["light"], dark: pair["dark"] };

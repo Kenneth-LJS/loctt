@@ -36,7 +36,9 @@ import {
   saveState,
   setField,
   unsetField,
+  ViewError,
   withStateLock,
+  withTrailingNewline,
   writeTaskBody,
 } from "@loctt/core";
 
@@ -219,6 +221,25 @@ export async function list(args: string[], root: string): Promise<void> {
 
   const view = getArg(args, "--view");
 
+  // A313 (parity with MCP's list_tasks, apps/mcp/src/tools/task-crud.ts):
+  // `parseQueriesConfig` classifies a view whose DSL does not parse as
+  // BROKEN, so it is absent from `queriesConfig.queries` and core's
+  // `resolveView`/`listTasks` report "unknown view" — wrong and
+  // misleading here, since the view exists (it is in `queries.yaml` and
+  // in `queriesConfig.broken` with its parse message). A user told
+  // "unknown view" goes hunting for the right id instead of repairing
+  // the DSL. Checked before `listTasks` sees it, the same way the web's
+  // `handleListTasks` (server.ts) excludes a broken view before handing
+  // anything to core.
+  if (view !== undefined) {
+    const broken = queriesConfig?.broken?.find(
+      b => b.id === view || b.name === view,
+    );
+    if (broken !== undefined) {
+      throw new ViewError(`saved view "${broken.name}" cannot run: ${broken.error}`);
+    }
+  }
+
   // Core supported sort and offset from the start; only the web exposed
   // them, so an agent wanting "the highest-priority open task" had to
   // fetch everything and order it itself (QRY-C4).
@@ -291,7 +312,7 @@ export async function list(args: string[], root: string): Promise<void> {
     // results are narrower than the view's author intended — so say
     // so. stderr keeps the task list on stdout pipeable.
     onWarning: err => {
-      console.error(`Warning: saved view "${view ?? ""}" — ${err.message}`);
+      console.error(`Warning: saved view "${view ?? ""}": ${err.message}`);
     },
   });
 
@@ -517,7 +538,7 @@ export async function show(args: string[], root: string): Promise<void> {
   // directory that may be full — the conflation the core fix removed,
   // reintroduced one layer up.
   if (model.attachmentsError !== undefined) {
-    console.log(`Attachments: could not be read — ${model.attachmentsError}`);
+    console.log(`Attachments: could not be read: ${model.attachmentsError}`);
   } else if (model.attachments.length > 0) {
     console.log(`Attachments:`);
     for (const a of model.attachments) {
@@ -544,7 +565,7 @@ export async function show(args: string[], root: string): Promise<void> {
     if (needsAttention.length > 0) {
       console.log(`\nNeeds attention:`);
       for (const h of needsAttention) {
-        console.log(`  ⚠ ${h.field}: ${truncateUlids(h.rawText)} — ${truncateUlids(h.error)}`);
+        console.log(`  ⚠ ${h.field}: ${truncateUlids(h.rawText)}, ${truncateUlids(h.error)}`);
       }
     }
     if (unrecognised.length > 0) {
@@ -881,7 +902,7 @@ export async function body(args: string[], root: string): Promise<void> {
     }
     const opts = expected === undefined ? {} : { expectedToken: expected };
     if (newBody !== undefined) {
-      await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n", opts);
+      await writeTaskBody(locttDir, task.frontmatter.id, withTrailingNewline(newBody), opts);
       console.log(`Updated body for ${task.frontmatter.key}`);
     } else {
       await appendTaskBody(locttDir, task.frontmatter.id, appendText as string, opts);

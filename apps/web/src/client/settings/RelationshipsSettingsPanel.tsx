@@ -1,11 +1,13 @@
 import type { RelationshipDef, WorkflowConfig } from "@loctt/contracts";
-import { useState } from "react";
+import { useIsMutating } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
   ConcurrentWorkflowEditError,
   useSaveWorkflowCollection,
 } from "../api/hooks/useWorkflowMutations.ts";
+import { WORKFLOW_SAVE_KEY } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { type RelationshipDialogResult,RelationshipEditDialog } from "./RelationshipEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
@@ -33,15 +35,33 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
  */
 
 export function RelationshipsSettingsPanel() {
+  // A329: the create button moved into the header actions slot; its open
+  // state is lifted here so the header button and the body agree on it.
+  const [dialogOpen, setDialogOpen] = useState(false);
+  // The save mutation lives in the body below the header, so the header
+  // button reads "a workflow save is in flight" by its mutation key.
+  const saving = useIsMutating({ mutationKey: WORKFLOW_SAVE_KEY }) > 0;
   return (
     <WorkflowPanelFrame
       title="Relationships"
-      description="How tasks link to one another. A symmetric relationship reads the same from both sides and folds to a single row."
+      actions={(
+        <Button
+          variant="primary"
+          size="sm"
+          data-testid="relationships-create"
+          disabled={saving}
+          onClick={() => { setDialogOpen(true); }}
+        >
+          New relationship
+        </Button>
+      )}
     >
       {({ workflow, usage }) => (
         <RelationshipsEditor
           workflow={workflow}
           counts={usage?.relationships ?? {}}
+          dialogOpen={dialogOpen}
+          setDialogOpen={setDialogOpen}
         />
       )}
     </WorkflowPanelFrame>
@@ -51,17 +71,25 @@ export function RelationshipsSettingsPanel() {
 function RelationshipsEditor({
   workflow,
   counts,
+  dialogOpen,
+  setDialogOpen,
 }: {
   readonly workflow: WorkflowConfig;
   readonly counts: Readonly<Record<string, number>>;
+  readonly dialogOpen: boolean;
+  readonly setDialogOpen: (open: boolean) => void;
 }) {
   const save = useSaveWorkflowCollection<"relationships">();
   const [deleting, setDeleting] = useState<RelationshipDef | null>(null);
-  const [dialog, setDialog] = useState<
-    | { readonly mode: "create" }
-    | { readonly mode: "edit"; readonly row: RelationshipDef }
-    | null
-  >(null);
+  const [editing, setEditing] = useState<RelationshipDef | null>(null);
+  const dialog: { readonly mode: "create" } | { readonly mode: "edit"; readonly row: RelationshipDef } | null =
+    editing !== null ? { mode: "edit", row: editing } : dialogOpen ? { mode: "create" } : null;
+  const closeDialog = (): void => { setEditing(null); setDialogOpen(false); };
+  const wasOpen = useRef(dialogOpen);
+  useEffect(() => {
+    if (dialogOpen && !wasOpen.current) save.reset();
+    wasOpen.current = dialogOpen;
+  }, [dialogOpen, save]);
   const [inFlight, setInFlight] = useState<readonly RelationshipDef[] | null>(null);
 
   const stored = workflow.relationships;
@@ -91,7 +119,7 @@ function RelationshipsEditor({
           ) {
             throw new ConcurrentWorkflowEditError(
               `These settings changed outside the app while this dialog was `
-              + `open — the relationship "${opts.staleBaseline.key}" is not what it `
+              + `open. The relationship "${opts.staleBaseline.key}" is not what it `
               + `was. Reload the panel, then re-apply your `
               + `change. Your edit was not saved.`,
             );
@@ -128,14 +156,14 @@ function RelationshipsEditor({
     if (dialog === null) return;
     const built = buildRelationship(result.draft);
     if (dialog.mode === "create") {
-      commit([...rows, built], { onDone: () => { setDialog(null); } });
+      commit([...rows, built], { onDone: closeDialog });
       return;
     }
     const target = dialog.row;
     // The key never changes on edit, so `built.key` equals `target.key`.
     commit(
       rows.map(r => (r.key === target.key ? built : r)),
-      { staleBaseline: target, onDone: () => { setDialog(null); } },
+      { staleBaseline: target, onDone: closeDialog },
     );
   };
 
@@ -154,18 +182,6 @@ function RelationshipsEditor({
         </div>
       )}
 
-      <div className="mb-3 flex justify-end">
-        <Button
-          variant="secondary"
-          size="sm"
-          data-testid="relationships-create"
-          disabled={save.isPending}
-          onClick={() => { save.reset(); setDialog({ mode: "create" }); }}
-        >
-          + Add relationship
-        </Button>
-      </div>
-
       <div data-testid="relationships-list" data-row-count={String(rows.length)}>
         <ReorderableRows
           items={rows}
@@ -180,7 +196,7 @@ function RelationshipsEditor({
               rel={rel}
               count={counts[rel.key] ?? 0}
               disabled={save.isPending}
-              onEdit={() => { save.reset(); setDialog({ mode: "edit", row: rel }); }}
+              onEdit={() => { save.reset(); setEditing(rel); }}
               onDelete={() => { save.reset(); setDeleting(rel); }}
             />
           )}
@@ -195,7 +211,7 @@ function RelationshipsEditor({
           pending={save.isPending}
           error={dialogError}
           onSubmit={applyDialog}
-          onClose={() => { setDialog(null); save.reset(); }}
+          onClose={() => { closeDialog(); save.reset(); }}
         />
       )}
 

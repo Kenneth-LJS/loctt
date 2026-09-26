@@ -2,7 +2,7 @@ import type { CardLayoutField } from "@loctt/contracts";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError } from "../api/client.ts";
+import { ApiError, isUnknownOutcome } from "../api/client.ts";
 import { useLabels, useMilestones, useProjects, useSprints, useUsers } from "../api/hooks/sidebarData.ts";
 import { useBoardMove } from "../api/hooks/useBoardMove.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
@@ -87,7 +87,17 @@ export function BoardView() {
   );
 
   const pages = tasks.data?.pages ?? [];
-  const items = useMemo(() => pages.flatMap(p => p.items), [pages]);
+  // A313: parity with the list and timeline (ListView.tsx, TimelineView.tsx).
+  // `?view=<broken id>` returns a non-fatal `broken_view` diagnostic
+  // alongside every task, unfiltered — the board previously drew a card
+  // for every task in the tracker under no explanation at all (UI-24).
+  // Suppressing `items` here means `columns`/`buckets` below inherit the
+  // empty state rather than needing their own guard.
+  const brokenView = pages[pages.length - 1]?.broken_view;
+  const items = useMemo(
+    () => (brokenView !== undefined ? [] : pages.flatMap(p => p.items)),
+    [pages, brokenView],
+  );
   const unreadable = pages[pages.length - 1]?.unreadable ?? [];
   const total = pages[pages.length - 1]?.total ?? 0;
 
@@ -154,7 +164,11 @@ export function BoardView() {
   // move was not saved, and offer a retry. `lastMove` keeps the
   // arguments so the retry can re-issue exactly the same write rather
   // than asking the user to drag again.
-  const [moveError, setMoveError] = useState<{ key: string; message: string } | null>(null);
+  // `unknown`: the move timed out and may have landed, so the banner
+  // must not say it wasn't saved (A348).
+  const [moveError, setMoveError] = useState<
+    { key: string; message: string; unknown: boolean } | null
+  >(null);
   const lastMove = useRef<DropRequest | null>(null);
 
   const boardMove = useBoardMove();
@@ -173,6 +187,7 @@ export function BoardView() {
         onError: (err: unknown) => {
           setMoveError({
             key: req.key,
+            unknown: isUnknownOutcome(err),
             message:
               err instanceof ApiError
                 ? err.envelope?.message ?? err.message
@@ -262,6 +277,8 @@ export function BoardView() {
     });
   };
 
+  const loading = tasks.isLoading || workflow.isLoading;
+
   // A config `workflow.yaml` refuses to load takes every read with it:
   // `/api/tasks` and `/api/workflow` both 400 with `config_invalid`
   // (measured). BRD-45 wants that rendered as a designed state naming
@@ -281,14 +298,21 @@ export function BoardView() {
     );
   }
 
-  const loading = tasks.isLoading || workflow.isLoading;
+  // BRD-39 / ERR-5: the skeleton is not an infinite state. Formerly this
+  // needed a second, bespoke `useStalledLoad` timer because a hung
+  // `/api/tasks` never set `isError` — nothing had failed, it just never
+  // answered — so this check alone never fired. K115 (A314) gives
+  // `apiRequest` its own default deadline (20s on a GET), so a hung read
+  // now genuinely fails with a timeout `ApiError` and reaches `isError`
+  // on its own; the separate stall timer was retired as redundant rather
+  // than kept as a second mechanism for the same symptom.
   const queryFailed = !loading && (tasks.isError || workflow.isError);
 
   if (queryFailed) {
     return (
       <ErrorState
         error={tasks.error ?? workflow.error}
-        context="Could not load the board"
+        context="Loading the board's tasks"
         onRetry={() => {
           void tasks.refetch();
           void workflow.refetch();
@@ -357,8 +381,16 @@ export function BoardView() {
           className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
-            <strong>{moveError.key}</strong> was not moved — the change was not
-            saved. {moveError.message}
+            {moveError.unknown ? (
+              <>
+                Your changes may not have been saved. Please try again.
+              </>
+            ) : (
+              <>
+                <strong>{moveError.key}</strong> wasn't moved. The change wasn't
+                saved. {moveError.message}
+              </>
+            )}
           </span>
           <Button
             variant="danger-outline"
@@ -390,8 +422,41 @@ export function BoardView() {
           data-testid="board-chip-error"
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
-          Column visibility was not saved, so it will reset when you reload.{" "}
+          Column visibility wasn't saved. It will reset when you reload.{" "}
           {chipError instanceof ApiError ? chipError.envelope?.message ?? chipError.message : "The server could not be reached."}
+        </div>
+      )}
+
+      {/* A313 (UI-24): parity with the list's and timeline's `broken_view`
+          banner (ListView.tsx, TimelineView.tsx) — the saved view's query
+          no longer parses. Unfiltered cards are not drawn (see `items`
+          above); this is what explains why every column is empty instead
+          of leaving that unstated. */}
+      {brokenView !== undefined && (
+        <div
+          role="alert"
+          data-testid="board-broken-view"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
+        >
+          <p className="font-medium">
+            The saved view <code>{brokenView.name}</code> could
+            not be run: its query no longer parses.
+          </p>
+          <p data-testid="board-broken-view-error" className="mt-1">
+            {brokenView.error}
+            {brokenView.position !== undefined
+              ? <> (at position <span data-testid="board-broken-view-position">{brokenView.position}</span>)</>
+              : null}
+          </p>
+          <Link
+            to="/settings/$section"
+            params={{ section: "saved-views" }}
+            hash={`row-${brokenView.id}`}
+            data-testid="board-broken-view-manage"
+            className="mt-1 inline-block underline hover:text-text-primary"
+          >
+            Fix it in the file, or replace it in Saved views
+          </Link>
         </div>
       )}
 
@@ -406,8 +471,7 @@ export function BoardView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
-          {" "}missing from this board. Check the file.
+          {" "}could not be read. Missing from this board.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
               <li key={u.id} className="text-[0.7857rem]">
@@ -434,13 +498,18 @@ export function BoardView() {
       {/* BRD-40: a tracker with zero tasks gets ONE board-level empty
           state, not six per-column placeholders reading as six
           separate errors — while the columns still render, so the
-          workflow shape stays visible (ONB-11). */}
-      {!loading && total === 0 && (
+          workflow shape stays visible (ONB-11).
+          A313: gated on `brokenView === undefined` too — the banner
+          above already explains an empty board under a broken view;
+          "No tasks yet" alongside it would be a second, confusing
+          message for the same cause (the same reasoning `TimelineView`
+          uses for its own `noRows` branch). */}
+      {!loading && brokenView === undefined && total === 0 && (
         <div
           data-testid="board-empty"
           className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
-          No tasks yet.{" "}
+          No tasks found.{" "}
           {/* BRD-40's affordance, pointed at the create modal (M3.4)
               rather than at `/list`.
 
@@ -568,6 +637,7 @@ function configInvalidOf(error: unknown): ApiError | null {
     : null;
 }
 
+
 function ColumnDriftBanner({ columns }: { readonly columns: readonly BoardColumn[] }) {
   const drifted = columns.filter(c => (c.missingStatuses?.length ?? 0) > 0);
   if (drifted.length === 0) return null;
@@ -582,7 +652,7 @@ function ColumnDriftBanner({ columns }: { readonly columns: readonly BoardColumn
           Column <strong>{c.label}</strong> lists{" "}
           {c.missingStatuses?.length === 1 ? "a status" : "statuses"}{" "}
           <code>{c.missingStatuses?.join(", ")}</code>{" "}
-          that <code>workflow.yaml</code> no longer defines.
+          <code>workflow.yaml</code> no longer defines.
         </div>
       ))}
       {/* K100: the banner names the fault; it must also lead to the fix.
@@ -620,7 +690,7 @@ const MENU_LINK_CLASS =
  *  - **Hide column** — in-place. Column visibility is a per-user view
  *    pref (`board_hidden_columns`), the same write the chips bar makes,
  *    so it belongs at the point of use and is not a config edit.
- *  - **Set WIP limit…** / **Edit board columns…** — deep links to
+ *  - **Set WIP limit** / **Edit board columns** — deep links to
  *    `/settings/board-columns`. Board columns are edited as a whole
  *    document (`BoardColumnsPanel` holds a draft of every column), so by
  *    K100 the point-of-use affordance is a link, labelled as navigation,
@@ -682,7 +752,7 @@ function ColumnHeaderMenu({
             className={MENU_LINK_CLASS}
           >
             <Icon name="settings" size={14} />
-            Set WIP limit…
+            Set WIP limit
           </Link>
           <Link
             to="/settings/$section"
@@ -693,7 +763,7 @@ function ColumnHeaderMenu({
             className={MENU_LINK_CLASS}
           >
             <Icon name="settings" size={14} />
-            Edit board columns…
+            Edit board columns
           </Link>
         </>
       )}
@@ -729,7 +799,7 @@ function BoardConfigLinks() {
         className={MENU_LINK_CLASS}
       >
         <Icon name="settings" size={14} />
-        Customize columns…
+        Customize columns
       </Link>
       <Link
         to="/settings/$section"
@@ -739,7 +809,7 @@ function BoardConfigLinks() {
         className={MENU_LINK_CLASS}
       >
         <Icon name="settings" size={14} />
-        Card layout…
+        Card layout
       </Link>
     </>
   );

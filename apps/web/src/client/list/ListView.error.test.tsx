@@ -180,8 +180,16 @@ describe("the list when /api/tasks fails", () => {
     mount();
 
     const alert = await screen.findByRole("alert");
-    // ERR-18: the user's next action depends on knowing this.
-    expect(alert.textContent).toMatch(/not known/i);
+    // ERR-18: the user's next action depends on knowing this. Wording
+    // trimmed under K116 (error-text-trim row 21): "Whether your change
+    // was saved is not known — reload to check." became "Your change may
+    // not have been saved. Reload to check." K129 then aligned this with
+    // K127's exact error-screen wording for the same unknown-data-state
+    // situation: "Your changes may not have been saved. Please check and
+    // try again." — same unknown-outcome claim, same next action, now
+    // consistent with `error/RegionErrorBoundary.tsx`.
+    expect(alert.textContent).toMatch(/may not have been saved/i);
+    expect(alert.textContent).toMatch(/check and try again/i);
   });
 });
 

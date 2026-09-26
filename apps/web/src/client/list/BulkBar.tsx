@@ -124,7 +124,7 @@ export function BulkBar({
               Letting the server's validator be the first mention leaks
               its own jargon to the user (ERR-16) and wastes a round
               trip on a request that cannot succeed. */}
-          Bulk actions apply to at most {MAX_BULK_REFS} tasks at once —
+          Bulk actions apply to at most {MAX_BULK_REFS} tasks at once.
           {" "}{count} are selected. Clear some, or act in batches.
         </p>
       )}
@@ -159,7 +159,7 @@ export function BulkBar({
       />
       <BulkPicker
         label="Set milestone"
-        emptyReason="No milestones defined — add one in Settings → Milestones"
+        emptyReason="No milestones defined. Add one in Settings → Milestones"
         options={active(milestones).map(m => ({ id: m.id, label: m.name }))}
         clearLabel="No milestone"
         disabled={busy || overCap}
@@ -167,7 +167,7 @@ export function BulkBar({
       />
       <BulkPicker
         label="Set sprint"
-        emptyReason="No sprints defined — add one in Settings → Sprints"
+        emptyReason="No sprints defined. Add one in Settings → Sprints"
         options={active(sprints).map(sp => ({
           id: sp.id,
           label: sp.name,
@@ -182,7 +182,7 @@ export function BulkBar({
 
       <BulkPicker
         label="Move to project"
-        emptyReason="Only one project — create another in Settings → Projects"
+        emptyReason="Only one project. Create another in Settings → Projects"
         options={active(projects).map(pr => ({ id: pr.id, label: pr.name }))}
         disabled={busy || overCap}
         onPick={v => { if (v !== null) onMove(v); }}

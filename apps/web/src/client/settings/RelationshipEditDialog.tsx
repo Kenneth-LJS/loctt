@@ -174,9 +174,6 @@ export function RelationshipEditDialog({
                 onChange={e => { setKeyTouched(true); setKey(e.target.value); }}
                 aria-label="Key for the new relationship"
               />
-              <span className="mt-1 block text-[0.8571rem] text-text-tertiary">
-                A key is permanent — task links store it, so it cannot be renamed later.
-              </span>
               {problems.key !== undefined && (
                 <span data-testid="relationships-entry-key-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.key}
@@ -199,7 +196,7 @@ export function RelationshipEditDialog({
             checked={symmetric}
             onChange={e => { setSymmetric(e.target.checked); }}
           />
-          Symmetric — reads the same from both sides (e.g. relates to).
+          Same in both directions (e.g. relates to)
         </label>
 
         {!symmetric && (

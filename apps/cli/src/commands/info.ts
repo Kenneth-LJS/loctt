@@ -24,12 +24,12 @@ function describeSchema(status: TrackerInfo["schemaStatus"]): string {
       return `${String(status.version)} (current)`;
     case "outdated":
       return `${String(status.on_disk)}, this build expects ${String(status.current)}`
-        + ` — run 'loctt migrate'`;
+        + `. Run 'loctt migrate'`;
     case "future":
       return `${String(status.on_disk)}, this build supports ${String(status.current)}`
-        + ` — update LocTT`;
+        + `. Update LocTT`;
     case "missing":
-      return `not recorded — this tracker predates schema versioning`;
+      return `not recorded. This tracker predates schema versioning`;
     case "interrupted": {
       // The backup path is the recovery, so it leads. Everything else
       // here is context for it.

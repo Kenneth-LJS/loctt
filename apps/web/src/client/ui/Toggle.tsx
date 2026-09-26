@@ -7,8 +7,7 @@ import { cn } from "./cn.ts";
  * painted `appearance-none` as a track + thumb. `role="switch"` keeps
  * the AT announcement A11Y-21 asks for.
  *
- * Intended for the ~3 *view* toggles (FilterBar "Show archived",
- * MilestonesView archived, TimelineView dependencies) — NOT form-field
+ * Intended for *view* toggles (TimelineView dependencies) — NOT form-field
  * booleans (Estimation "Enabled", custom-field booleans stay `Checkbox`).
  * switch-vs-checkbox for those view toggles is a look decision, not a
  * correctness one (spec §1.9 / open decision #1) — this primitive exists
@@ -24,16 +23,24 @@ export interface ToggleProps
   readonly className?: string;
 }
 
+// A11Y-55: the track is the visible hit target, sized to the 24px
+// WCAG 2.5.8 minimum on its short axis (not an invisible overlay —
+// the switch itself grows, in line with K31's "grow the visible
+// control" pattern from the drag-handle fix). Pixel arbitrary values,
+// not the `h-6`/`w-11` scale: this app's root font-size is 87.5% of
+// the browser default, so `rem`-based sizes measure short (h-6 came
+// out 21px, not 24, the same trap `min-h-[24px]` elsewhere in this
+// codebase already routes around).
 const TRACK_BASE =
-  "peer appearance-none shrink-0 h-4 w-7 rounded-full border-0 bg-border-strong " +
+  "peer appearance-none shrink-0 h-[24px] w-[44px] rounded-full border-0 bg-border-strong " +
   "cursor-pointer transition-colors " +
   "checked:bg-accent " +
   "disabled:cursor-not-allowed disabled:opacity-50 " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-primary)]";
 
 const THUMB =
-  "pointer-events-none absolute left-0.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full " +
-  "bg-accent-contrast transition-transform peer-checked:translate-x-3";
+  "pointer-events-none absolute left-[4px] top-1/2 h-[16px] w-[16px] -translate-y-1/2 rounded-full " +
+  "bg-accent-contrast transition-transform peer-checked:translate-x-[20px]";
 
 export const Toggle = forwardRef<HTMLInputElement, ToggleProps>(
   function Toggle({ className, ...rest }, ref) {

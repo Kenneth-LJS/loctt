@@ -191,7 +191,7 @@ async function readCommentEntries(locttDir: string, taskId: string): Promise<Com
     // The file is there and will not parse. Returning `[]` here would
     // be the same destruction by a different route.
     throw new CommentError(
-      `${path} could not be parsed as YAML, so LocTT will not modify it: ${(err as Error).message}`,
+      `${path} could not be parsed as YAML, so it will not be modified: ${(err as Error).message}`,
     );
   }
 
@@ -201,7 +201,7 @@ async function readCommentEntries(locttDir: string, taskId: string): Promise<Com
     // A `comments:` key that is not a list is a hand-edit we cannot
     // interpret. Refusing is the only option that keeps the content.
     throw new CommentError(
-      `${path} has a "comments" key that is not a list, so LocTT will not modify it.`,
+      `${path} has a "comments" key that is not a list, so it will not be modified.`,
     );
   }
 
@@ -325,13 +325,13 @@ export interface PostCommentOptions {
 
 export async function postComment(opts: PostCommentOptions): Promise<Comment> {
   if (typeof opts.body !== "string" || opts.body.trim().length === 0) {
-    throw new CommentError("comment body must be a non-empty string");
+    throw new CommentError("Comment body must be a non-empty string.");
   }
   let author = opts.author;
   if (!author) {
     const current = await readCurrentUserId(opts.locttDir);
     if (!current) {
-      throw new CommentError("no current user set; pass an explicit author");
+      throw new CommentError("No current user is set. An author must be given.");
     }
     author = current;
   }
@@ -469,7 +469,7 @@ function editorsPatch(prev: Comment, editor: string | undefined): { editors?: st
 
 export async function editComment(opts: EditCommentOptions): Promise<Comment> {
   if (typeof opts.body !== "string" || opts.body.trim().length === 0) {
-    throw new CommentError("comment body must be a non-empty string");
+    throw new CommentError("Comment body must be a non-empty string.");
   }
   // Resolve the editor before taking the lock — `readCurrentUserId`
   // touches the filesystem and the lock should cover the read-modify-
@@ -488,10 +488,10 @@ export async function editComment(opts: EditCommentOptions): Promise<Comment> {
     // target — but they keep their slot in `existing` and are written
     // back by `writeCommentsAtomically`.
     const idx = existing.findIndex(c => !isMalformedComment(c) && c.id === opts.commentId);
-    if (idx === -1) throw new CommentError(`unknown comment id: ${opts.commentId}`);
+    if (idx === -1) throw new CommentError(`Unknown comment id: ${opts.commentId}`);
     const prev = existing[idx];
     if (prev === undefined || isMalformedComment(prev)) {
-      throw new CommentError(`unknown comment id: ${opts.commentId}`);
+      throw new CommentError(`Unknown comment id: ${opts.commentId}`);
     }
     const mentions = extractMentions(opts.body, opts.mentionResolver);
     const base = {
@@ -546,7 +546,7 @@ export async function deleteComment(opts: DeleteCommentOptions): Promise<void> {
     );
     const next = existing.filter(c => isMalformedComment(c) || c.id !== opts.commentId);
     if (next.length === existing.length || !target) {
-      throw new CommentError(`unknown comment id: ${opts.commentId}`);
+      throw new CommentError(`Unknown comment id: ${opts.commentId}`);
     }
     await writeCommentsAtomically(opts.locttDir, opts.taskId, next);
     return target;

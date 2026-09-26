@@ -484,7 +484,7 @@ export {
 } from "./task/index.js";
 export { appendHistory, isMalformedHistoryEntry, readHistory, readHistoryRows, validHistory } from "./task/index.js";
 export { assembleTaskFile, parseFrontmatter, renderRawText, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
-export { ALL_FIELDS_TOUCHED, appendTaskBody, assertWriteSafe, CorruptWriteError, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
+export { ALL_FIELDS_TOUCHED, appendTaskBody, assertWriteSafe, CorruptWriteError, readTask, readTaskBody, withTrailingNewline, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";
 export { createTask } from "./task/index.js";
 export { type DuplicateResult,duplicateTask } from "./task/index.js";
@@ -529,8 +529,11 @@ export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferen
 export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
 export type { ResolvedSidebarItem, SalvagedSidebarGroups, SidebarGroupsDrop, SidebarGroupsDropReport } from "./users/index.js";
+export type { KeyboardShortcutsDrop, KeyboardShortcutsDropReport, ResolvedKeyboardShortcuts, ResolvedShortcut, SalvagedKeyboardShortcuts, ShortcutChanges } from "./users/index.js";
 export {
+  applyShortcutChanges,
   archiveUser,
+  collectKeyboardShortcutsDrops,
   collectSidebarGroupsDrops,
   countUserReferences,
   createUser,
@@ -540,6 +543,7 @@ export {
   detectSystemTimezone,
   ensureDefaultUser,
   getCurrentUser,
+  isShortcutActive,
   loadAllUsers,
   loadUserProfile,
   loadUserSettings,
@@ -547,18 +551,24 @@ export {
   parseUserProfile,
   pushRecent,
   readCurrentUserId,
+  readKeyboardShortcuts,
   readRecents,
   readSidebarGroups,
   readSidebarPins,
   RECENTS_CAP,
   removeRecent,
+  resolveKeyboardShortcuts,
+  resolveRenderedSidebarItems,
   resolveSidebarOrder,
   resolveUserRef,
+  salvageKeyboardShortcuts,
   salvageSidebarGroups,
   saveUserProfile,
   saveUserSettings,
   serializeUserProfile,
+  SHORTCUT_VALID_IDS,
   SIDEBAR_VALID_IDS,
+  singleKeyShortcutsOn,
   sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
@@ -566,7 +576,9 @@ export {
   UserError,
   userExists,
   UserProfileError,
+  validateShortcutIds,
   validateSidebarIds,
+  withKeyboardShortcuts,
   writeCurrentUserId,
 } from "./users/index.js";
 export type { FsFailureKind } from "./utils/fs-errors.js";
@@ -589,4 +601,5 @@ export {
   findViewOrBroken,
   unarchiveView,
   ViewError,
+  ViewNameTakenError,
 } from "./views/index.js";

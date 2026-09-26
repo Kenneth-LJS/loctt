@@ -72,7 +72,7 @@ describe("a bulk op reports an object-fatal member as failed-because-unreadable"
       // The failure names the unreadable file, and is NOT phrased as a
       // bare "task not found" (the dangling-ref message).
       expect(out).toContain(fatalPath);
-      expect(out).toMatch(/could not (read|be read)/i);
+      expect(out).toMatch(/could (not )?be read|could not read/i);
       // The T-3 failure line does not read as a plain "not found".
       const t3line = out.split("\n").find(l => l.includes("T-3"));
       expect(t3line).toBeDefined();
@@ -88,8 +88,8 @@ describe("a bulk op reports an object-fatal member as failed-because-unreadable"
       expect(res.exitCode).not.toBe(0);
       // The absent ref is "not found" — every file here parses, so there
       // is no unreadable-file uncertainty to report.
-      expect(out).toMatch(/T-99:\s*task not found/);
-      expect(out).not.toMatch(/could not (read|be read)/i);
+      expect(out).toMatch(/T-99:\s*Task not found/i);
+      expect(out).not.toMatch(/could (not )?be read|could not read/i);
     });
   });
 
@@ -109,7 +109,7 @@ describe("a bulk op reports an object-fatal member as failed-because-unreadable"
         expect(out).toMatch(/2 updated, 1 failed/);
         // The failure names the unreadable path, not "not found".
         expect(out).toContain(fatalPath);
-        expect(out).toMatch(/could not (read|be read)/i);
+        expect(out).toMatch(/could (not )?be read|could not read/i);
       } finally {
         await client.close();
       }

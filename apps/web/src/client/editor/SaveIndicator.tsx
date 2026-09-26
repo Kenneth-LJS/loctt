@@ -1,14 +1,19 @@
 /**
- * The save indicator (TSK-15's third bullet: saved / saving / unsaved,
- * so the user is never guessing).
+ * The save indicator (TSK-15's third bullet: the user is never
+ * guessing). Four states, and since K124 each means exactly this:
  *
- * ERR-27 is why this is a persistent region rather than a toast: an
- * auto-save failure has to be *as loud as* a manual one, and a
- * two-second toast that vanishes while the user is looking at the
- * keyboard tells nobody anything. It stays until the state changes.
+ * - **Unsaved changes** — the editor holds text that is not on disk.
+ *   It stays that way until Save; nothing saves it automatically.
+ * - **Saving…** — a Save is in flight.
+ * - **Saved** — the editor matches what is on disk.
+ * - **failed** — a Save was refused; the message says the text was not
+ *   saved, with Retry.
  *
- * A polite live region for the ordinary states, so a screen reader is
- * not interrupted mid-word on every idle save; the failed state
+ * ERR-27 is why this is a persistent region rather than a toast: a
+ * failure that vanishes while the user is looking at the keyboard
+ * tells nobody anything. It stays until the state changes.
+ *
+ * A polite live region for the ordinary states; the failed state
  * upgrades to `role="alert"` because it does need to interrupt.
  */
 
@@ -48,10 +53,9 @@ export function SaveIndicator(
    *
    * The two are equivalent to a screen reader, but `role="status"` is
    * also a *landmark role* that `getByRole("status")` matches — and
-   * this indicator is permanently on screen, so adding one made every
-   * existing `getByRole("status")` on the task page ambiguous. It
-   * broke TSK-19's "Key copied" assertion, which had been correctly
-   * matching the one transient status on the page.
+   * this indicator is permanently on screen, so adding one would make
+   * every `getByRole("status")` on the task page ambiguous with the
+   * transient confirmations that page shows.
    *
    * An always-present indicator is not the same kind of thing as a
    * transient confirmation, and should not compete with it for the
@@ -71,8 +75,8 @@ export function SaveIndicator(
       // the toggle sideways by that much.
       //
       // That made the Rich→Markdown toggle a DEAD BUTTON after typing.
-      // Pressing it blurs the rich surface, which flushes the pending
-      // edit, so between mousedown and mouseup the label went
+      // Pressing it blurred the rich surface, which (before K124) flushed
+      // the pending edit, so between mousedown and mouseup the label went
       // "Unsaved changes" → "Saving…"/"Saved" — measured at 52px
       // narrower — and the button slid 52px right, out from under the
       // cursor. The browser then fired no `click` at all (mouseup landed

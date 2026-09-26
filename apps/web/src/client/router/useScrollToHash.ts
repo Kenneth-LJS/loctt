@@ -33,8 +33,8 @@ import { useEffect } from "react";
  */
 // A wall-clock deadline, not a frame count. A frame budget (~0.5s at 60fps)
 // is fragile: a deep-link target can mount only AFTER an async config fetch
-// resolves and, for an archived row, after a "Show archived" state flip
-// re-renders it (K100 deep links) — a chain that can exceed 30 frames on a
+// resolves and re-renders the list (K100 deep links) — a chain that can
+// exceed 30 frames on a
 // slow load, and rAF is throttled in a background tab. Poll each frame until
 // the element appears or the deadline passes.
 const SCROLL_DEADLINE_MS = 3000;

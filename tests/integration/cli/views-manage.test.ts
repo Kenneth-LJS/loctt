@@ -249,4 +249,49 @@ describe("CLI views management (spawned binary)", () => {
       expect(res.stderr).toMatch(/unknown option --bogus/);
     });
   });
+
+  // B21 (K129): "if you save a view, and the name already matches, then
+  // we should just error." Core refuses; the CLI reports it and exits 1.
+  // @verifies VUE-20
+  it("refuses a view name another view has, on create and on rename, writing nothing", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const queriesPath = path.join(root, ".loctt/config/queries.yaml");
+      expect((await runCli(["views", "create", "Overdue", "--filter", "status = backlog"], { cwd: root })).exitCode).toBe(0);
+      expect((await runCli(["views", "create", "mine", "--filter", "status = done"], { cwd: root })).exitCode).toBe(0);
+      const before = await readFile(queriesPath, "utf8");
+
+      const create = await runCli(["views", "create", " overdue ", "--filter", "status = done"], { cwd: root });
+      expect(create.exitCode).toBe(1);
+      expect(create.stderr).toContain("Another view with that name already exists.");
+
+      const rename = await runCli(["views", "edit", "mine", "--name", "OVERDUE"], { cwd: root });
+      expect(rename.exitCode).toBe(1);
+      expect(rename.stderr).toContain("Another view with that name already exists.");
+
+      expect(await readFile(queriesPath, "utf8")).toBe(before);
+    });
+  });
+
+  // @verifies VUE-20
+  it("views already sharing a name on disk still list; --view <name> refuses the ambiguity", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const entry = (id: string): string =>
+        `  - id: ${id}\n    name: dup\n    filters:\n      - kind: simple\n        field: status\n        op: "="\n        values: ["backlog"]\n`;
+      await writeFile(
+        path.join(root, ".loctt/config/queries.yaml"),
+        `queries:\n${entry("01DUPA0000000000000000000A")}${entry("01DUPB0000000000000000000B")}`,
+        "utf8",
+      );
+      const list = await runCli(["views"], { cwd: root });
+      expect(list.exitCode).toBe(0);
+      expect(list.stdout.match(/^dup /gm)).toHaveLength(2);
+
+      const byName = await runCli(["list", "--view", "dup"], { cwd: root });
+      expect(byName.exitCode).not.toBe(0);
+      expect(byName.stderr).toMatch(/multiple views named 'dup'/i);
+
+      const byId = await runCli(["list", "--view", "01DUPA0000000000000000000A"], { cwd: root });
+      expect(byId.exitCode).toBe(0);
+    });
+  });
 });

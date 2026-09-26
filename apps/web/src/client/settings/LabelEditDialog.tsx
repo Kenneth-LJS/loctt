@@ -209,9 +209,7 @@ export function LabelEditDialog(props: LabelDialogProps) {
             data-label-duplicate="warning"
             className="text-[0.8571rem] text-warn-fg"
           >
-            A label with this name already exists. Label names do not have to be
-            unique — you can create it anyway, and both will be shown with their
-            colours to tell them apart.
+            A label with this name already exists. You can still create it.
           </p>
         )}
 

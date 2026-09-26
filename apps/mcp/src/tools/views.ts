@@ -101,7 +101,7 @@ const FILTERS_GUIDANCE =
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_views",
-    description: "List saved views from queries.yaml. Returns JSON [{id, name, filters, summary, sort?, archivedScope?, icon?, color?, archived?}]. `filters` is the view's ordered filter list — the SOURCE OF TRUTH for what it matches (K102); all filters AND together, and the order is exactly as authored. `summary` is a human-readable one-line rendering of those filters, for DISPLAY ONLY: never parse it, never store it, and never send it back as input — edit a view by passing a new `filters` array. `archivedScope` is the view's own archived scope (a property of the view, not a filter). Address a view by `id`, not `name` — names are not unique, and running a view by an ambiguous name fails. By default archived views are hidden (K107); pass `archived: archived` for only archived or `archived: all` for both. Archived views carry `archived: true` and are still runnable by id. A view whose stored filters no longer parse is returned too, as {id, name, summary, broken: true, error, position?}.",
+    description: "List saved views from queries.yaml. Returns JSON [{id, name, filters, summary, sort?, archivedScope?, icon?, color?, archived?}]. `filters` is the view's ordered filter list — the SOURCE OF TRUTH for what it matches (K102); all filters AND together, and the order is exactly as authored. `summary` is a human-readable one-line rendering of those filters, for DISPLAY ONLY: never parse it, never store it, and never send it back as input — edit a view by passing a new `filters` array. `archivedScope` is the view's own archived scope (a property of the view, not a filter). Address a view by `id`, not `name` — a new name must be unique, but views that already shared a name before that rule keep loading, and running a view by an ambiguous name fails. By default archived views are hidden (K107); pass `archived: archived` for only archived or `archived: all` for both. Archived views carry `archived: true` and are still runnable by id. A view whose stored filters no longer parse is returned too, as {id, name, summary, broken: true, error, position?}.",
     inputSchema: {
       archived: z.enum(["active", "archived", "all"]).optional()
         .describe("Archived scope (K107): `active` (default) hides archived, `archived` shows only archived, `all` shows both. Broken views are always listed."),
@@ -187,10 +187,13 @@ export const TOOLS: readonly ToolDef[] = [
       "icon only — when `icon` is an emoji the emoji carries its own colour and the tint " +
       "is not applied (the colour is still stored, and applies again if the icon changes " +
       "to a named one). " +
+      "`name` must not match another view's name (compared trimmed and case-insensitively, " +
+      "archived and broken views included); a clash is rejected with \"Another view with " +
+      "that name already exists.\" and nothing is written. " +
       "Returns the created view (including its generated id) — address the view by that " +
-      "id afterward, since names are not unique.",
+      "id afterward.",
     inputSchema: {
-      name: z.string().describe("Display label. Need not be unique, but a unique name can be used as a ref."),
+      name: z.string().describe("Display label. Must not match another view's name (trimmed, case-insensitive)."),
       filters: z.array(FilterSchema).describe(
         "The view's filters, in order. All AND together. May be empty (matches "
         + "everything within the view's archived scope). Prefer `simple` entries.",
@@ -226,7 +229,10 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Edit a saved view. `view` accepts an id or a unique name (an ambiguous name is " +
       "rejected — use the id). Any of `name`, `filters`, `sort`, `archivedScope`, `icon` " +
-      "and `color` may be supplied; omitted fields are left unchanged. " + FILTERS_GUIDANCE + " " +
+      "and `color` may be supplied; omitted fields are left unchanged. A new `name` that " +
+      "matches another view's name (trimmed, case-insensitive) is rejected with \"Another " +
+      "view with that name already exists.\"; keeping the view's own name is always " +
+      "allowed. " + FILTERS_GUIDANCE + " " +
       "Supplying `filters` REPLACES the whole ordered list — there is no partial patch, " +
       "because order is meaningful, so send the full list you want. Omitting `filters` " +
       "leaves the view's filters untouched. To change one row, call `list_views` first, " +
@@ -365,7 +371,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_calendar",
-    description: "Returns the workspace calendar config (timezone, working days, holidays). Read-only — calendar is configured via the UI.",
+    description: "Returns the workspace calendar config (timezone, working days, holidays). Read-only: calendar is configured via the UI.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const cfg = await loadCalendarConfig(locttDir);

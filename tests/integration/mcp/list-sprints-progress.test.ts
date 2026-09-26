@@ -118,23 +118,31 @@ describe("MCP list_sprints progress (stdio)", () => {
       const { readdirSync, readFileSync, writeFileSync } = await import("node:fs");
       const { join } = await import("node:path");
       const tasksDir = join(root, ".loctt", "tasks");
+      let badFile = "";
       for (const d of readdirSync(tasksDir)) {
         const file = join(tasksDir, d, "task.md");
         if (readFileSync(file, "utf8").includes(`key: ${badKey}`)) {
           writeFileSync(file, `---\nid:\n  broken: mapping\nkey: ${badKey}\nsprint: ${a}\n---\nbody\n`);
+          badFile = file;
           break;
         }
       }
+      expect(badFile, "corrupted task file").not.toBe("");
 
       const client = await startMcpClient(root);
       try {
         const res = await client.callTool("list_sprints", { progress: true });
         const parsed = JSON.parse(res.content[0]?.text ?? "{}") as {
-          sprints?: { id: string; progress?: { unavailable?: boolean; total?: number } }[];
+          sprints?: { id: string; progress?: { unavailable?: boolean; reason?: string; total?: number } }[];
         };
         const byId = new Map((parsed.sprints ?? []).map(s => [s.id, s]));
         // A is unavailable…
         expect(byId.get(a)?.progress?.unavailable).toBe(true);
+        // …and, being attributed (so absent from the tracker-level list),
+        // its reason is the one place the broken file is named: the path
+        // appears in it exactly once (A350).
+        const reason = byId.get(a)?.progress?.reason ?? "";
+        expect(reason.split(badFile)).toHaveLength(2);
         // …while B reports its real numbers in the same response.
         expect(byId.get(b!)?.progress?.unavailable).toBeUndefined();
         expect(byId.get(b!)?.progress?.total).toBe(1);

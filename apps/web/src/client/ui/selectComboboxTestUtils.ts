@@ -112,6 +112,36 @@ export function comboOptionLabel(testId: string, value: string): string | null {
 }
 
 /**
+ * B14: `comboValue` alone reads `data-value` off the trigger — it can
+ * pass on a value the dropdown no longer offers, because the trigger's
+ * attribute and the panel's option list are two different pieces of
+ * state that a bug can desync (e.g. a stale `data-value` surviving a
+ * prop change that dropped the option from the list a test never
+ * re-opens to check). A test that relies on the read value being one
+ * the user could still legitimately (re)select — not merely displayed —
+ * should assert both: the trigger shows `expected`, AND `expected` is
+ * still among the options actually offered right now.
+ *
+ * Throws naming both what was found and what was offered, rather than a
+ * bare boolean, so a mismatch says which half failed without a second
+ * debugging pass.
+ */
+export function expectComboValueSelectable(testId: string, expected: string): void {
+  const trigger = screen.getByTestId(testId);
+  const actual = comboValueOf(trigger);
+  if (actual !== expected) {
+    throw new Error(`expectComboValueSelectable("${testId}"): shows "${actual}", expected "${expected}".`);
+  }
+  const offered = comboValuesOf(trigger);
+  if (!offered.includes(expected)) {
+    throw new Error(
+      `expectComboValueSelectable("${testId}"): shows "${expected}", but it is not among the `
+      + `offered options: [${offered.join(", ")}]. A displayed value must still be selectable.`,
+    );
+  }
+}
+
+/**
  * The concatenated visible text of every option — for the "the raw token
  * is not shown to the user" half of a jargon red-proof, which used to
  * read `select.textContent`.

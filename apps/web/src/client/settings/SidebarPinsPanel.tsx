@@ -1,11 +1,11 @@
 import type { SavedQuery, UserSettings } from "@loctt/contracts";
-import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { useViews } from "../api/hooks/sidebarData.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { DeleteViewDialog } from "./DeleteViewDialog.tsx";
@@ -121,26 +121,6 @@ function PinsEditor({
   return (
     <div data-testid="sidebar-pins-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Pinned views</h1>
-      <p className="mb-2 max-w-prose text-[0.8571rem] text-text-secondary">
-        Pin your own saved views to the top of the sidebar's Saved filters
-        group, in the order they appear there. Saved against your user.
-      </p>
-      {/* A244: cross-link to the sibling section. See the matching note in
-          SidebarGroupsPanel — this points at the *groups* editor for the
-          user who wants to reorder or hide the built-in sections instead. */}
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-tertiary">
-        Looking to reorder or hide the sidebar's built-in sections?{" "}
-        <Link
-          to="/settings/$section"
-          params={{ section: "sidebar-groups" }}
-          data-testid="sidebar-pins-see-groups"
-          className="text-accent hover:underline"
-        >
-          See Sidebar groups
-        </Link>
-        .
-      </p>
-
       {explained.length > 0 ? (
         /* SET-27's second bullet. `role="status"`, not `alert`: a view
            the user deleted themselves is not an error, and P4 keeps
@@ -150,9 +130,7 @@ function PinsEditor({
           data-testid="pins-swept-notice"
           className="mb-4 rounded-md border border-border-subtle bg-warn-bg px-3 py-2 text-[0.8571rem] text-warn-fg"
         >
-          {explained.length === 1
-            ? "A pinned view was removed because it no longer exists in your saved views:"
-            : "Pinned views were removed because they no longer exist in your saved views:"}
+          Removed pinned views that no longer exist:
           <ul className="mt-1 mb-0 list-disc pl-5">
             {explained.map(id => (
               <li key={id} data-swept-pin={id}>{id}</li>
@@ -189,17 +167,17 @@ function PinsEditor({
                 >
                   Unpin
                 </button>
-                <button
-                  type="button"
-                  data-testid={`view-delete-${id}`}
+                <Button
+                  variant="ghost-danger"
+                  size="sm"
+                  testId={`view-delete-${id}`}
                   onClick={() => {
                     const v = byId.get(id);
                     if (v !== undefined) setDeleting(v);
                   }}
-                  className="text-[0.8571rem] text-text-tertiary hover:text-danger-fg"
                 >
                   Delete view
-                </button>
+                </Button>
               </div>
             )}
           </ReorderableRows>
@@ -221,22 +199,22 @@ function PinsEditor({
               className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1"
             >
               <span className="flex-1 text-[0.9286rem] text-text-primary">{v.name}</span>
-              <button
-                type="button"
-                data-testid={`pin-add-${v.id}`}
+              <Button
+                variant="ghost"
+                size="sm"
+                testId={`pin-add-${v.id}`}
                 onClick={() => { write([...pinned, v.id]); }}
-                className="text-[0.8571rem] text-accent hover:underline"
               >
                 Pin
-              </button>
-              <button
-                type="button"
-                data-testid={`view-delete-${v.id}`}
+              </Button>
+              <Button
+                variant="ghost-danger"
+                size="sm"
+                testId={`view-delete-${v.id}`}
                 onClick={() => { setDeleting(v); }}
-                className="text-[0.8571rem] text-text-tertiary hover:text-danger-fg"
               >
                 Delete view
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -273,7 +251,7 @@ function PinsEditor({
         <div className="mt-4" data-testid="sidebar-pins-delete-error">
           <ErrorState
             error={deleteView.error}
-            context="The view was not deleted — it is still among your saved views"
+            context="The view wasn't deleted."
             {...(deleteView.variables !== undefined
               ? { onRetry: () => { deleteView.mutate(deleteView.variables); } }
               : {})}
@@ -288,7 +266,7 @@ function PinsEditor({
         <div className="mt-4" data-testid="sidebar-pins-save-error">
           <ErrorState
             error={save.error}
-            context="Your pins were not saved — the list shows your last saved order"
+            context="Your pins weren't saved. Showing your last saved order."
             {...(save.variables !== undefined
               ? { onRetry: () => { save.mutate(save.variables); } }
               : {})}

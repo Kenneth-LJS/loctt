@@ -103,8 +103,8 @@ export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
   // report "no projects" — PRU-37).
   if (valid.length + broken.length === 0) {
     throw new ProjectsConfigError(
-      "projects.yaml is not valid: at least one project is required — "
-      + "add one to projects.yaml, or run 'loctt project create'",
+      "projects.yaml is not valid: at least one project is required. "
+      + "Add one to projects.yaml, or run 'loctt project create'",
     );
   }
 

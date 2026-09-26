@@ -53,7 +53,7 @@ import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasksDetailed } from "../task/load-all.js";
 import { validateRelationships } from "../task/traversal.js";
 import { loadAllUsersDetailed } from "../users/profile.js";
-import { collectSidebarGroupsDrops } from "../users/settings.js";
+import { collectKeyboardShortcutsDrops, collectSidebarGroupsDrops } from "../users/settings.js";
 import { isMissingFile, readFileState, UnreadableFileError } from "../utils/read-state.js";
 
 export type IntegritySeverity = "unreadable" | "malformed" | "inconsistent";
@@ -156,7 +156,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           path: taskPath,
           message:
             `field "${h.field}" ${h.kind === "unrecognised" ? "is not recognised" : "is corrupt"} `
-            + `(${h.kind}: ${h.rawText || "malformed"} — ${h.error}). It has been kept `
+            + `(${h.kind}: ${h.rawText || "malformed"}, ${h.error}). It has been kept `
             + `in place and is preserved by every write; repair it with `
             + `\`loctt set\` / \`loctt unset\`, or edit the file by hand.`,
         });
@@ -166,7 +166,9 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
         findings.push({
           severity: "unreadable",
           path: taskPath,
-          message: `task.md could not be parsed: ${messageOf(err)}`,
+          // `path` is the finding's own field; the reason must not
+          // repeat it (A348).
+          message: `task.md could not be parsed: ${err.reason}`,
         });
       } else if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
         findings.push({
@@ -336,7 +338,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
         severity: "malformed",
         path: getCalendarConfigPath(locttDir),
         message:
-          `timezone "${cal.timezone}" is not a resolvable IANA zone — dates are `
+          `timezone "${cal.timezone}" is not a resolvable IANA zone. Dates are `
           + `rendered in UTC until it is fixed. Pick a valid zone in Settings → `
           + `Calendar, or edit calendar.yaml.`,
       });
@@ -381,7 +383,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           path: getUserProfilePath(locttDir, p.id),
           message:
             `field "${h.field}" ${h.kind === "unrecognised" ? "is not recognised" : "is corrupt"} `
-            + `(${h.kind}: ${h.rawText || "malformed"} — ${h.error}). It has been kept `
+            + `(${h.kind}: ${h.rawText || "malformed"}, ${h.error}). It has been kept `
             + `in place and is preserved by every write; repair the profile to have it load again.`,
         });
       }
@@ -431,6 +433,44 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
   } catch {
     // The users dir being absent is normal; a scan error here is left to
     // doctor's own users/ load check, same as the profile loop above.
+  }
+
+  // Per-user `keyboard_shortcuts` salvage (K133). A hand-edited bad part
+  // is dropped on load so the app still works (shortcuts fall back to
+  // on); doctor names what was dropped. `malformed`, never blocking.
+  try {
+    for (const report of await collectKeyboardShortcutsDrops(locttDir)) {
+      if (report.wholeValueDropped) {
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message:
+            `setting "keyboard_shortcuts" is not a valid { single_key?, disabled? } object, `
+            + `so it was ignored and every single-key shortcut is on. `
+            + `Repair or remove it, or set the shortcuts again in the app.`,
+        });
+      }
+      for (const d of report.dropped) {
+        const message =
+          d.field === "single_key"
+            ? `setting "keyboard_shortcuts.single_key" is "${d.value}", not true or false, `
+              + `so single-key shortcuts are on.`
+            : d.field === "key"
+              ? `setting "keyboard_shortcuts" has an unknown key "${d.value}", which was ignored.`
+              : d.reason === "unknown"
+                ? `setting "keyboard_shortcuts.disabled" names an unknown shortcut "${d.value}", which was ignored.`
+                : d.reason === "duplicate"
+                  ? `setting "keyboard_shortcuts.disabled" lists "${d.value}" twice.`
+                  : `setting "keyboard_shortcuts.disabled" has a malformed part (${d.value}), which was ignored.`;
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message: `${message} Repair it by hand, or change the shortcuts in the app, to remove this notice.`,
+        });
+      }
+    }
+  } catch {
+    // Same as the sidebar_groups scan above: left to doctor's users/ check.
   }
 
   return findings;

@@ -668,6 +668,9 @@ describe("restore refuses a path-traversal (zip-slip) backup (Phase Z SEC-1/SEC-
     await emptyTasks(dstDir);
     await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
       .rejects.toThrow(RestoreRefusedError);
+    // A348: the sentence ends with a period.
+    await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
+      .rejects.toThrow(/"\.\.\/\.\.\/PWNED-phase-z\.txt" escapes the tracker directory\. Refusing the restore\.$/);
     // The legitimate task in the same backup must NOT have landed — the
     // refusal is up front, before any write.
     await assertDestUntouched();

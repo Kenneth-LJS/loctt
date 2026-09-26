@@ -1,7 +1,7 @@
-import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
-import { SIDEBAR_ITEM_IDS } from "@loctt/contracts";
+import type { ShortcutId, SidebarGroups, SidebarItemId } from "@loctt/contracts";
 import {
   applyArchivedScope,
+  applyShortcutChanges,
   archiveUser,
   countUserReferences,
   createUser,
@@ -11,22 +11,27 @@ import {
   loadAllUsers,
   loadOptionalConfigs,
   loadUserSettings,
+  readKeyboardShortcuts,
   readSidebarGroups,
   readSidebarPins,
+  resolveKeyboardShortcuts,
   resolveLocttDir,
-  resolveSidebarOrder,
+  resolveRenderedSidebarItems,
   resolveUserRef,
   saveUserSettings,
+  SHORTCUT_VALID_IDS,
   SIDEBAR_VALID_IDS,
   sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,
   UserError,
+  validateShortcutIds,
   validateSidebarIds,
+  withKeyboardShortcuts,
 } from "@loctt/core";
 
-import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, getArgAll, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -49,7 +54,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--avatar", "--email", "--filter", "--hidden", "--limit", "--name", "--offset", "--order", "--remap-to", "--remove-avatar", "--reset", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--avatar", "--email", "--filter", "--hidden", "--limit", "--name", "--off", "--offset", "--on", "--order", "--remap-to", "--remove-avatar", "--reset", "--single-key", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -208,7 +213,7 @@ export async function run(args: string[], root: string): Promise<void> {
           // Named, not counted: "removed 2 pins" tells the user
           // nothing they can act on.
           for (const id of sweep.removed) {
-            console.log(`Removed pin ${id} — no such view in queries.yaml`);
+            console.log(`Removed pin ${id}: no such view in queries.yaml`);
           }
           return;
         }
@@ -238,7 +243,7 @@ export async function run(args: string[], root: string): Promise<void> {
      * — read or set the per-user `sidebar_groups` setting (SHL-45).
      *
      * Ken's layer rule: the web sidebar-groups editor is a core
-     * capability (`readSidebarGroups` / `resolveSidebarOrder`), so it
+     * capability (`readSidebarGroups` / `resolveRenderedSidebarItems`), so it
      * reaches CLI and MCP too — an agent may configure the UI.
      *
      * With no flags it prints the resolved order (one id per line) with
@@ -295,16 +300,98 @@ export async function run(args: string[], root: string): Promise<void> {
           });
         }
 
-        // Always print the resolved state (after any write). Resolve
-        // against the FULL item catalog (groups + built-in filters), not
-        // just the groups — otherwise a hidden *filter* (`--hidden
-        // overdue`) is written but never shown on read-back, because a
-        // filter id is not in the group catalog. The read must round-trip
-        // exactly what `set` accepts (SHL-45, B2 bug 3).
+        // Always print the resolved state (after any write): every item
+        // id (groups + built-in filters, so a hidden filter reads back,
+        // SHL-45 B2 bug 3), resolved through the same grouped resolver
+        // the web sidebar uses (A346) — the K125 migration of an older
+        // stored order, the built-ins listed after the `filters` row,
+        // and all of them hidden while that group is hidden.
         const after = readSidebarGroups(await loadUserSettings(locttDir, current.id));
-        const resolved = resolveSidebarOrder(after, [...SIDEBAR_ITEM_IDS]);
+        const resolved = resolveRenderedSidebarItems(after);
         for (const item of resolved) {
           console.log(`${item.id}\t${item.hidden ? "hidden" : "visible"}`);
+        }
+      });
+      break;
+    }
+    /**
+     * `loctt user shortcuts [--single-key on|off] [--off <id>...] [--on <id>...] [--reset]`
+     * — read or set the single-key shortcut switches (K133, A11Y-43).
+     *
+     * The web Keyboard settings are a core capability
+     * (`resolveKeyboardShortcuts` / `applyShortcutChanges`), so they reach
+     * the CLI too. With no flags it prints the state: the master switch,
+     * then one line per shortcut with its keys, `on`/`off` and what it
+     * does. `--off`/`--on` repeat, or take comma-separated ids. An
+     * unknown id is refused, naming it. `--reset` turns everything back
+     * on (the web "Reset to default").
+     */
+    case "shortcuts": {
+      await runCommand(async () => {
+        const current = await getCurrentUser(locttDir);
+        if (!current) {
+          throw new UserError("no users registered. Run 'loctt user create <name>'.");
+        }
+        const usage = "loctt user shortcuts [--single-key on|off] [--off <id>...] [--on <id>...] [--reset]";
+        const settings = await loadUserSettings(locttDir, current.id);
+        const singleKeyArg = getArg(args, "--single-key");
+        const offArg = getArgAll(args, "--off");
+        const onArg = getArgAll(args, "--on");
+        const reset = hasFlag(args, "--reset");
+
+        // A flag given with no value (`--single-key` last, `--off` bare,
+        // `--on --reset`) used to read as absent, so the command printed
+        // the state and exited 0 having changed nothing (A350).
+        const occurrences = (flag: string): number => {
+          const end = args.indexOf("--");
+          return (end === -1 ? args : args.slice(0, end))
+            .filter(a => a === flag || a.startsWith(`${flag}=`)).length;
+        };
+        if (occurrences("--single-key") > 0 && singleKeyArg === undefined) {
+          throw new UsageError("--single-key needs a value: on or off.", usage);
+        }
+        for (const [flag, values] of [["--off", offArg], ["--on", onArg]] as const) {
+          const given = values.flatMap(v => v.split(",")).some(v => v.trim() !== "");
+          if (occurrences(flag) > values.length || (occurrences(flag) > 0 && !given)) {
+            throw new UsageError(
+              `${flag} needs one or more shortcut ids. Valid ids: ${SHORTCUT_VALID_IDS.join(", ")}`,
+              usage,
+            );
+          }
+        }
+
+        if (reset && (singleKeyArg !== undefined || offArg.length > 0 || onArg.length > 0)) {
+          throw new UsageError("--reset cannot be combined with --single-key/--off/--on", usage);
+        }
+        let singleKey: boolean | undefined;
+        if (singleKeyArg !== undefined) {
+          const v = singleKeyArg.toLowerCase();
+          if (v === "on" || v === "true") singleKey = true;
+          else if (v === "off" || v === "false") singleKey = false;
+          else throw new UsageError(`invalid value for --single-key: ${JSON.stringify(singleKeyArg)}. Expected on or off.`, usage);
+        }
+
+        if (reset) {
+          await saveUserSettings(locttDir, current.id, withKeyboardShortcuts(settings, {}));
+        } else if (singleKey !== undefined || offArg.length > 0 || onArg.length > 0) {
+          const off = parseShortcutIds(offArg, "--off", usage);
+          const on = parseShortcutIds(onArg, "--on", usage);
+          const next = applyShortcutChanges(readKeyboardShortcuts(settings), {
+            ...(singleKey !== undefined ? { singleKey } : {}),
+            off,
+            on,
+          });
+          await saveUserSettings(locttDir, current.id, withKeyboardShortcuts(settings, next));
+        }
+
+        // Always print the state read back from disk, after any write.
+        const state = resolveKeyboardShortcuts(
+          readKeyboardShortcuts(await loadUserSettings(locttDir, current.id)),
+        );
+        console.log(`single-key\t${state.singleKey ? "on" : "off"}`);
+        for (const s of state.shortcuts) {
+          const keys = s.bindings.map(b => b.keys.join(" ")).join(", ");
+          console.log(`${s.id}\t${keys}\t${s.on ? "on" : "off"}\t${s.action}`);
         }
       });
       break;
@@ -398,7 +485,7 @@ export async function run(args: string[], root: string): Promise<void> {
       break;
     }
     default:
-      console.error(`Usage: loctt user <list|current|switch|create|edit|settings|sidebar-groups|archive|unarchive|references|delete> ...`);
+      console.error(`Usage: loctt user <list|current|switch|create|edit|settings|sidebar-groups|shortcuts|archive|unarchive|references|delete> ...`);
       process.exitCode = EXIT.USAGE;
       break;
   }
@@ -420,6 +507,24 @@ function parseIdList(raw: string, flag: string): SidebarItemId[] {
       `unknown sidebar id${unknown.length > 1 ? "s" : ""} for ${flag}: `
       + `${unknown.join(", ")}. Valid ids: ${SIDEBAR_VALID_IDS.join(", ")}`,
       "loctt user sidebar-groups [--order <ids> | --hidden <ids> | --reset]",
+    );
+  }
+  return known;
+}
+
+/**
+ * Parses `--off` / `--on` values (repeatable, each may be
+ * comma-separated) on the WRITE path, refusing an unknown id. A typo
+ * must not exit 0 having switched nothing off.
+ */
+function parseShortcutIds(values: readonly string[], flag: string, usage: string): ShortcutId[] {
+  const parts = values.flatMap(v => v.split(",")).map(s => s.trim()).filter(s => s !== "");
+  const { known, unknown } = validateShortcutIds(parts);
+  if (unknown.length > 0) {
+    throw new UsageError(
+      `unknown shortcut${unknown.length > 1 ? "s" : ""} for ${flag}: `
+      + `${unknown.join(", ")}. Valid ids: ${SHORTCUT_VALID_IDS.join(", ")}`,
+      usage,
     );
   }
   return known;
