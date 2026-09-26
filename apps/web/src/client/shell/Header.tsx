@@ -415,7 +415,7 @@ function UserMenu({
             identityUnknown
               ? UNKNOWN_IDENTITY_REASON
               : currentArchived
-                ? `${currentUser.name} is archived, switch to an active user`
+                ? `${currentUser.name} is archived. Switch to an active user.`
                 : undefined
           }
           className={[

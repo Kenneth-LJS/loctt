@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getUserProfilePath } from "../paths/index.js";
-import { loadUserProfile, parseUserProfile, serializeUserProfile, UserProfileError } from "./profile.js";
+import { loadAllUsersDetailed, loadUserProfile, parseUserProfile, serializeUserProfile, UserProfileError } from "./profile.js";
 
 describe("parseUserProfile", () => {
   it("parses a complete profile", () => {
@@ -195,5 +195,21 @@ describe("loadUserProfile", () => {
     await expect(loadUserProfile(locttDir, "u1")).rejects.toThrow(
       `${path} is not valid: id is required (expected string)`,
     );
+  });
+
+  // A348: `loadAllUsersDetailed` returns `{ path, reason }`, and every
+  // surface prints `path: reason`. A reason that repeats the path said
+  // it twice in the banner, the CLI and doctor.
+  it("names the path once when loadAllUsersDetailed reports an unreadable profile", async () => {
+    const path = getUserProfilePath(locttDir, "u1");
+    await mkdir(join(locttDir, "users", "u1"), { recursive: true });
+    await writeFile(path, "name: Ken\ntimezone: UTC\n", "utf-8");
+
+    const { unreadable } = await loadAllUsersDetailed(locttDir);
+    expect(unreadable).toHaveLength(1);
+    const u = unreadable[0]!;
+    expect(u.path).toBe(path);
+    expect(u.reason).toBe("id is required (expected string)");
+    expect(`${u.path}: ${u.reason}`.split(path).length - 1).toBe(1);
   });
 });

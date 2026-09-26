@@ -25,10 +25,12 @@ import { clearLookupCaches } from "./lookup-cache.js";
 export async function readTask(locttDir: string, taskId: string): Promise<Task> {
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = await readFile(filePath, "utf-8");
-  const { rawYaml, body } = splitTaskFile(content);
+  let body: string;
   let parsed: { frontmatter: Task["frontmatter"]; health: FieldHealth[] };
   try {
-    parsed = parseFrontmatter(rawYaml);
+    const split = splitTaskFile(content);
+    body = split.body;
+    parsed = parseFrontmatter(split.rawYaml);
   } catch (err) {
     // Object-fatal corruption: re-wrap with the file that is broken, the
     // same shape every config-file parser already uses ("{file} is not
@@ -36,9 +38,11 @@ export async function readTask(locttDir: string, taskId: string): Promise<Task> 
     // called from several places (git merge, backup restore) that don't
     // all have one obvious file to name — so this is the read path's own
     // wrap, done here rather than by threading a path parameter through
-    // the parse function and every one of its callers (A345).
+    // the parse function and every one of its callers (A345). The
+    // unwrapped text stays on `reason`, so a caller that already names
+    // the path prints it once (A348).
     if (err instanceof TaskParseError) {
-      throw new TaskParseError(`${filePath} is not valid: ${err.message}`);
+      throw new TaskParseError(err.reason, { path: filePath, cause: err });
     }
     throw err;
   }

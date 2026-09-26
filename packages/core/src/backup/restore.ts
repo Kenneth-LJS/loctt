@@ -116,17 +116,17 @@ export class RestoreRefusedError extends Error {
  */
 function assertContainedPath(locttDir: string, relPath: string, what: string): void {
   if (typeof relPath !== "string" || relPath.length === 0) {
-    throw new RestoreRefusedError(`${what} path is empty. Refusing the restore`);
+    throw new RestoreRefusedError(`${what} path is empty. Refusing the restore.`);
   }
   if (relPath.includes("\0")) {
-    throw new RestoreRefusedError(`${what} path contains a null byte. Refusing the restore`);
+    throw new RestoreRefusedError(`${what} path contains a null byte. Refusing the restore.`);
   }
   // `isPathContained` is the shared lexical containment check (resolve
   // both sides, reject when the relative path climbs out or is absolute).
   // Same rule the attach source guard uses, so the two cannot disagree.
   if (!isPathContained(locttDir, resolve(locttDir, relPath))) {
     throw new RestoreRefusedError(
-      `${what} path "${relPath}" escapes the tracker directory. Refusing the restore`,
+      `${what} path "${relPath}" escapes the tracker directory. Refusing the restore.`,
     );
   }
 }
@@ -142,7 +142,7 @@ function assertSafeBasenameOrRefuse(name: string, what: string): void {
     assertSafeBasename(name);
   } catch (err) {
     throw new RestoreRefusedError(
-      `${what} filename "${name}" is unsafe (${(err as Error).message}). Refusing the restore`,
+      `${what} filename "${name}" is unsafe (${(err as Error).message}). Refusing the restore.`,
     );
   }
 }

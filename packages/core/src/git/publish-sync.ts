@@ -16,7 +16,7 @@ import { appendKeyHistory } from "../state/keys.js";
 import { clearReconcileState, readReconcileState, saveReconcileState } from "../state/reconcile.js";
 import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
-import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
+import { parseFrontmatter, splitTaskFile, TaskParseError } from "../task/frontmatter.js";
 import { readTask, writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { previewRekey, rekeyCollisions } from "./reconcile.js";
@@ -888,7 +888,7 @@ async function malformedAppliedTasks(
       out.push({
         id,
         path: getTaskFilePath(localDir, id),
-        reason: err instanceof Error ? err.message : String(err),
+        reason: TaskParseError.reasonOf(err),
       });
     }
   }

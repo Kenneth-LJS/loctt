@@ -206,6 +206,10 @@ describe("task frontmatter field-health (Phase-7 § 10)", () => {
     const fm = findings.find(f => f.path === taskPath(id));
     expect(fm?.severity).toBe("unreadable");
     expect(blockingFindings(findings).length).toBeGreaterThan(0);
+    // A348: doctor prints `path` beside `message`, so the message must
+    // not name the file again.
+    expect(fm?.message).toMatch(/^task\.md could not be parsed: /);
+    expect(fm?.message).not.toContain(taskPath(id));
   });
 });
 

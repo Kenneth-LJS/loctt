@@ -65,6 +65,25 @@ describe("an unreadable task.md is reported as unreadable, not as missing", () =
       // TSK-54: the path under .loctt/tasks/<id>/, and the line.
       expect(out).toContain(file);
       expect(out).toMatch(/line \d+/);
+      // A348: named once. `readTask`'s own message leads with the path
+      // and the headline names it again unless the reason is unwrapped.
+      expect(out.split(file).length - 1).toBe(1);
+    });
+  });
+
+  // A348: `loctt list` prints each unreadable row as `path: reason`.
+  // The reason used to be `readTask`'s message, which already led with
+  // the path, so every row said the path twice.
+  it("loctt list names the unreadable file exactly once on stderr", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "corrupt me"], { cwd: root });
+      const file = await corrupt(root);
+
+      const res = await runCli(["list"], { cwd: root });
+
+      expect(res.stderr).toContain(file);
+      expect(res.stderr).toMatch(/line \d+/);
+      expect(res.stderr.split(file).length - 1).toBe(1);
     });
   });
 
@@ -98,6 +117,8 @@ describe("an unreadable task.md is reported as unreadable, not as missing", () =
         expect(text).not.toMatch(/task not found/i);
         expect(text).toContain(file);
         expect(text).toMatch(/line \d+/);
+        // A348: named once on MCP too.
+        expect(text.split(file).length - 1).toBe(1);
       } finally {
         await client.close();
       }

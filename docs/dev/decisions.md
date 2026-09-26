@@ -22685,6 +22685,19 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K133 · Single-key shortcuts get an off switch and remapping (A11Y-43)
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+A11Y-43 requires "Single-key shortcuts can be turned off or remapped"
+(WCAG 2.1.4). Nothing implements it: the shortcut dialog's footnote had
+stood in for it, and Ken had that footnote cut (K129). Offered an off
+switch in Settings → Keyboard, retiring the requirement, or building
+remapping too, Ken first answered "Retire the requirement", then asked
+for the question again and chose **"Build remapping too"**: an off
+switch plus rebinding each shortcut. The retire answer is superseded.
+Built before `ui/polish-wave-3` merges (backlog B26).
+
 ### K132 · Milestones carry no countdown and no Overdue badge
 
 **Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
@@ -22790,9 +22803,42 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A348 · Branch review follow-ups: path said once, doctor/restore punctuation, unknown-outcome copy, A11Y-43 gap
+
+**Ticket:** independent review of ui/polish-wave-3 (items 1-8 + tone nits) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 (uncommitted at write time) · **Scope:** core, CLI, MCP, web.
+
+**Situation.** A345 made `readTask`/`loadUserProfile` throw `{path} is not valid: {reason}`, but every aggregator already printed `path: reason` with `reason = err.message`, so the web banners (List/Board/Timeline, GitSyncPanel), the CLI (`list`, sprint, milestone, git) and MCP git printed the path twice. `UnreadableTaskError` and doctor's task finding did the same. Separately, a timed-out description save read "...cannot tell whether this was saved Your text has not been saved." (no period, and the two halves contradict each other).
+
+**What to decide.** (1) How to carry the path so each surface names it once. (2) The wording for a write whose outcome is unknown, and which surfaces get it.
+
+**Options.** (1a) `path` + `reason` on `TaskParseError`/`UserProfileError`; `.message` keeps the path for a direct throw, and aggregators read `reason` (chosen). (1b) Strip the path back out of the message with string surgery (rejected: fragile). (1c) Drop the path from the thrown message (rejected: a direct throw would name no file, which undoes C110). (2a) K127's "... may not have been saved. Please check and try again.", named for the object as K129 names the description (chosen). (2b) Keep "cannot tell whether this was saved" and only fix the period (rejected: still contradicts "Your text has not been saved.").
+
+**Decided.**
+- `TaskParseError`/`UserProfileError` take `(message, { path?, cause? })`. With `path`, `.message` is `{path} is not valid: {message}` and `.reason` is the bare message. `cause` is the inner error. A static `reasonOf(err)` returns `reason` for that class and `message` otherwise. Used by `loadAllTasksDetailed`, `malformedAppliedTasks` (publish-sync), `loadAllUsersDetailed` (which feeds archived-guard's `path: reason` and doctor's user finding) and doctor's task finding (`task.md could not be parsed: {reason}`).
+- `splitTaskFile` now runs inside `readTask`'s wrap, so "must start with YAML frontmatter" names the file.
+- `UnreadableTaskError`, one path: the reason is the unwrapped parse error. **Several paths (indeterminate only):** the reason keeps its own path, because it came from one of the listed files and the path is what says which. That path appears twice there (once in the list, once attributing the reason); judged the lesser evil. Close call.
+- `UnreadableTaskError` no longer says "The file appears to have been edited by hand or by another tool, not a half-written write." (XS-51 as amended by K129: no general cause sentence). `lookup-unreadable.test.ts` had asserted `toContain("by hand")`, a green test asserting the pre-K129 wording; it now asserts absence.
+- Unknown-outcome copy, via a new `isUnknownOutcome(err)` in `api/client.ts` (`isTimeout && data_state === "unknown"`: the client's own write deadline only; an answered unattributed 500 also carries `data_state: "unknown"` but keeps its reason verbatim, which NEW-32 requires. A first version keyed on `data_state` alone and broke NEW-32):
+  - description save: "Description may not have been saved. Please check and try again."
+  - task create (`CreateTaskModal.describeFailure`): "The task may not have been created. Please check and try again." (after the NEW-39 "N tasks already created." prefix)
+  - board move banner: "{key} may not have been moved. Please check and try again."
+  - sprint move banner: "{key} may not have been moved to {sprint}. Please check and try again."
+  These are the four places that framed the timeout envelope with their own "not saved"/"Couldn't ..." sentence. Surfaces that show the envelope on its own (ErrorState, fieldFailure, ArchivedPanel rows, List bulk) were left alone.
+- `failureCopy` adds a period when a server message has none before "Your text has not been saved."
+- Doctor: the schema-version message strips the reader's trailing period before ". Expected N"; "your workspace may hold..." starts with a capital.
+- Comma splices from the em-dash sweep split into two sentences: doctor queries.yaml ("Kept as-is. Fix the filters to restore them"), CLI and MCP reconcile ("Some tasks failed. Rerun after fixing them." / "Some tasks failed. Fix them and re-call ..."), Header archived-user title ("{name} is archived. Switch to an active user."), Sidebar retry title ("Could not load. Click to retry."). `RestoreRefusedError`'s four "Refusing the restore" messages end with a period.
+- `UnreadableTaskError` wording, second stale test: `apps/web/src/server/server.unreadable-task.test.ts` also asserted `toContain("by hand")` (green, encoding pre-K129 wording). Now asserts absence and the path once.
+- Specs pinning pre-sweep text, fixed (all three failed the e576fd4e Playwright run): `flow-git-sync.spec.ts` GIT-25 now expects "Local state agrees with it. No sync needed."; `flow-task-failure.spec.ts` ERR-4 pins the whole data-state line "Cannot tell whether this was saved. Reload the page, or run `loctt show` in a terminal to see what the file holds." (copy unchanged: it names how to find out, which ERR-4 bullet 2 requires); `flow-projects-users-switcher.spec.ts` PRU-24 asserts the switch prompt is absent (K130/A-100), keeps the "(archived)" marker, checks the avatar title, and switching from the Switch user list. PRU-24's case text is amended with a K130 note: the "prompts the user to switch" clause is dropped and "from the prompt" becomes "from the user menu". A scan of `tests/ui` for other literals whose case or punctuation no longer matches the source (positive and `not.` assertions) found only seed/mock data.
+- A11Y-43 bullet 3 is unchanged: Ken ruled the off switch and remapping are to be built (another agent). No known-gaps entry; known-gaps.md still reads "Nothing is open."
+- `errors.test.ts` asserted `/did you mean "status"/`, but `validate.ts` already says ". Did you mean ...?" (capitalised). The test was red at HEAD; now matches the real sentence.
+
+**Why.** One path per line is what the review asked for, and `reason` keeps the direct-throw message C110 wanted. The unknown-outcome wording is Ken's (K127), with the subject named the way K129 names the description.
+
+**To revert.** Spec/case fixes: restore the old assertions and the PRU-24 bullets (only if K130's A-100 ruling is reversed). Path: drop `path`/`reason`/`reasonOf` from the two error classes, restore `new TaskParseError(`${filePath} is not valid: ${err.message}`)` / the profile equivalent, move `splitTaskFile` back above the `try`, and switch the five aggregators, doctor's task finding and `UnreadableTaskError` back to `err.message`. Cause sentence: re-add it in `lookup.ts` (only if K129 is reversed). Unknown outcome: delete `isUnknownOutcome` and its four branches (`useBodyAutosave.failureCopy`, `CreateTaskModal.describeFailure`, `BoardView`/`SprintsView` `unknown` flag), and un-export `describeFailure`. Punctuation and splices: restore the strings.
+
 ### A347 · B25 close-out: stale delete-confirm specs, A11Y-55 Toggle fix, InterruptedMigration sentence, em-dash sweep
 
-**Ticket:** B25 (backlog.md) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 (uncommitted at write time)
+**Ticket:** B25 (backlog.md) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 (e576fd4e)
 
 **Decision.**
 
@@ -23005,17 +23051,7 @@ and `npm run test:ui` on all six touched/named spec files (276/276,
 ### A345 · B20 close-out: C110 file-naming, three approved cuts, dead-code removal, tightened tests
 
 **Ticket:** B20 (backlog.md), remaining items · **Date:** 2026-09-26 ·
-**Commit:** ui/polish-wave-3 (uncommitted at write time — see gate
-results below)
-
-**Note on backlog.md.** This session was instructed not to edit
-`docs/dev/backlog.md` or `docs/dev/decisions.md` directly, so this file
-is a holding pen for what would normally be recorded there. B20's
-remaining checklist (C110, the two approved cuts B-69/A-110, the A-7
-cut reverted-then-recut, the dead `update.ts` branches, and the
-loosened-test tightening) is now fully done per this record. Ken/an
-agent should fold this into `decisions.md` § 8 and delete B20 from
-`backlog.md` once reviewed.
+**Commit:** ui/polish-wave-3 (ebec8274)
 
 ---
 
@@ -23307,12 +23343,6 @@ Deleted "Schema-failure messages missing the file name" (closed by
 item 1 above) and "Dead validation branches in `task/update.ts`..."
 (closed by item 5 above). The file now reads "Nothing is open." per its
 own stated convention for an empty list.
-
-**Not done here (per this session's hard rule):** `docs/dev/backlog.md`
-still lists B20 as "in progress" with all five remaining bullets — this
-file (A345) is the record of what closed them; someone with edit access
-to `backlog.md`/`decisions.md` should fold this in and delete the B20
-entry.
 
 ### A344 · B21–B23 implementation choices (unique view names, init over an empty `.loctt`, sprint guards removed)
 

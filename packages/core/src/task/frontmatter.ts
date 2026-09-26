@@ -17,9 +17,33 @@ const KNOWN_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(
 );
 
 export class TaskParseError extends Error {
-  constructor(message: string) {
-    super(message);
+  /** The task.md this came from, when the reader knew it. */
+  readonly path: string | undefined;
+  /**
+   * The parse failure without the file name. An aggregator that
+   * already prints `path: reason` uses this, so the path is not said
+   * twice; `message` leads with the path for a direct throw (A348).
+   */
+  readonly reason: string;
+
+  constructor(message: string, opts: { path?: string; cause?: unknown } = {}) {
+    super(
+      opts.path !== undefined ? `${opts.path} is not valid: ${message}` : message,
+      opts.cause !== undefined ? { cause: opts.cause } : undefined,
+    );
     this.name = "TaskParseError";
+    this.path = opts.path;
+    this.reason = message;
+  }
+
+  /**
+   * The reason to print beside a path the caller already names: the
+   * unwrapped parse failure for a `TaskParseError`, the message for
+   * anything else.
+   */
+  static reasonOf(err: unknown): string {
+    if (err instanceof TaskParseError) return err.reason;
+    return err instanceof Error ? err.message : String(err);
   }
 }
 

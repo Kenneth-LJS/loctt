@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,6 +27,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 import { initLoctt } from "../init/init.js";
+import { getSchemaVersionPath } from "../paths/index.js";
 import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
 import { saveReconcileState } from "../state/reconcile.js";
 import { runDoctor, runDoctorStream } from "./doctor.js";
@@ -148,6 +149,23 @@ describe("runDoctor", () => {
     expect(check?.status).toBe("error");
     expect(check?.message).toContain("2026-01-01T00:00:00.000Z");
     expect(check?.message).toContain("reconcile.yaml");
+    // A348: every sentence starts with a capital.
+    expect(check?.message).toContain("). Your workspace may hold a partly-applied sync.");
+  });
+
+  // A348: the reader's sentence already ends with a period, so doctor
+  // must not add a second one before "Expected".
+  it("reports an empty schema_version file without a doubled period", async () => {
+    await initLoctt(root);
+    const locttDir = join(root, ".loctt");
+    await writeFile(getSchemaVersionPath(locttDir), "", "utf-8");
+
+    const checks = await runDoctor(root);
+    const check = checks.find(c => c.message.includes("is empty"));
+    expect(check?.status).toBe("error");
+    expect(check?.message).toBe(
+      `.schema-version is empty. Expected ${String(CURRENT_SCHEMA_VERSION)}`,
+    );
   });
 
   it("says nothing about reconciliation when none is outstanding", async () => {

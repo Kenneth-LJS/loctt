@@ -89,6 +89,25 @@ vi.mock("../router/useUnsavedGuard.ts", () => ({
   useUnsavedGuard: (): void => {},
 }));
 
+// The REAL hook, with `cancel` counted. `cancel` refuses on its own
+// while a write is in flight, so an Escape that reached it would leave no
+// visible trace; the count is how the A346 test sees that Escape never
+// got that far (A348).
+const cancelCalls = vi.hoisted(() => ({ count: 0 }));
+vi.mock("./useBodyAutosave.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./useBodyAutosave.ts")>();
+  return {
+    ...actual,
+    useBodyAutosave: (opts: Parameters<typeof actual.useBodyAutosave>[0]) => {
+      const hook = actual.useBodyAutosave(opts);
+      return {
+        ...hook,
+        cancel: () => { cancelCalls.count++; return hook.cancel(); },
+      };
+    },
+  };
+});
+
 const { BodyEditor } = await import("./BodyEditor.tsx");
 
 beforeEach(() => { installDeferredFetch(); window.sessionStorage.clear(); });
@@ -250,10 +269,15 @@ describe("BodyEditor — a Save in flight (A346)", () => {
     expect(pending).toHaveLength(1);
 
     expect(screen.getByTestId("body-cancel").hasAttribute("disabled")).toBe(true);
+    cancelCalls.count = 0;
     await act(async () => {
       fireEvent.keyDown(screen.getByTestId("markdown-editor"), { key: "Escape" });
       await Promise.resolve();
     });
+    // Escape stops at the editor's own `saving` guard: it neither asks
+    // nor reaches the hook's `cancel` (A348; `cancel` refusing by itself
+    // would hide a missing guard from every other assertion here).
+    expect(cancelCalls.count).toBe(0);
     expect(screen.queryByTestId("body-discard-dialog")).toBeNull();
     expect(screen.queryByTestId("body-rendered")).toBeNull();
 

@@ -728,7 +728,7 @@ test("GIT-25: an existing loctt branch is surfaced with its head and adopted onl
   const report = page.getByTestId("git-adopt-report");
   await expect(report).toBeVisible();
   await expect(report).toHaveAttribute("data-in-agreement", "true");
-  await expect(report).toContainText("no sync needed");
+  await expect(report).toContainText("Local state agrees with it. No sync needed.");
 
   expect(errors).toEqual([]);
 });

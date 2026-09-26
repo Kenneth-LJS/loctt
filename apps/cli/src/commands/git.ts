@@ -516,7 +516,7 @@ async function runReconcile(args: string[], locttDir: string, root: string): Pro
     if (outcome.reconciled) {
       console.log("Reconciliation complete; the operation finished.");
     } else {
-      console.error("Reconciliation incomplete. Some tasks failed, rerun after fixing them.");
+      console.error("Reconciliation incomplete. Some tasks failed. Rerun after fixing them.");
       process.exitCode = EXIT.RUNTIME;
     }
     return;

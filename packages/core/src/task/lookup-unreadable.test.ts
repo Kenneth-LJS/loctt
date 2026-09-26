@@ -111,9 +111,16 @@ describe("lookup distinguishes an unreadable task from an absent one", () => {
     expect(unreadable.message).toContain("could not be parsed");
     // ERR-1: never the absence wording.
     expect(unreadable.message).not.toContain("not found");
-    // XS-51: writes are atomic, so the message commits to a hand edit
-    // rather than hedging about a half-written file.
-    expect(unreadable.message).toContain("by hand");
+    // XS-51 as amended by K129: no general cause sentence, and no
+    // hedging about a half-written file either. This line used to
+    // assert "by hand" was present, which encoded the pre-K129 wording.
+    expect(unreadable.message).not.toContain("by hand");
+    expect(unreadable.message).not.toContain("half-written");
+    // A348: the path is named once. `readTask` puts it in its own
+    // message; the headline here names it too, so the reason must be
+    // the unwrapped parse error or the path is said twice.
+    expect(unreadable.message.split(path).length - 1).toBe(1);
+    expect(unreadable.reason).not.toContain(path);
   });
 
   it("does not report a corrupt task as absent when the key never reached the index", async () => {
@@ -130,6 +137,8 @@ describe("lookup distinguishes an unreadable task from an absent one", () => {
     expect(unreadable.code).toBe("io_failed");
     expect(unreadable.paths).toEqual([path]);
     expect(unreadable.message).toContain(path);
+    // A348: once, on the indeterminate path too.
+    expect(unreadable.message.split(path).length - 1).toBe(1);
     expect(unreadable.message).toMatch(/line \d+/);
     // The key cannot be matched to the file whose key would not parse,
     // so the error says so rather than asserting either way.

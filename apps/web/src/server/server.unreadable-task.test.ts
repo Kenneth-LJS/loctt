@@ -113,9 +113,13 @@ describe("GET /api/tasks/:ref with an unparseable task.md", () => {
     // TSK-54: which line or field, not a raw stack trace.
     expect(message).toMatch(/line \d+/);
     expect(message).not.toContain("    at ");
-    // XS-51: committed wording, no "may have been written incompletely".
-    expect(message).toContain("by hand");
+    // XS-51 as amended by K129: no hedging ("incompletely") and no
+    // general cause sentence either. This line used to assert "by hand"
+    // was present, which encoded the pre-K129 wording (A348).
+    expect(message).not.toContain("by hand");
     expect(message).not.toContain("incompletely");
+    // A348: the path is named once.
+    expect(message.split(victimPath).length - 1).toBe(1);
   });
 
   it("offers no retry control, because retrying cannot succeed", async () => {

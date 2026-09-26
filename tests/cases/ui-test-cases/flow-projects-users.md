@@ -216,10 +216,17 @@ project counters during git sync is in
 ### PRU-24 · M4 · major · P1 P7
 **The current user is archived from the CLI mid-session.** UI is open as Carol; `loctt user archive carol-id` runs in a terminal.
 
+> **Amended (K130, Ken 2026-09-24).** The user menu's archived-user
+> prompt was removed (A-100). Ken: *"no need then? users should know
+> their settings change if they switch user."* The header still marks
+> Carol "(archived)" and the avatar's tooltip names the state; the menu
+> shows no separate prompt, and switching happens from its ordinary
+> Switch user list.
+
 - The next data fetch surfaces the change rather than continuing to present Carol as a normal active user.
-- The header shows Carol with an "(archived)" marker and prompts the user to switch to an active user.
+- The header shows Carol with an "(archived)" marker.
 - Writes attempted while archived either succeed with Carol as actor (if that is the core's behaviour) or fail with a message naming Carol and saying she is archived — but the UI does not fail silently or attribute the write to some other user.
-- Switching to an active user from the prompt clears the state without a reload.
+- Switching to an active user from the user menu clears the state without a reload.
 
 ### PRU-25 · M4 · major · P7
 **A hard-deleted user is still referenced as reporter on old tasks.** Dave was deleted with `loctt user delete`; five tasks still carry his ULID as `reporter`.

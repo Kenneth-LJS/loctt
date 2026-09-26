@@ -51,9 +51,14 @@ export class TaskNotFoundError extends LocttError {
  * not read".
  *
  * XS-51 settles the wording: LocTT writes task.md atomically (temp
- * file + rename), so a reader never sees a torn write. A malformed
- * file is therefore a hand edit or another tool, and the message says
- * so rather than hedging.
+ * file + rename), so a reader never sees a torn write, and the message
+ * does not hedge with "may have been written incompletely". As amended
+ * by K129 it also states no general cause: the path and the parse
+ * error are the whole message (A348).
+ *
+ * The path is said once. The reason is `TaskParseError.reason`, the
+ * parse error without the file name, because the headline has already
+ * named the file (A348).
  */
 export class UnreadableTaskError extends LocttError {
   /** The ref as the user typed it. */
@@ -94,8 +99,13 @@ export class UnreadableTaskError extends LocttError {
     cause: unknown,
     opts: { readonly indeterminate?: boolean } = {},
   ) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
     const indeterminate = opts.indeterminate ?? false;
+    // One path: the headline names it, so the reason is the unwrapped
+    // parse error. Several paths (indeterminate only): the reason came
+    // from one of them, so it keeps the path that says which (A348).
+    const reason = paths.length === 1
+      ? TaskParseError.reasonOf(cause)
+      : cause instanceof Error ? cause.message : String(cause);
     const list = paths.join(", ");
     // No `data_state`: this is a read, so nothing was at stake
     // (ERR-18 scopes that requirement to write paths).
@@ -113,8 +123,7 @@ export class UnreadableTaskError extends LocttError {
         + `${paths.length === 1
             ? `${list} could not be parsed`
             : `none of these could be parsed: ${list}`}. `
-        + `The file appears to have been edited by hand or by another `
-        + `tool, not a half-written write. ${reason}`,
+        + reason,
       { detail: reason, recovery: { kind: "none" }, cause });
     this.name = "UnreadableTaskError";
     this.ref = ref;
