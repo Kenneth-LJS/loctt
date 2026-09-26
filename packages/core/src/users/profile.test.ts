@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -211,5 +211,42 @@ describe("loadUserProfile", () => {
     expect(u.path).toBe(path);
     expect(u.reason).toBe("id is required (expected string)");
     expect(`${u.path}: ${u.reason}`.split(path).length - 1).toBe(1);
+  });
+
+  // A350: the id-mismatch error embedded the path in its text and was
+  // built without `{ path }`, so the list line said the path twice and
+  // the error carried no `path` of its own.
+  it("names the path once when a profile's id does not match its folder", async () => {
+    const path = getUserProfilePath(locttDir, "u1");
+    await mkdir(join(locttDir, "users", "u1"), { recursive: true });
+    await writeFile(path, "id: u2\nname: Ken\ntimezone: UTC\n", "utf-8");
+
+    const err = await loadUserProfile(locttDir, "u1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserProfileError);
+    expect((err as UserProfileError).message).toBe(`${path} is not valid: has id 'u2', expected 'u1'`);
+    expect((err as UserProfileError).path).toBe(path);
+
+    const { unreadable } = await loadAllUsersDetailed(locttDir);
+    const u = unreadable[0]!;
+    expect(u.reason).toBe("has id 'u2', expected 'u1'");
+    expect(`${u.path}: ${u.reason}`.split(path).length - 1).toBe(1);
+  });
+
+  // A350: a read failure carried Node's "EACCES: …, open '<path>'".
+  it("names the path once when a profile cannot be read at all", async () => {
+    const path = getUserProfilePath(locttDir, "u1");
+    await mkdir(join(locttDir, "users", "u1"), { recursive: true });
+    await writeFile(path, "id: u1\nname: Ken\ntimezone: UTC\n", "utf-8");
+    await chmod(path, 0o000);
+    try {
+      const enforced = await readFile(path, "utf-8").then(() => false, () => true);
+      if (!enforced) return;
+      const { unreadable } = await loadAllUsersDetailed(locttDir);
+      const u = unreadable[0]!;
+      expect(u.reason).toBe("EACCES: permission denied");
+      expect(`${u.path}: ${u.reason}`.split(path).length - 1).toBe(1);
+    } finally {
+      await chmod(path, 0o644);
+    }
   });
 });

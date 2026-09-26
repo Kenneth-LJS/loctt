@@ -59,13 +59,41 @@ describe("ShortcutHelpDialog", () => {
       expect(screen.getByTestId(`shortcut-row-${id}`).getAttribute("aria-disabled"), id).toBe("true");
     }
 
-    fireEvent.click(within(notice).getByRole("button", { name: "Turn on" }));
+    const turnOn = within(notice).getByRole("button", { name: "Turn on" });
+    // A keyboard user is on the button when they press it.
+    turnOn.focus();
+    expect(document.activeElement).toBe(turnOn);
+    fireEvent.click(turnOn);
     // The far end: the PUT turns the master back on (absent is on) and
     // keeps the user's other settings.
     await waitFor(() => { expect(store.puts).toHaveLength(1); });
     expect(store.puts[0]).toEqual({ theme: "dark" });
     await waitFor(() => { expect(screen.queryByTestId("shortcut-help-off-notice")).toBeNull(); });
     expect(screen.getByTestId("shortcut-row-new-task").getAttribute("aria-disabled")).toBeNull();
+    // A350: the pressed button unmounted with the notice; focus lands on
+    // the close button, not `body`, and a live region that was there
+    // before the click says what changed.
+    expect(document.activeElement).toBe(screen.getByTestId("shortcut-help-close"));
+    const status = screen.getByTestId("shortcut-help-status");
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.textContent).toBe("Single-key shortcuts are on.");
+  });
+
+  // A350: "Turn on" is optimistic and rolls back on failure; without a
+  // message the rollback was the only sign it had not saved.
+  // @verifies A11Y-58
+  it("says so when Turn on could not be saved", async () => {
+    const store = stubSettingsApi({ keyboard_shortcuts: { single_key: false } });
+    store.failPut = true;
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("shortcut-help-turn-on"));
+    await waitFor(() => { expect(store.puts).toHaveLength(1); });
+    const notice = await screen.findByTestId("shortcut-help-off-notice");
+    const alert = await within(notice).findByRole("alert");
+    expect(alert.textContent).toBe("Couldn't save your shortcut settings. Try again.");
+    // Rolled back: the rows are disabled again and nothing claims "on".
+    expect(screen.getByTestId("shortcut-row-new-task").getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByTestId("shortcut-help-status").textContent).toBe("");
   });
 
   // @verifies A11Y-58

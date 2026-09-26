@@ -66,6 +66,27 @@ describe("CLI user shortcuts (spawned binary)", () => {
     });
   });
 
+  // A350: a flag with no value read as absent, so these printed the
+  // state and exited 0 having changed nothing.
+  // @verifies PRU-C13
+  it.each([
+    [["--single-key"], "--single-key needs a value"],
+    [["--off"], "--off needs one or more shortcut ids"],
+    [["--on"], "--on needs one or more shortcut ids"],
+    [["--off", "--single-key", "off"], "--off needs one or more shortcut ids"],
+    [["--off", "goto", "--off"], "--off needs one or more shortcut ids"],
+    [["--on="], "--on needs one or more shortcut ids"],
+  ])("refuses %j with a usage error and writes nothing", async (flags, message) => {
+    await withTmpLoctt(async ({ root }) => {
+      const before = await readFile(await settingsPath(root), "utf8").catch(() => "");
+      const result = await runCli(["user", "shortcuts", ...flags], { cwd: root });
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain(message);
+      const after = await readFile(await settingsPath(root), "utf8").catch(() => "");
+      expect(after).toBe(before);
+    });
+  });
+
   // @verifies PRU-C13
   it("--reset turns everything back on and keeps other settings", async () => {
     await withTmpLoctt(async ({ root }) => {

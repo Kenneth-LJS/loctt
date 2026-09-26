@@ -2,12 +2,13 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { groupsOf, ShortcutKeys } from "./ShortcutKeys.tsx";
-import { ShortcutSettingsEditor } from "./ShortcutSettingsEditor.tsx";
+import { shortcutSaveFailure, ShortcutSettingsEditor } from "./ShortcutSettingsEditor.tsx";
 import { useKeyboardShortcutSettings } from "./useKeyboardShortcutSettings.ts";
 
 /**
@@ -34,7 +35,10 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const [view, setView] = useState<"list" | "customize">("list");
-  const { state, change } = useKeyboardShortcutSettings();
+  const { state, change, save } = useKeyboardShortcutSettings();
+  // Set by "Turn on", so the persistent status region can say the master
+  // came back on: the notice that held the button is gone by then.
+  const [turnedOn, setTurnedOn] = useState(false);
   useFocusTrap(panelRef, { initialFocus: closeRef });
   useInertBackground(panelRef);
 
@@ -116,22 +120,46 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
           <ShortcutSettingsEditor testIdPrefix="shortcut-help-settings" />
         ) : (
           <>
+            {/* A live region that stays mounted (A350). "Turn on" unmounts
+                the notice it sits in, so a region on the notice would be
+                removed at the moment it had something to say. It speaks
+                only for the change: the notice itself is read in place. */}
+            <div role="status" className="sr-only" data-testid="shortcut-help-status">
+              {turnedOn && state.singleKey ? "Single-key shortcuts are on." : ""}
+            </div>
+
             {!state.singleKey ? (
               <div
-                role="status"
                 data-testid="shortcut-help-off-notice"
-                className="mb-3 flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-bg-muted px-3 py-2"
+                className="mb-3 rounded-md border border-border-subtle bg-bg-muted px-3 py-2"
               >
-                <span className="text-[0.9286rem] text-text-primary">Single-key shortcuts are off.</span>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={() => { change({ singleKey: true }); }}
-                  testId="shortcut-help-turn-on"
-                >
-                  Turn on
-                </Button>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[0.9286rem] text-text-primary">Single-key shortcuts are off.</span>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      change({ singleKey: true });
+                      setTurnedOn(true);
+                      // The button unmounts with the notice (the write is
+                      // optimistic). Land focus on the close button, as
+                      // `switchView` does, rather than on `body`.
+                      closeRef.current?.focus();
+                    }}
+                    testId="shortcut-help-turn-on"
+                  >
+                    Turn on
+                  </Button>
+                </div>
+                {/* The write is optimistic and rolls back on failure, which
+                    brings this notice back. Without this the rollback is
+                    the only sign the save failed (A350). */}
+                {save.isError ? (
+                  <Callout tone="danger" role="alert" testId="shortcut-help-turn-on-error" className="mt-2">
+                    {shortcutSaveFailure(save.error)}
+                  </Callout>
+                ) : null}
               </div>
             ) : null}
 

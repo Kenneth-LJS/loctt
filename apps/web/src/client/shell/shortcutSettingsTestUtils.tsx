@@ -21,10 +21,16 @@ export interface SettingsStore {
   settings: Record<string, unknown>;
   puts: Record<string, unknown>[];
   failPut: boolean;
+  /**
+   * The PUT never answers; it rejects only when its signal aborts, as a
+   * real `fetch` does, so the client's write deadline can fire (K134's
+   * unknown outcome).
+   */
+  hangPut: boolean;
 }
 
 export function stubSettingsApi(initial: Record<string, unknown> = {}): SettingsStore {
-  const store: SettingsStore = { settings: initial, puts: [], failPut: false };
+  const store: SettingsStore = { settings: initial, puts: [], failPut: false, hangPut: false };
   const json = (body: unknown, status = 200): Response =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
@@ -35,6 +41,13 @@ export function stubSettingsApi(initial: Record<string, unknown> = {}): Settings
         const body = JSON.parse(typeof init.body === "string" ? init.body : "{}") as Record<string, unknown>;
         store.puts.push(body);
         if (store.failPut) return Promise.resolve(json({ error: "boom" }, 500));
+        if (store.hangPut) {
+          return new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => {
+              reject(new DOMException("The operation was aborted.", "AbortError"));
+            }, { once: true });
+          });
+        }
         store.settings = body;
         return Promise.resolve(json({ user: "u1", settings: body }));
       }

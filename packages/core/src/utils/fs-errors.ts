@@ -123,3 +123,26 @@ export async function withFsErrors<T>(path: string, fn: () => Promise<T>): Promi
     rethrowFsError(err, path);
   }
 }
+
+/**
+ * A filesystem error's message without the path Node embeds in it, for
+ * an aggregator that already prints `path: reason` (A350).
+ *
+ * Node writes `EACCES: permission denied, open '/x/task.md'`; beside a
+ * path that list line already names, the tail says the path twice. This
+ * keeps the code and Node's own short description (`EACCES: permission
+ * denied`) and drops the `, open '<path>'` tail. Returns `undefined`
+ * when `err` is not an errno error that names a path in its message, so
+ * the caller falls back to the message as it is.
+ */
+export function errnoReasonWithoutPath(err: unknown): string | undefined {
+  const errno = errnoOf(err);
+  if (errno === undefined || errno.path === "" || !(err instanceof Error)) return undefined;
+  const message = err.message;
+  const quoted = message.indexOf(`'${errno.path}'`);
+  if (quoted === -1) return undefined;
+  const cut = message.lastIndexOf(", ", quoted);
+  if (cut > 0) return message.slice(0, cut);
+  // An unfamiliar shape: still never repeat the path.
+  return message.split(`'${errno.path}'`).join("").trim();
+}

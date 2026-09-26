@@ -536,10 +536,10 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
   // A348: a save the server never answered may have landed. The copy
   // used to join the timeout envelope ("... cannot tell whether this
   // was saved") to "Your text has not been saved." with no period
-  // between them, asserting both outcomes at once. K127's wording,
-  // named for the description (K129), replaces the whole line.
+  // between them, asserting both outcomes at once. K134's wording
+  // replaces the whole line.
   // @verifies ERR-27
-  it("a save that times out reads exactly the K127 unknown-outcome line", async () => {
+  it("a save that times out reads exactly the K134 unknown-outcome line", async () => {
     vi.stubGlobal("fetch", vi.fn((_url: string | URL, init?: RequestInit) =>
       new Promise<Response>((_res, rej) => {
         init?.signal?.addEventListener("abort", () => {

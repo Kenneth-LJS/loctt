@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { writeFileAtomically, writeYamlAtomically } from "./atomic-yaml.js";
-import { FsAccessError, rethrowFsError, withFsErrors } from "./fs-errors.js";
+import { errnoReasonWithoutPath, FsAccessError, rethrowFsError, withFsErrors } from "./fs-errors.js";
 
 /**
  * These map errnos a user can act on into errors that say so. The
@@ -153,5 +153,24 @@ describe("the atomic writers surface actionable filesystem errors", () => {
     await expect(writeYamlAtomically(target, exploding)).rejects.not.toBeInstanceOf(
       FsAccessError,
     );
+  });
+});
+
+// A350: `path: reason` lists print Node's errno message beside the path
+// they already name; Node's message embeds the path again.
+describe("errnoReasonWithoutPath", () => {
+  function errno(message: string, fields: Record<string, unknown>): Error {
+    return Object.assign(new Error(message), fields);
+  }
+
+  it("keeps the code and description and drops Node's path tail", () => {
+    const p = "/x/.loctt/tasks/01H/task.md";
+    const err = errno(`EACCES: permission denied, open '${p}'`, { code: "EACCES", path: p, syscall: "open" });
+    expect(errnoReasonWithoutPath(err)).toBe("EACCES: permission denied");
+  });
+
+  it("leaves errors that carry no path to the caller", () => {
+    expect(errnoReasonWithoutPath(errno("EISDIR: illegal operation on a directory, read", { code: "EISDIR" }))).toBeUndefined();
+    expect(errnoReasonWithoutPath(new Error("plain"))).toBeUndefined();
   });
 });

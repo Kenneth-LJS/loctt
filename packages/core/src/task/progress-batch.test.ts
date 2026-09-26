@@ -156,6 +156,13 @@ describe("milestoneProgress", () => {
     expect(isProgressUnavailable(report.progress[m1])).toBe(true);
     // Attributed, so it is NOT double-reported at the tracker level.
     expect(report.unreadable).toHaveLength(0);
+    // …which makes the per-row reason the only place the broken file is
+    // named: it must carry the path, and exactly once (A350).
+    const row = report.progress[m1];
+    const reason = isProgressUnavailable(row) ? row.reason : "";
+    const path = getTaskFilePath(locttDir, broken);
+    expect(reason.startsWith(`${path}: `)).toBe(true);
+    expect(reason.split(path)).toHaveLength(2);
   });
 
   it("fails only the affected milestone; siblings keep their real numbers (MSL-35)", async () => {

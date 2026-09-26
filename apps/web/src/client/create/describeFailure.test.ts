@@ -7,7 +7,7 @@ import { describeFailure } from "./CreateTaskModal.tsx";
  * A348: a create that timed out may have landed. The copy used to be
  * "Couldn't create the task: the server did not respond, so LocTT
  * cannot tell whether this was saved", which asserts a failure and then
- * says the outcome is unknown. K127's wording replaces it.
+ * says the outcome is unknown. K134's create wording replaces it.
  */
 describe("describeFailure: a timed-out create", () => {
   const timeout = new ApiError("/api/tasks did not respond", {

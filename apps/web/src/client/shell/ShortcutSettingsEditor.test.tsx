@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_WRITE_TIMEOUT_MS } from "../api/client.ts";
 import { ShortcutSettingsEditor } from "./ShortcutSettingsEditor.tsx";
 import { renderWithProviders, stubSettingsApi } from "./shortcutSettingsTestUtils.tsx";
 
@@ -87,6 +88,40 @@ describe("ShortcutSettingsEditor", () => {
     renderEditor();
     fireEvent.click(await screen.findByTestId("ed-master"));
     const alert = await screen.findByTestId("ed-error");
-    expect(alert.textContent).toContain("Couldn't save your shortcut settings.");
+    expect(alert.textContent).toBe("Couldn't save your shortcut settings. Try again.");
+  });
+
+  // A350: a timed-out write may have landed, so the failure line must
+  // not claim it was not saved; it takes K134's unknown-outcome wording.
+  it("says the change may not have been saved when the save timed out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const store = stubSettingsApi();
+      store.hangPut = true;
+      renderEditor();
+      fireEvent.click(await screen.findByTestId("ed-master"));
+      await waitFor(() => { expect(store.puts).toHaveLength(1); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(DEFAULT_WRITE_TIMEOUT_MS + 1); });
+      const alert = await screen.findByTestId("ed-error");
+      expect(alert.textContent).toBe("Your changes may not have been saved. Please try again.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A350: Settings → Keyboard heads the editor with an h1 and puts h2
+  // reference groups after it, so the editor's groups must be h2 there,
+  // and stay h3 under the `?` dialog's h2 title.
+  it("renders its group headings at the level it is given", async () => {
+    stubSettingsApi();
+    renderWithProviders(() => <ShortcutSettingsEditor testIdPrefix="ed" headingLevel={2} />);
+    const levels = async (): Promise<string[]> =>
+      within(await screen.findByTestId("ed")).getAllByRole("heading").map(h => h.tagName);
+    const asH2 = await levels();
+    expect(asH2.length).toBeGreaterThan(0);
+    expect(new Set(asH2)).toEqual(new Set(["H2"]));
+    cleanup();
+    renderEditor();
+    expect(new Set(await levels())).toEqual(new Set(["H3"]));
   });
 });
