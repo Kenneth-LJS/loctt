@@ -22685,6 +22685,29 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K135 · Post-merge cleanup rulings (wave 3 follow-ups)
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+Asked about the items left after `ui/polish-wave-3` merged:
+- **Task due dates turning red when overdue** (list and board): *"remove"*.
+  Same principle as K131/K132 and P11: the date is shown, no nudge.
+- **Em dashes in MCP tool descriptions** (~70, agent-facing text the B25
+  sweep skipped): *"remove"*.
+- **Switched-off toggles look bright in dark mode:** *"fix"*.
+- **The path printed twice in the "several unreadable candidates" error**
+  (A348 had kept it deliberately): *"wait why is it deliberate? feels
+  like something that should be fixed"*. Fix: each candidate file gets
+  its own reason.
+- **65 lint warnings:** *"fix"*.
+- **Release gate** (`release-readiness.md`, `design-review.md`):
+  *"compare if those items are resolved"*.
+- **`logo-lab.html`:** *"can remove"*.
+- **WEB-7's description edited by a live check:** *"please fix"*. The
+  tracker it lived in was the session scratch playground, deleted when
+  the session restarted; the repo's own `.loctt` never had the edit, so
+  there is nothing left to revert.
+
 ### K134 · Timed-out saves: "Please try again", except create
 
 **Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
