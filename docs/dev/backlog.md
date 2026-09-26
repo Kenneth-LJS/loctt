@@ -14,9 +14,16 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 Fix all 65 warnings (hook dependencies, non-null assertions) without
 changing behaviour.
 
-## B36 · How core reaches the three packages (K89 vs a published core) — **needs Ken**
+## B38 · One package, `loctt` (K139) — **todo** (after B32)
 
-Today (K89): core bundled into each of `@loctt/cli`, `@loctt/mcp`,
-`@loctt/web`. Ken asked whether core could be its own versioned package
-the three depend on, with an exact version pin. Waiting on his call:
-keep bundled, or publish `@loctt/core` with exact pins (supersedes K89).
+- Rename `@loctt/cli` to `loctt` (bin `loctt`), with core, the web
+  client and the MCP server bundled. `@loctt/mcp` and `@loctt/web`
+  become private workspaces; remove the `loctt-mcp` bin and
+  `publishConfig`s; `prepublishOnly` only on `loctt`.
+- READMEs, `docs/user/*` install instructions, MCP setup (`loctt mcp` /
+  `npx -y loctt mcp`), release-readiness.md B4, CHANGELOG.
+- `npm run test:packaging`: pack and install the one package outside the
+  repo and run `loctt`, `loctt ui` and `loctt mcp`; the manifest check
+  covers it; nothing else is publishable.
+- Ken unpublishes `@loctt/cli` and `@loctt/mcp` himself.
+
