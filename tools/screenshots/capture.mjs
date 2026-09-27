@@ -5,14 +5,15 @@
 // It seeds a throwaway tracker (tools/screenshots/seed.mjs), starts the
 // built web UI against it, then for both light and dark themes visits each
 // documented view and writes a PNG to docs/assets/screenshots/<theme>/.
-// It also records a couple of GIF walkthroughs with a simulated cursor.
+// The hero GIF is then assembled from those stills (no screen recording),
+// so it's a clean slideshow with no loading flashes.
 //
 // Prerequisites: `npm run build` (so apps/cli/dist exists) and ffmpeg on
 // PATH (for GIF encoding). Re-running reproduces the same images.
 
 import { chromium } from "playwright";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, rmSync, existsSync, readdirSync, unlinkSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -83,49 +84,42 @@ async function shoot(page, id, theme) {
   await page.screenshot({ path: resolve(dir, `${id}.png`) });
 }
 
+// The views the hero GIF cycles through, in order.
+const TOUR = ["list", "board", "timeline", "task-detail"];
+const TOUR_SECONDS = 2.2; // how long each screen holds
+
 /**
- * Record a GIF that pans across the app's screens.
+ * Build the hero GIF from the already-captured stills.
  *
- * This is a hero shot — "here's what LocTT looks like" — so it just cuts
- * between views with a dwell on each; no simulated cursor. Save the cursor
- * (cursor.mjs) for clips that demonstrate an interaction, where the point
- * is "click X and Y appears".
+ * No screen recording: each frame is a clean screenshot taken after the
+ * page fully loaded, so the GIF is a crossfade-free slideshow with none of
+ * the loading flashes a recording would catch. ffmpeg holds each still for
+ * TOUR_SECONDS and loops.
  */
-async function recordWalkthrough(browser, theme) {
-  const videoDir = resolve(OUT, ".video", theme);
-  rmSync(videoDir, { recursive: true, force: true });
-  mkdirSync(videoDir, { recursive: true });
+function buildTourGif(theme) {
+  const dir = resolve(OUT, theme);
+  const workDir = resolve(OUT, ".gifwork", theme);
+  rmSync(workDir, { recursive: true, force: true });
+  mkdirSync(workDir, { recursive: true });
 
-  // recordVideo is a CONTEXT option, so the recording gets its own context.
-  const context = await browser.newContext({
-    viewport: VIEWPORT,
-    colorScheme: theme,
-    deviceScaleFactor: 1,
-    recordVideo: { dir: videoDir, size: VIEWPORT },
-  });
-  const page = await context.newPage();
-  await page.addInitScript((t) => { try { localStorage.setItem("tt-theme", t); } catch { /* */ } }, theme);
-
-  // A slow pan: List → Board → Timeline → a task, dwelling on each so a
-  // viewer can take it in.
-  const DWELL = 1800;
-  const stops = ["/list", "/board", "/timeline", "/tasks/WEB-1", "/list"];
-  for (const path of stops) {
-    await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
-    await sleep(DWELL);
+  // An ffconcat playlist: each still, held for TOUR_SECONDS. The last entry
+  // is repeated without a duration so the final frame isn't dropped.
+  const lines = ["ffconcat version 1.0"];
+  for (const id of TOUR) {
+    lines.push(`file '${resolve(dir, `${id}.png`)}'`, `duration ${TOUR_SECONDS}`);
   }
+  lines.push(`file '${resolve(dir, `${TOUR[TOUR.length - 1]}.png`)}'`);
+  const playlist = resolve(workDir, "playlist.ffconcat");
+  writeFileSync(playlist, lines.join("\n"));
 
-  await context.close(); // finalizes the video
-  const webm = readdirSync(videoDir).find((f) => f.endsWith(".webm"));
-  if (!webm) throw new Error("no video recorded for " + theme);
-  const src = resolve(videoDir, webm);
   const gif = resolve(OUT, `tour-${theme}.gif`);
-  // ffmpeg webm → gif with a shared palette for clean colors.
-  const palette = resolve(videoDir, "palette.png");
-  // 10fps / 800px keeps the tour smooth while staying repo-friendly (~3 MB).
-  const filters = "fps=10,scale=800:-1:flags=lanczos";
-  execFileSync("ffmpeg", ["-y", "-i", src, "-vf", `${filters},palettegen=max_colors=128`, palette], { stdio: "ignore" });
-  execFileSync("ffmpeg", ["-y", "-i", src, "-i", palette, "-lavfi", `${filters}[x];[x][1:v]paletteuse`, gif], { stdio: "ignore" });
+  const palette = resolve(workDir, "palette.png");
+  // 800px wide, ~15 colors-safe palette; the stills are static so a low fps
+  // is fine and keeps the file small.
+  const filters = "scale=800:-1:flags=lanczos,fps=10";
+  execFileSync("ffmpeg", ["-y", "-safe", "0", "-i", playlist, "-vf", `${filters},palettegen=max_colors=128`, palette], { stdio: "ignore" });
+  execFileSync("ffmpeg", ["-y", "-safe", "0", "-i", playlist, "-i", palette, "-lavfi", `${filters}[x];[x][1:v]paletteuse`, "-loop", "0", gif], { stdio: "ignore" });
+  rmSync(workDir, { recursive: true, force: true });
   console.log("wrote", gif);
 }
 
@@ -151,12 +145,12 @@ async function main() {
         console.log(`shot ${theme}/${shot.id}.png`);
       }
       await context.close();
-      await recordWalkthrough(browser, theme);
+      // Assemble the hero GIF from the stills just captured — no recording.
+      buildTourGif(theme);
     }
     await browser.close();
   } finally {
     ui.kill();
-    rmSync(resolve(OUT, ".video"), { recursive: true, force: true });
   }
   // Clean the throwaway tracker; the seed makes it reproducible anyway.
   rmSync(TRACKER, { recursive: true, force: true });

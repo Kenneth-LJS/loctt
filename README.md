@@ -67,30 +67,26 @@ That's what LocTT is.
 - **CLI** — fast, scriptable task management from the terminal
 - **MCP server** — AI agents read and manage tasks through structured tools
 
-<table>
-  <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/board.png">
-        <img alt="Board view" src="docs/assets/screenshots/light/board.png">
-      </picture>
-      <p align="center"><em>Board</em></p>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/timeline.png">
-        <img alt="Timeline view" src="docs/assets/screenshots/light/timeline.png">
-      </picture>
-      <p align="center"><em>Timeline</em></p>
-    </td>
-  </tr>
-</table>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/board.png">
+  <img alt="Board view" src="docs/assets/screenshots/light/board.png">
+</picture>
+
+<p align="center"><em>The board — one column per status, drag cards to move them.</em></p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/timeline.png">
+  <img alt="Timeline view" src="docs/assets/screenshots/light/timeline.png">
+</picture>
+
+<p align="center"><em>The timeline — dated tasks on a schedule, with dependencies.</em></p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/task-detail.png">
   <img alt="Task detail" src="docs/assets/screenshots/light/task-detail.png">
 </picture>
-<p align="center"><em>Task detail</em></p>
+
+<p align="center"><em>A task — description, relationships, comments, and every field inline.</em></p>
 
 **Optional Git sync**
 - Publish task state to a dedicated `loctt` branch
