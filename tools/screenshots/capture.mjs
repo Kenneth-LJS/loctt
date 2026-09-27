@@ -16,7 +16,8 @@ import { mkdirSync, rmSync, existsSync, readdirSync, unlinkSync } from "node:fs"
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { installCursor, moveTo, click } from "./cursor.mjs";
+// cursor.mjs (a simulated pointer) is kept for interaction demos; the hero
+// tour below is a plain pan across screens and doesn't need it.
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CLI = resolve(repo, "apps/cli/dist/index.js");
@@ -82,7 +83,14 @@ async function shoot(page, id, theme) {
   await page.screenshot({ path: resolve(dir, `${id}.png`) });
 }
 
-/** Record a GIF walkthrough with the simulated cursor. */
+/**
+ * Record a GIF that pans across the app's screens.
+ *
+ * This is a hero shot — "here's what LocTT looks like" — so it just cuts
+ * between views with a dwell on each; no simulated cursor. Save the cursor
+ * (cursor.mjs) for clips that demonstrate an interaction, where the point
+ * is "click X and Y appears".
+ */
 async function recordWalkthrough(browser, theme) {
   const videoDir = resolve(OUT, ".video", theme);
   rmSync(videoDir, { recursive: true, force: true });
@@ -98,23 +106,14 @@ async function recordWalkthrough(browser, theme) {
   const page = await context.newPage();
   await page.addInitScript((t) => { try { localStorage.setItem("tt-theme", t); } catch { /* */ } }, theme);
 
-  await page.goto(`${BASE}/list`, { waitUntil: "networkidle" });
-  await installCursor(page);
-  await sleep(600);
-
-  // A short tour: List → Board → Timeline → a task.
-  await moveTo(page, 'a[href="/board"]');
-  await sleep(300);
-  await click(page, 'a[href="/board"]');
-  await sleep(900);
-
-  await click(page, 'a[href="/timeline"]');
-  await sleep(900);
-
-  await click(page, 'a[href="/list"]');
-  await sleep(500);
-  await click(page, 'text=Fix login crash on empty password');
-  await sleep(1200);
+  // A slow pan: List → Board → Timeline → a task, dwelling on each so a
+  // viewer can take it in.
+  const DWELL = 1800;
+  const stops = ["/list", "/board", "/timeline", "/tasks/WEB-1", "/list"];
+  for (const path of stops) {
+    await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+    await sleep(DWELL);
+  }
 
   await context.close(); // finalizes the video
   const webm = readdirSync(videoDir).find((f) => f.endsWith(".webm"));
