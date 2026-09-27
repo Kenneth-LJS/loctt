@@ -46,7 +46,7 @@ That's what LocTT is.
 
 **Core task management**
 - Tasks with status, priority, type, assignee, reporter, dates, labels, custom fields, and free-form markdown body
-- Configurable workflows — define your own statuses, priorities, task types, and relationship kinds in YAML
+- Configurable workflows — define your own statuses, priorities, task types, relationship kinds, and custom fields, from the web UI, the CLI, or an AI agent alike
 - Relationships between tasks (`blocks`, `parent`/`child`, `relates_to`, and more — or any custom kind you define)
 - File attachments per task
 - Comments with @-mentions, and an activity log that records every field change, link, body edit, and archive action
@@ -196,9 +196,7 @@ Point your MCP client at LocTT — for example, in Claude Desktop's config file:
 }
 ```
 
-Without a global install, use `"command": "npx", "args": ["-y", "loctt", "mcp"]`.
-
-See [docs/user/mcp/reference.md](docs/user/mcp/reference.md) for the full tool list and setup for Cursor, VS Code, and other agents.
+See [the MCP reference](docs/user/mcp/reference.md) for the full tool list and setup for Cursor, VS Code, and other agents.
 
 ## CLI Usage
 
@@ -232,7 +230,7 @@ Conflicts are handled through automatic 3-way reconciliation — see [docs/user/
 
 ## Configuration
 
-Everything is customizable in `.loctt/config/workflow.yaml`: statuses, priorities, task types, relationships, and custom fields. Saved views live in `.loctt/config/queries.yaml`.
+Statuses, priorities, task types, relationships, and custom fields are all customizable — from the web UI (Settings → Workflow), the CLI (`loctt status`, `loctt priority`, …), or an AI agent. However you change them, they're stored as plain YAML in `.loctt/config/` (`workflow.yaml`, and `queries.yaml` for saved views), so you can read or hand-edit them too.
 
 ## Documentation
 

@@ -82,12 +82,14 @@ Practically: **use keys for everything day-to-day**. The ULIDs are there so the 
 
 ## What's configurable, and where
 
-LocTT ships with sensible defaults, but almost everything is customizable:
+LocTT ships with sensible defaults, but almost everything is customizable — from the web UI, the CLI, or an AI agent alike:
 
-- **Workflow** (`.loctt/config/workflow.yaml`) — statuses, priorities, task types, relationship kinds, custom fields. Want a `blocked_by_external` status or a `severity` field? Add it here.
-- **Saved views** (`.loctt/config/queries.yaml`) — frequently-used filters with names.
-- **Calendar** — timezone, working days, holidays.
+- **Workflow** — statuses, priorities, task types, relationship kinds, custom fields. Want a `blocked_by_external` status or a `severity` field? Add it and it's available everywhere.
+- **Saved views** — frequently-used filters with names.
+- **Calendar** — timezone, working days, holidays (edited in the web UI).
 - **Projects** — multiple projects in one tracker, each with its own key prefix (`BACKEND-`, `WEB-`, etc.) and counter.
+
+Whichever surface you use, it's all stored as plain YAML under `.loctt/config/` (`workflow.yaml`, `queries.yaml`), so you can read or hand-edit it too.
 
 The configurability matters because LocTT isn't trying to impose someone else's workflow on you. The vocabulary is yours.
 

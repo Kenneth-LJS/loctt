@@ -29,7 +29,7 @@ two ways.
 | Sprints | ✅ | ✅ | ✅ |
 | Milestones | ✅ | ✅ | ✅ |
 | Custom fields | ✅ | ✅ | ✅ |
-| Configurable workflow | *read* | *read* | ✅ |
+| Configurable workflow | ✅ | ✅ | ✅ |
 | Calendar | *read* | *read* | ✅ |
 | Board (Kanban) | ✅ | ✅ | ✅ |
 | Timeline (Gantt) | — | — | ✅ |
@@ -44,11 +44,10 @@ available
 
 Two things the table is telling you:
 
-- **The workflow and calendar are read-only outside the UI.** The CLI and
-  MCP can *read* your statuses, priorities, types, relationships, and
-  working calendar, but changing them happens in the web UI (Settings) or by
-  editing the config files. Everything else is fully writable from every
-  interface.
+- **The calendar is read-only outside the UI.** The CLI and MCP can *read*
+  the working calendar (timezone, working days, holidays), but changing it
+  happens in the web UI (Settings → Calendar). Everything else — including
+  the workflow config — is fully writable from every interface.
 - **Schema migration is CLI/MCP-only.** Upgrading the on-disk schema
   (`loctt migrate` / `migrate_schema`) is deliberately not a UI action.
 

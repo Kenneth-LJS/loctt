@@ -1,6 +1,8 @@
 # Configuration
 
-All workflow configuration lives in `.loctt/config/workflow.yaml`. LocTT ships with sensible defaults — customize as needed.
+You configure the workflow — statuses, priorities, task types, relationships, custom fields — from the web UI (Settings → Workflow), the CLI (`loctt status`, `loctt priority`, `loctt task-type`, `loctt relationship`, `loctt custom-field`), or an AI agent (`edit_workflow_entity`). LocTT ships with sensible defaults; customize as needed.
+
+However you change it, the workflow is stored as plain YAML in `.loctt/config/workflow.yaml`. This page describes that file's format — useful for reading the config, reviewing it in a diff, or hand-editing it directly.
 
 ## Key Prefix
 
