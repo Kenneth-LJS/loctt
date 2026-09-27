@@ -35,7 +35,7 @@ and type, and add a description. Save.
 - Switch to **Timeline** to see dated tasks on a schedule.
 
 Save a filter you reuse as a view with **Save as view**; it appears under
-**Saved filters** in the sidebar.
+**Saved views** in the sidebar.
 
 <!-- [screenshot: the List view with active filter chips in the filter bar] -->
 

@@ -54,7 +54,7 @@ T-1  Fix login crash [in_progress]
 Save a filter you use often as a view, then run it by name:
 
 ```bash
-loctt views create "My open bugs" --query "type = bug and status != done"
+loctt views create "My open bugs" --query "task_type = bug and status != done"
 loctt list --view "My open bugs"
 ```
 

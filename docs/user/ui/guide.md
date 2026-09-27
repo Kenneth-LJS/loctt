@@ -44,10 +44,11 @@ Groups:
   current filters across.
 - **Projects** — "All projects" plus a row per project (the default is
   marked). A search box appears when you have many.
-- **Saved filters** — built-in filters with live counts (Assigned to me,
-  Reported by me, Mentions me, Due this week, Overdue, High priority), then
-  your saved views, then any view whose query no longer parses (marked,
-  still openable). "+ New filter" opens the view builder.
+- **Saved views** — the queries you've saved, and any view whose query no
+  longer parses (marked, still openable). "+ New view" opens the view
+  builder.
+- **Filters** — the built-in filters, with live counts: Assigned to me,
+  Reported by me, Mentions me, Due this week, Overdue, High priority.
 - **Milestones**, **Sprints**, **Labels** — rows that filter the List to
   one milestone, sprint, or label.
 - **Recently viewed** — the tasks you opened most recently.

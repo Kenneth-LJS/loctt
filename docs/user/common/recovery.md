@@ -25,10 +25,9 @@ reversible (`loctt unarchive`), deleting is not.
 
 ## Finding a task you can't see
 
-- **Archived tasks** are hidden from lists by default. Pass
-  `--archived archived` on the CLI (`loctt list --archived archived`), open
-  **Settings → Archived** in the UI, or pass `archived: "archived"` from an
-  agent.
+- **Archived tasks** are hidden from lists by default. Pass `--archived`
+  on the CLI (`loctt list --archived`), open **Settings → Archived** in the
+  UI, or pass `archived: "archived"` from an agent.
 - **A task whose key changed** (after a `move` or a prefix change) still
   answers to its old key — `loctt show OLD-KEY` works, because the old key
   is kept in the task's history.
