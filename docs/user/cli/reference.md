@@ -262,7 +262,7 @@ Moved WEB-9 → MOB-4
 Permanently delete one or more tasks. `<task>` may be a comma-separated
 list (`WEB-9,WEB-10`) to delete several at once, as a single operation.
 Destructive; it prompts for confirmation once for the whole set. To hide
-a task reversibly instead, use [`loctt archive`](#loctt-archive-task--loctt-unarchive-task).
+a task reversibly instead, use [`loctt archive`](#loctt-archive-tasktask--loctt-unarchive-tasktask).
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
