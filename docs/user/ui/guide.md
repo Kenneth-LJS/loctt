@@ -30,7 +30,6 @@ Left to right, the header holds:
 An integrity badge appears in the header only when the tracker has a
 data-integrity problem to look at; a healthy tracker shows nothing there.
 
-<!-- [screenshot: the header with the search dropdown open showing task hits] -->
 
 ### Sidebar
 
@@ -58,8 +57,6 @@ link to the Settings section that manages it.
 
 The footer pins a **Settings** link so it never scrolls away.
 
-<!-- [screenshot: the expanded sidebar showing all groups] -->
-<!-- [screenshot: a saved-filter row with its kebab menu open] -->
 
 ## Views
 
@@ -82,8 +79,10 @@ The default view: a sortable, paginated table.
 
 On a phone-width screen the table becomes stacked cards.
 
-<!-- [screenshot: the List with active filter chips and the filter bar] -->
-<!-- [screenshot: the bulk action bar with rows selected] -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/list.png">
+  <img alt="The List view: a sortable table of tasks with the filter bar above it." src="../../assets/screenshots/light/list.png">
+</picture>
 
 #### The filter bar
 
@@ -123,8 +122,10 @@ the List.
   settings. If your statuses and columns drift apart, a banner links you to
   the fix.
 
-<!-- [screenshot: the Board with columns, counts, and a WIP-over column] -->
-<!-- [screenshot: a card mid-drag with the drop indicator] -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/board.png">
+  <img alt="The Board view: one column per status, with cards showing key, priority, assignee, and labels." src="../../assets/screenshots/light/board.png">
+</picture>
 
 ### Timeline
 
@@ -141,8 +142,10 @@ A schedule view of dated tasks, again on the same filters.
 - Tasks without dates collect in the **Unscheduled** drawer, which opens
   on its own when nothing is scheduled yet.
 
-<!-- [screenshot: the Timeline with grouped bands, dependency arrows, and the today marker] -->
-<!-- [screenshot: the unscheduled drawer expanded] -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/timeline.png">
+  <img alt="The Timeline view: dated tasks as bars on a schedule." src="../../assets/screenshots/light/timeline.png">
+</picture>
 
 ### Sprints and milestones
 
@@ -174,8 +177,10 @@ Opening a task shows everything about it on one page.
   milestone, sprint, start and due dates, estimate. Pickers search as you
   type.
 
-<!-- [screenshot: a task detail page — header, description, and details panel] -->
-<!-- [screenshot: the Comments / Activity / All tab strip with a comment] -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/task-detail.png">
+  <img alt="A task's detail page: header, description, related tasks, and the details panel." src="../../assets/screenshots/light/task-detail.png">
+</picture>
 
 ## Creating a task
 
@@ -185,7 +190,10 @@ defaults the reporter to you, and validates start/due dates against each
 other and the working calendar. "Create another" keeps the dialog open with
 your project and type, for entering several in a row.
 
-<!-- [screenshot: the create-task dialog with fields populated] -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/create.png">
+  <img alt="The create-task dialog." src="../../assets/screenshots/light/create.png">
+</picture>
 
 ## Settings
 
@@ -242,7 +250,10 @@ machines at the same time regardless of whether LocTT flagged it.
 so the panel shows results rather than caveats — the startup warning still
 fires when detection does catch a risky location.)
 
-<!-- [screenshot: the Settings shell — grouped nav and a panel such as Board columns] -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/settings.png">
+  <img alt="The Settings shell: grouped navigation beside a settings panel." src="../../assets/screenshots/light/settings.png">
+</picture>
 
 ### Backup and restore
 

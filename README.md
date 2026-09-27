@@ -14,6 +14,14 @@ Tasks are plain markdown files in a `.loctt/` directory next to your code. Nothi
 
 Open source under the AGPL-3.0. A free, local-first alternative to JIRA, Linear, and Asana for personal projects and small teams.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/tour-dark.gif">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/screenshots/tour-light.gif">
+    <img alt="A tour of the LocTT web UI: the list, board, and timeline views, and a task's detail." src="docs/assets/screenshots/tour-light.gif" width="800">
+  </picture>
+</p>
+
 ## The Problem
 
 You want to track tasks on a personal project. So you reach for the usual suspects:
