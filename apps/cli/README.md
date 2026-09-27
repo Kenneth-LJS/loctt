@@ -46,4 +46,6 @@ See the full CLI and MCP references and guides at the
 
 ## License
 
-GNU AGPL-3.0-or-later — see [LICENSE](./LICENSE).
+[GNU AGPL-3.0-or-later](./LICENSE). LocTT is free to use, self-host, and
+modify; if you run a modified version as a network service, the AGPL
+requires you to make your source available to its users.
