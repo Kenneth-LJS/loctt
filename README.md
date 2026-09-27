@@ -67,6 +67,31 @@ That's what LocTT is.
 - **CLI** — fast, scriptable task management from the terminal
 - **MCP server** — AI agents read and manage tasks through structured tools
 
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/board.png">
+        <img alt="Board view" src="docs/assets/screenshots/light/board.png">
+      </picture>
+      <p align="center"><em>Board</em></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/timeline.png">
+        <img alt="Timeline view" src="docs/assets/screenshots/light/timeline.png">
+      </picture>
+      <p align="center"><em>Timeline</em></p>
+    </td>
+  </tr>
+</table>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dark/task-detail.png">
+  <img alt="Task detail" src="docs/assets/screenshots/light/task-detail.png">
+</picture>
+<p align="center"><em>Task detail</em></p>
+
 **Optional Git sync**
 - Publish task state to a dedicated `loctt` branch
 - Pull changes from other machines, with automatic 3-way reconciliation
@@ -157,7 +182,7 @@ while pressing Enter opens the full filtered list.
 
 LocTT ships an MCP server so AI coding agents (Claude Code, Cursor, etc.) can manage tasks on your behalf. The MCP layer exposes structured tools for creating, querying, updating, and linking tasks, managing users, projects, sprints, labels, milestones, attachments, and more — agents never touch raw files.
 
-Quick setup for Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+Point your MCP client at LocTT — for example, in Claude Desktop's config file:
 
 ```json
 {
@@ -211,54 +236,17 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 
 ## Documentation
 
-**Start here:**
 - [Quick Start](docs/user/quickstart.md) — install, initialize, and walk through the basics
 - [Concepts](docs/user/common/concepts.md) — how LocTT works, where data lives, and how sharing works
-
-**By interface:**
-- [Features](docs/user/features.md) — what LocTT does, and which interfaces support each capability
-- [CLI reference](docs/user/cli/reference.md)
-- [MCP reference](docs/user/mcp/reference.md)
-- [Web UI guide](docs/user/ui/guide.md)
-
-**Cross-cutting:**
-- [Configuration](docs/user/common/configuration.md)
-- [Query Language](docs/user/common/query-language.md)
-- [Git Sync](docs/user/common/git-sync.md)
-- [Agent Setup](docs/user/mcp/agent-setup.md) — giving your AI agent project-specific workflow instructions
-- [Recovery & health](docs/user/common/recovery.md) — undo, finding lost tasks, hand-editing, and `loctt doctor`
-- [Data portability](docs/user/common/data-portability.md) — reading and exporting your data
-- [Upgrading & migrations](docs/user/common/upgrading.md) — updating LocTT and schema migrations safely
-- [Uninstall](docs/user/common/uninstall.md)
-
-**For contributors:**
-- [Architecture](docs/dev/reference/architecture.md) — monorepo layout, data model, task identity
-- [Schema Reference](docs/dev/reference/schema-reference.md) — file formats (`task.md`, `workflow.yaml`, …)
-- [Development](docs/dev/process/development.md) — building, running, and testing locally
-- [Invariants](docs/dev/reference/invariants.md) — rules a change must not break
-- [Decisions](docs/dev/decisions.md) — locked design decisions, including what is deliberately not built
-- [Markdown extensions](docs/dev/reference/markdown-extensions.md) — what the body editor must round-trip
-- [Build loop](docs/dev/process/build-loop.md) — how a web-UI ticket gets built and verified
-- [Known gaps](docs/dev/known-gaps.md) — understood defects not yet fixed
-
-**Acceptance criteria** — cases describing observable behaviour, one file
-per flow. They are the specification each surface is built against:
-- [UI test cases](tests/cases/ui-test-cases/) — plus the P1–P10 principles in its [README](tests/cases/ui-test-cases/README.md)
-- [CLI & MCP test cases](tests/cases/surface-test-cases/)
-- [`case-index.json`](tests/cases/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
+- [Full documentation](docs/user/README.md) — features, the CLI / MCP / web UI references, and the deeper guides
+- [Contributing](docs/dev/README.md) — architecture, invariants, decisions, and the acceptance criteria
 
 ## Data & security
 
-Your tasks are files in `.loctt/`, so **your security is your git's
-security** — whoever can read the repo (or the branch, in git-backed
-mode) can read your tasks. There's no login and no accounts because
-there's nothing hosted to log into.
-
-The web UI is a local app; it serves on `localhost` and isn't built to be
-put on a public network. If you need multi-user, hosted task tracking,
-LocTT is the wrong tool. It also refuses requests carrying a foreign
-`Host` header (guarding against DNS rebinding) and sets a restrictive
-Content-Security-Policy, on top of binding to loopback only.
+Your tasks are files on your disk. Kept local, they are **as secure as any
+other file in the project**. Committed to git, they are **as secure as your
+git** — the repo's access is the tasks' access. There's no login and no
+accounts because there's nothing hosted.
 
 If a `.loctt/` file gets corrupted — a bad hand-edit, another tool — LocTT
 degrades around the bad field rather than crashing, and
