@@ -137,7 +137,7 @@ Commands:
   detach <task> <name>
   mcp                              Start the MCP server (stdio)
   ui [--port <n>] [--no-open]      Start the web UI (foreground)
-  git <enable|disable|status|publish|sync>
+  git <enable|disable|status|publish|sync|reconcile>
   config <get|set|unset|list> [key] [value]
   config usage                     Count tasks referencing each workflow key
   migrate [--yes] [--dry-run]      Upgrade the tracker schema to the current version
