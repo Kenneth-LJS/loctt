@@ -1,0 +1,12 @@
+id: view-duplicate-name
+name: A view name that is taken is refused
+description: Names are unique ignoring case and surrounding spaces; nothing is written.
+tags: [views, error]
+cli: views create " open BUGS " --filter "task_type = bug"
+mcp:
+  call:
+    tool: create_view
+    args: { name: " open BUGS ", filters: [{ kind: simple, field: task_type, op: "=", values: [bug] }] }
+expect_error:
+  cli: { exit_code: 1, message: "Another view with that name already exists." }
+  mcp: { message: "Another view with that name already exists." }

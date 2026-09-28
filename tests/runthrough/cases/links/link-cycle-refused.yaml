@@ -1,0 +1,12 @@
+id: link-cycle-refused
+name: A link that would close a blocks cycle is refused
+description: >
+  blocks is acyclic. OPS-7 → WEB-15 → WEB-16 → WEB-17 already, so WEB-17
+  blocks OPS-7 would close a loop; it is refused and nothing is written.
+tags: [links, error]
+cli: link ${task.public_docs.key} blocks ${task.ops_postgres.key}
+mcp:
+  call: { tool: link_tasks, args: { refs: ["${task.public_docs.key}"], type: blocks, target: "${task.ops_postgres.key}" } }
+expect_error:
+  cli: { exit_code: 1, message: "cycle" }
+  mcp: { message: "cycle" }

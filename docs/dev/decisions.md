@@ -23088,6 +23088,127 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A359 · Runthrough tests over a seed tracker (B42)
+
+#### A359 · B42 runthrough harness: the calls K144 did not settle
+
+**Ticket:** B42 (K144) · **Date:** 2026-09-28 · **Commit:** (this one)
+
+**The situation.** K144 fixes the shape: a checked-in seed pinned to the
+format version, one YAML file per test, CLI command lines and a scripted
+MCP call per test, pre/post checks that read the files directly, doctor
+after every test, "nothing changed" on errors, `npm run test:runthrough`
+in every gate, and a refusal when the seed's format is not the code's.
+Building it needed the calls below. Two further rulings arrived from Ken
+mid-build (relayed by the coordinator) and are quoted at the end; they
+are his, not this entry's, and belong in § 9.
+
+**What had to be decided.** How the seed is produced and addressed; what
+the case format and checks are exactly; how "nothing changed", doctor
+and known product bugs are judged; how the runner is wired into the
+gates.
+
+**Options considered.**
+
+1. *Seed ids.* (a) Make ids/timestamps deterministic — core reads no
+   clock or id override (only `LOCTT_ROOT`, `LOCTT_DEBUG`,
+   `LOCTT_CLIENT_DIR`, `USER`/`USERNAME`), so this needs a core change;
+   (b) generate once, check the output in, and address everything
+   through a generated slug index. (b) chosen.
+2. *Seed generator surface.* (a) CLI only — impossible: `loctt set`
+   cannot write number/boolean/multi-enum custom fields (G2); (b) CLI
+   for everything it can do, `loctt mcp` `update_task` for those three
+   typed values. (b) chosen; still "the real CLI binary".
+3. *Format-version guard.* (a) Import `CURRENT_SCHEMA_VERSION` from core
+   — couples the guard to core's export shape, which B41 changes to
+   semver; (b) parse `loctt info`'s prose; (c) `loctt init` a scratch
+   tracker and compare its `.schema-version` file with the seed's. (c)
+   chosen: file-to-file, survives B41 unchanged, no core import.
+4. *Per-checkout files.* `.loctt/.gitignore` ignores `.current-user` and
+   `users/*/settings.yaml`, and the repo ignores `.loctt/local/`. (a)
+   check them in anyway (git would drop them); (b) strip them from the
+   seed and have the runner write `.current-user` from
+   `seed-index.json`. (b) chosen, so a local run equals a CI checkout.
+5. *"Nothing changed".* (a) every file under `.loctt/`; (b) everything
+   except `local/`. (b) chosen: `local/` is a rebuildable cache that a
+   read may write (and is absent on a fresh seed copy).
+6. *Doctor gate.* Findings = doctor's non-✓ lines; a step fails on any
+   line not in the pristine seed's output (the seed's only baseline line
+   is "key index: no index on disk", which a checkout always has).
+7. *Known product bugs.* (a) leave the suite red; (b) skip the cases;
+   (c) `known_bug: {cli?, mcp?}` → `it.fails` (turns red when fixed),
+   plus `known_doctor_findings: [{match, bug}]` for a doctor finding a
+   known bug causes, which must match at least once per case or the case
+   fails ("remove the entry"). (c) chosen: the gate stays green without
+   hiding the bug, and neither list can rot.
+8. *Case-format extensions beyond K144's list.* `setup_files` (a file to
+   attach), `setup_patch` (text edit of the seed copy — the only way to
+   make a one-sided link for the repair cases), captures (`new_task`,
+   `new_comment`, `entity`, `output` regex), `output` checks with an
+   optional `surface` (CLI prints text, MCP JSON), `field: body`.
+   Validated by zod; strict objects; a failing union is re-checked
+   against the intended member so the error names the real key.
+9. *Automatic bilateral check.* After every step, every task whose
+   stored relationships changed must pass the bilateral check — "touched
+   links" read as "tasks whose relationships array changed".
+10. *Rank order in checks.* `relationship_order` sorts by `rank`,
+    unranked after ranked, then stored order (schema-reference.md). B41
+    ranks every link; the rule still holds.
+11. *Runner wiring.* One vitest file generating one test per case per
+    surface (`<id> [surface] #tags`, so `-t` filters by id, surface or
+    tag); cases run concurrently (`maxConcurrency: 4`); a
+    `pretest:runthrough` build hook like integration/e2e/ui. A failing
+    test keeps its temp tracker and prints the path.
+12. *`tests/llm` / `llm:verify`.* Not reused: its verify scripts import
+    `@loctt/core` (K144 forbids that for checks), it runs on an empty
+    tracker set up by hand, and it has no pre-checks, doctor or
+    unchanged check. Left untouched; any future agent-driven check
+    belongs there (Ken, below).
+
+**Decided.** As chosen in 1–12.
+
+**Why.** Each keeps K144's two load-bearing properties — checks that do
+not trust core, and a seed that stays at the code's format through the
+tracker's own upgrade path — while keeping the gate green-but-honest
+about bugs the harness found (G2–G7 in known-gaps.md).
+
+**Ken's rulings relayed mid-build (his; record in § 9, not revertible
+here).**
+- *"always run cli version first before mcp"*: for each case the CLI
+  run completes before the scripted MCP run starts (never interleaved);
+  if the CLI run fails, MCP still runs and its failure is marked
+  `AFTER CLI FAILURE`. Reason documented: the CLI is the simplest
+  deterministic path over the same core, so it separates core bugs from
+  MCP ones.
+- *Drop agent mode entirely*: no `AGENT.md`, no `runthrough:agent`
+  helper, no `mcp.prompt` field; any future agent-driven check belongs
+  in `tests/llm` / `llm:verify`.
+
+**To revert.**
+1. Seed ids: add a clock/id override to core, then make
+   `tests/runthrough/seed/build-seed.ts` set it; `seed-index.json` can
+   stay.
+2. Generator surface: `build-seed.ts` `typed` list / `withMcp` block.
+3. Version guard: `checkSeedVersion` / `codeFormatVersion` in
+   `tests/runthrough/lib/seed.ts`.
+4. Stripping: the "Strip what a checkout cannot carry" block in
+   `build-seed.ts` and `upgrade-seed.ts`; `freshTracker` in `seed.ts`.
+5. Unchanged scope: `EXCLUDED` in `tests/runthrough/lib/snapshot.ts`.
+6. Doctor gate: `doctorFindings` in `lib/surfaces.ts`, the baseline in
+   `runthrough.test.ts`, the filter at the end of `verifyStep` in
+   `lib/execute.ts`.
+7. Known bugs: `known_bug` / `known_doctor_findings` in
+   `lib/schema.ts`, `it.fails` in `runthrough.test.ts`, `finish` in
+   `execute.ts`; the entries in the case files.
+8. Extensions: the corresponding schema members in `lib/schema.ts`,
+   `applyCapture` and `prepare` in `execute.ts`, `runCheck` in
+   `lib/checks.ts`.
+9. Automatic bilateral: the `touchedLinkTaskIds` loop in `verifyStep`.
+10. Rank order: `orderedTargets` in `lib/checks.ts`.
+11. Wiring: `tests/vitest.runthrough.config.ts`, `pretest:runthrough`
+    in `package.json`.
+12. llm: nothing to revert.
+
 ### A357 · `create --parent` links properly; comprehensive relationship repair; ordered relationships on every surface (B39)
 
 #### A357 · B39 implementation calls (create --parent, relationship repair, ordering)

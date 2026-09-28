@@ -1,0 +1,20 @@
+id: doctor-fix-key-target
+name: doctor --fix rewrites a key-valued link target to the id
+description: >
+  K140's footprint: a link whose target was stored as the key the user
+  typed. `doctor --fix` runs every safe repair, which rewrites it to the
+  task's id; afterwards doctor reports nothing.
+tags: [doctor, links, b39]
+setup_patch:
+  - file: "tasks/${task.checkout_cart.id}/task.md"
+    find: "    target: ${task.epic_checkout.id}\n"
+    replace: "    target: ${task.epic_checkout.key}\n"
+pre:
+  - field: { task: "${task.checkout_cart.key}", field: relationships, contains: { type: parent, target: "${task.epic_checkout.key}" } }
+cli: doctor --fix
+mcp:
+  call: { tool: doctor, args: { fix: true } }
+post:
+  - relationship: { task: "${task.checkout_cart.key}", type: parent, target: "${task.epic_checkout.key}" }
+  - field: { task: "${task.checkout_cart.key}", field: relationships, equals: [{ type: parent, target: "${task.epic_checkout.id}" }, { type: child, target: "${task.cart_totals.id}" }, { type: child, target: "${task.cart_empty_state.id}" }] }
+  - bilateral: "${task.checkout_cart.key}"

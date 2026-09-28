@@ -1,0 +1,21 @@
+id: doctor-repair-one-sided
+name: doctor --repair-relationships completes a one-sided link
+description: >
+  K141 (2a): when one side of a link exists, the repair adds the other.
+  The setup removes ${task.rate_limit.key}'s is_blocked_by edge, leaving
+  ${task.api_keys.key}'s blocks edge one-sided.
+tags: [doctor, links, b39]
+setup_patch:
+  - file: "tasks/${task.rate_limit.id}/task.md"
+    find: "  - type: is_blocked_by\n    target: ${task.api_keys.id}\n"
+    replace: ""
+pre:
+  - relationship: { task: "${task.rate_limit.key}", type: is_blocked_by, target: "${task.api_keys.key}", present: false }
+  - relationship: { task: "${task.api_keys.key}", type: blocks, target: "${task.rate_limit.key}" }
+cli: doctor --repair-relationships
+mcp:
+  call: { tool: doctor, args: { repair_relationships: true } }
+post:
+  - relationship: { task: "${task.rate_limit.key}", type: is_blocked_by, target: "${task.api_keys.key}" }
+  - bilateral: "${task.rate_limit.key}"
+  - bilateral: "${task.api_keys.key}"

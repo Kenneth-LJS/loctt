@@ -1,0 +1,24 @@
+labels:
+  - id: 01M3JSJ7J3QBTDKH0VT5THF6ET
+    name: frontend
+    color: "#1E6FCB"
+  - id: 01M3JSJ7V0JT57NNCCSGH9XV73
+    name: backend
+    color: "#356E1A"
+  - id: 01M3JSJ84E9HFQPW32EER1RWTQ
+    name: infra
+    color:
+      light: "#8C6E28"
+      dark: "#F2D264"
+  - id: 01M3JSJ8DMF2F12MVBFA3R09Q1
+    name: urgent
+    color: "#B02F17"
+  - id: 01M3JSJ8PPPJRJYGS6QX12EK6N
+    name: docs
+    color: "#6A704F"
+  - id: 01M3JSJ90PNCFEHQ44HNK8TGEY
+    name: tech-debt
+    color: "#BD5B00"
+  - id: 01M3JSJ9ADABA1DAAX7Z2PCXME
+    name: legacy
+    archived: true

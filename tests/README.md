@@ -52,10 +52,11 @@ npm run test                 # unit + thin integration (existing) + tools
 npm run test:integration     # builds CLI/MCP, runs tests/integration
 npm run test:e2e             # builds CLI/MCP, runs tests/e2e
 npm run test:ui              # builds, runs the Playwright specs in tests/ui
+npm run test:runthrough      # builds, runs the runthrough cases (tests/runthrough/README.md)
 npm run test:perf            # opt-in, runs tests/perf — does NOT rebuild
 ```
 
-`pretest:integration`, `pretest:e2e` and `pretest:ui` run `npm run build` so the spawned CLI/MCP binaries are current.
+`pretest:integration`, `pretest:e2e`, `pretest:ui` and `pretest:runthrough` run `npm run build` so the spawned CLI/MCP binaries are current.
 
 **Never run two of these suites concurrently.** Each `pretest` hook runs
 `tsc --build`, which empties and rewrites `dist/` — and `integration`,
@@ -85,6 +86,7 @@ For interactive sanity checks, [`tests/scripts/smoke.sh`](./scripts/smoke.sh) ru
 | Frontend integration (transport) | Real CLI binary via `execa`, real MCP server over stdio | Vitest + spawn | `tests/integration/{cli,mcp}/` |
 | Parity | Same scenario through all adapters, assert `.loctt/` identical | Vitest + scenario DSL | `tests/integration/parity.test.ts` |
 | E2E | Full user journeys end-to-end | Vitest + spawn | `tests/e2e/` |
+| Runthrough | One YAML case per behaviour, CLI then scripted MCP, over a checked-in seed tracker; checks read the files | Vitest + spawn | `tests/runthrough/` |
 | Stress / perf | Bulk tasks, concurrent writers, deep trees | Vitest, separate config | `tests/perf/` |
 
 ---

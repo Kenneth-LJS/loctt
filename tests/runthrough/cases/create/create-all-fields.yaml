@@ -1,0 +1,47 @@
+id: create-all-fields
+name: Create a task with every built-in field
+description: >
+  Every create flag / argument is stored, and every entity reference
+  (project, assignee, reporter, milestone, sprint, labels) is stored as
+  the entity's id, not the name that was typed.
+tags: [create]
+cli: >-
+  create "Receipt emails" --project Mobile --status in_progress --priority high
+  --type story --assignee Bea --reporter Ada --start 2026-10-01 --due 2026-10-12
+  --estimate 3 --milestone Beta --sprint "Sprint 2" --label frontend --label urgent
+  --body "Send a receipt after every order."
+mcp:
+  call:
+    tool: create_task
+    args:
+      title: Receipt emails
+      project: Mobile
+      status: in_progress
+      priority: high
+      task_type: story
+      assignee: Bea
+      reporter: Ada
+      start_date: "2026-10-01"
+      due_date: "2026-10-12"
+      estimate: "3"
+      milestone: Beta
+      sprint: Sprint 2
+      labels: [frontend, urgent]
+      body: Send a receipt after every order.
+capture:
+  t: { new_task: { title: Receipt emails } }
+post:
+  - field: { task: "${var.t.id}", field: key, equals: MOB-10 }
+  - field: { task: MOB-10, field: project, equals: "${project.mobile.id}" }
+  - field: { task: MOB-10, field: status, equals: in_progress }
+  - field: { task: MOB-10, field: priority, equals: high }
+  - field: { task: MOB-10, field: task_type, equals: story }
+  - field: { task: MOB-10, field: assignee, equals: "${user.bea.id}" }
+  - field: { task: MOB-10, field: reporter, equals: "${user.ada.id}" }
+  - field: { task: MOB-10, field: start_date, equals: "2026-10-01" }
+  - field: { task: MOB-10, field: due_date, equals: "2026-10-12" }
+  - field: { task: MOB-10, field: estimate, equals: "3" }
+  - field: { task: MOB-10, field: milestone, equals: "${milestone.beta.id}" }
+  - field: { task: MOB-10, field: sprint, equals: "${sprint.sprint_2.id}" }
+  - field: { task: MOB-10, field: labels, equals: ["${label.frontend.id}", "${label.urgent.id}"] }
+  - field: { task: MOB-10, field: body, contains: Send a receipt after every order. }

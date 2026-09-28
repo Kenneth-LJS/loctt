@@ -1,0 +1,10 @@
+id: shortcuts-unknown-id
+name: An unknown shortcut id is refused
+description: Nothing is written; the error lists the valid ids.
+tags: [settings, error]
+cli: user shortcuts --off launch-rockets
+mcp:
+  call: { tool: set_keyboard_shortcuts, args: { off: [launch-rockets] } }
+expect_error:
+  cli: { exit_code: 2, message: "unknown shortcut" }
+  mcp: { message: "unknown shortcut" }

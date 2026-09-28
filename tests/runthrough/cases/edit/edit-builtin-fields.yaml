@@ -1,0 +1,37 @@
+id: edit-builtin-fields
+name: Edit each built-in field
+description: >
+  Title, priority, type, dates, estimate, assignee, milestone and sprint,
+  one write each; references are stored as ids.
+tags: [edit]
+cli:
+  - set ${task.search_ui.key} title "Search results page"
+  - set ${task.search_ui.key} priority high
+  - set ${task.search_ui.key} task_type feature
+  - set ${task.search_ui.key} start_date 2026-10-05
+  - set ${task.search_ui.key} due_date 2026-10-23
+  - set ${task.search_ui.key} estimate 8
+  - set ${task.search_ui.key} assignee Ada
+  - set ${task.search_ui.key} milestone GA
+  - set ${task.search_ui.key} sprint "Sprint 2"
+mcp:
+  call:
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: title, value: Search results page } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: priority, value: high } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: task_type, value: feature } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: start_date, value: "2026-10-05" } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: due_date, value: "2026-10-23" } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: estimate, value: "8" } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: assignee, value: Ada } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: milestone, value: GA } }
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: sprint, value: Sprint 2 } }
+post:
+  - field: { task: "${task.search_ui.key}", field: title, equals: Search results page }
+  - field: { task: "${task.search_ui.key}", field: priority, equals: high }
+  - field: { task: "${task.search_ui.key}", field: task_type, equals: feature }
+  - field: { task: "${task.search_ui.key}", field: start_date, equals: "2026-10-05" }
+  - field: { task: "${task.search_ui.key}", field: due_date, equals: "2026-10-23" }
+  - field: { task: "${task.search_ui.key}", field: estimate, equals: "8" }
+  - field: { task: "${task.search_ui.key}", field: assignee, equals: "${user.ada.id}" }
+  - field: { task: "${task.search_ui.key}", field: milestone, equals: "${milestone.ga.id}" }
+  - field: { task: "${task.search_ui.key}", field: sprint, equals: "${sprint.sprint_2.id}" }

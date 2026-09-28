@@ -1,0 +1,10 @@
+id: user-archived-assign-refused
+name: Assigning an archived user is refused
+description: Cy is archived; the assignment is refused and nothing is written.
+tags: [users, error]
+cli: set ${task.search_typo.key} assignee Cy
+mcp:
+  call: { tool: update_task, args: { ref: "${task.search_typo.key}", field: assignee, value: Cy } }
+expect_error:
+  cli: { exit_code: 1, message: "archived user" }
+  mcp: { message: "archived user" }

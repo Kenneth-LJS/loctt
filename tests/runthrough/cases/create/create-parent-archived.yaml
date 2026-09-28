@@ -1,0 +1,14 @@
+id: create-parent-archived
+name: Create under an archived parent is refused
+description: >
+  B39: an archived parent is refused with link's message, and nothing is
+  created.
+tags: [create, b39, error]
+pre:
+  - field: { task: "${task.old_banner.key}", field: archived, equals: true }
+cli: create "Banner follow-up" --parent ${task.old_banner.key}
+mcp:
+  call: { tool: create_task, args: { title: Banner follow-up, parent: "${task.old_banner.key}" } }
+expect_error:
+  cli: { exit_code: 1, message: "archived" }
+  mcp: { message: "archived" }

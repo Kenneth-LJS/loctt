@@ -1,0 +1,10 @@
+id: sprint-end-before-start
+name: A sprint that ends before it starts is refused
+description: The dates are validated and nothing is written.
+tags: [planning, sprints, error]
+cli: sprint create "Backwards" --start 2026-10-10 --end 2026-10-01
+mcp:
+  call: { tool: create_sprint, args: { name: Backwards, start_date: "2026-10-10", end_date: "2026-10-01", state: future } }
+expect_error:
+  cli: { exit_code: 1, message: "End date is before the start date." }
+  mcp: { message: "End date is before the start date." }

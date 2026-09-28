@@ -36,13 +36,16 @@ npm run lint               # eslint across all workspaces
 npm run test                # unit tests (vitest) — fast, no e2e
 npm run test:integration    # CLI binary + MCP stdio against a real tracker
 npm run test:e2e            # full user-journey e2e specs
+npm run test:runthrough     # every runthrough case, CLI then MCP, over the seed tracker
 npm run test:packaging      # pack + install `loctt` outside the repo and run it
 ```
 
 Run `npm run lint:fix` for auto-fixable lint issues. A PR should pass
 `typecheck`, `lint` (no new warnings), and `test` at minimum;
-`test:integration` and `test:e2e` are expected for anything touching the
-CLI, MCP, or web UI end to end.
+`test:integration`, `test:e2e` and `test:runthrough` are expected for
+anything touching the CLI, MCP, or web UI end to end.
+See [`tests/runthrough/README.md`](tests/runthrough/README.md) for the
+runthrough cases and the seed tracker they run against.
 
 ## The case + `@verifies` rule
 

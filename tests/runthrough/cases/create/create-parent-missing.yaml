@@ -1,0 +1,14 @@
+id: create-parent-missing
+name: Create under a parent that does not exist is refused
+description: >
+  B39: a missing parent is refused with link's message before anything
+  is written — no task, no advanced key counter.
+tags: [create, b39, error]
+cli: create "Orphan" --parent WEB-999
+mcp:
+  call: { tool: create_task, args: { title: Orphan, parent: WEB-999 } }
+expect_error:
+  cli: { exit_code: 1, message: "Task not found" }
+  mcp: { message: "Task not found" }
+post:
+  - task_absent: WEB-26

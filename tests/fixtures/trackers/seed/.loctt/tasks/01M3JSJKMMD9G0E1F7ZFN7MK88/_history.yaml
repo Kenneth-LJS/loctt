@@ -1,0 +1,24 @@
+- timestamp: 2026-09-28T01:20:24.725Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJKMMD9G0E1F7ZFN7MK88
+      key: WEB-11
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Search results UI
+      created_at: 2026-09-28T01:20:24.725Z
+      updated_at: 2026-09-28T01:20:24.725Z
+      status: backlog
+      task_type: story
+      priority: medium
+      labels:
+        - 01M3JSJ7J3QBTDKH0VT5THF6ET
+      estimate: "5"
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:45.550Z
+  kind: link_added
+  meta:
+    type: parent
+    target: 01M3JSJJ80QX63TEXX6JT7G02Q
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

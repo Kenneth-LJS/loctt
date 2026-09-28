@@ -1,0 +1,11 @@
+id: edit-custom-multi-enum
+name: Edit a multi-value enum custom field
+description: A multi enum custom field is stored as a list of value keys.
+tags: [edit, custom-fields]
+known_bug:
+  cli: "`loctt set` has no list syntax; the value arrives as a string and a multi enum field refuses it"
+cli: set ${task.mob_push.key} platforms ios,android
+mcp:
+  call: { tool: update_task, args: { ref: "${task.mob_push.key}", field: platforms, value: [ios, android] } }
+post:
+  - field: { task: "${task.mob_push.key}", field: fields.platforms, equals: [ios, android] }

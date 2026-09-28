@@ -1,0 +1,12 @@
+id: label-archived-refused
+name: An archived label cannot be put on a new task
+description: The archived-reference guard refuses it, and nothing is written.
+tags: [labels, error]
+pre:
+  - entity: { kind: label, name: legacy, fields: { archived: true } }
+cli: create "Old browser shims" --label legacy
+mcp:
+  call: { tool: create_task, args: { title: Old browser shims, labels: [legacy] } }
+expect_error:
+  cli: { exit_code: 1, message: "archived" }
+  mcp: { message: "archived" }

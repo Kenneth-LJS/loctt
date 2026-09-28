@@ -1,0 +1,14 @@
+id: comment-post-mention
+name: Post a comment that mentions a user
+description: The comment is authored by the current user (Ada) and records the mention by user id.
+tags: [comments]
+pre:
+  - comment_count: { task: "${task.ops_certs.key}", equals: 0 }
+cli: comment ${task.ops_certs.key} "@user:${user.bea.id} the wildcard cert expires first."
+mcp:
+  call: { tool: post_comment, args: { ref: "${task.ops_certs.key}", body: "@user:${user.bea.id} the wildcard cert expires first." } }
+capture:
+  c: { new_comment: { task: "${task.ops_certs.key}" } }
+post:
+  - comment: { task: "${task.ops_certs.key}", id: "${var.c.id}", author: "${user.ada.id}", mentions: ["${user.bea.id}"], contains: wildcard cert }
+  - comment_count: { task: "${task.ops_certs.key}", equals: 1 }

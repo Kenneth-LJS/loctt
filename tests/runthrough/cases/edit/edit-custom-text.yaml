@@ -1,0 +1,17 @@
+id: edit-custom-text
+name: Edit string, date and enum custom fields
+description: Custom fields are stored under `fields:` with the declared type.
+tags: [edit, custom-fields]
+cli:
+  - set ${task.rate_limit.key} team platform
+  - set ${task.rate_limit.key} review_on 2026-11-20
+  - set ${task.rate_limit.key} area api
+mcp:
+  call:
+    - { tool: update_task, args: { ref: "${task.rate_limit.key}", field: team, value: platform } }
+    - { tool: update_task, args: { ref: "${task.rate_limit.key}", field: review_on, value: "2026-11-20" } }
+    - { tool: update_task, args: { ref: "${task.rate_limit.key}", field: area, value: api } }
+post:
+  - field: { task: "${task.rate_limit.key}", field: fields.team, equals: platform }
+  - field: { task: "${task.rate_limit.key}", field: fields.review_on, equals: "2026-11-20" }
+  - field: { task: "${task.rate_limit.key}", field: fields.area, equals: api }

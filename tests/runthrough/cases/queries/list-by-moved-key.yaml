@@ -1,0 +1,14 @@
+id: list-by-moved-key
+name: A retired key still resolves
+description: >
+  ${task.deep_links.key} was created as WEB-25 and moved; the old key is
+  in key_history and still finds the task.
+tags: [queries, move]
+pre:
+  - field: { task: "${task.deep_links.key}", field: key_history, equals: [WEB-25] }
+cli: show WEB-25
+mcp:
+  call: { tool: get_task, args: { ref: WEB-25 } }
+post:
+  - output: { contains: ["${task.deep_links.key}", "${task.deep_links.title}"] }
+  - tracker_unchanged: true

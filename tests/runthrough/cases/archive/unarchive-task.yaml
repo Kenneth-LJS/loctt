@@ -1,0 +1,12 @@
+id: unarchive-task
+name: Unarchive a task
+description: Unarchiving removes both archived and archived_at.
+tags: [archive]
+pre:
+  - field: { task: "${task.old_banner.key}", field: archived, equals: true }
+cli: unarchive ${task.old_banner.key}
+mcp:
+  call: { tool: unarchive_task, args: { refs: ["${task.old_banner.key}"] } }
+post:
+  - field: { task: "${task.old_banner.key}", field: archived, absent: true }
+  - field: { task: "${task.old_banner.key}", field: archived_at, absent: true }

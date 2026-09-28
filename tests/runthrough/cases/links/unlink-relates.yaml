@@ -1,0 +1,11 @@
+id: unlink-relates
+name: Remove a symmetric link from the other side
+description: A symmetric link can be removed from either end; both sides go.
+tags: [links]
+cli: unlink ${task.theme_tokens.key} relates_to ${task.dark_mode.key}
+mcp:
+  call: { tool: unlink_tasks, args: { ref: "${task.theme_tokens.key}", type: relates_to, target: "${task.dark_mode.key}" } }
+post:
+  - relationship: { task: "${task.dark_mode.key}", type: relates_to, target: "${task.theme_tokens.key}", present: false }
+  - relationship: { task: "${task.theme_tokens.key}", type: relates_to, target: "${task.dark_mode.key}", present: false }
+  - relationship: { task: "${task.dark_mode.key}", type: relates_to, target: "${task.mob_dark.key}" }

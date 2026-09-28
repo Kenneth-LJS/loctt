@@ -1,0 +1,13 @@
+id: edit-custom-boolean
+name: Edit a boolean custom field
+description: A boolean custom field is stored as a YAML boolean.
+tags: [edit, custom-fields]
+known_bug:
+  cli: "`loctt set` passes the value through as a string; the validator refuses it for a boolean field"
+pre:
+  - field: { task: "${task.login_crash.key}", field: fields.signed_off, equals: false }
+cli: set ${task.login_crash.key} signed_off true
+mcp:
+  call: { tool: update_task, args: { ref: "${task.login_crash.key}", field: signed_off, value: true } }
+post:
+  - field: { task: "${task.login_crash.key}", field: fields.signed_off, equals: true }

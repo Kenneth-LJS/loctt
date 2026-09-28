@@ -1,0 +1,10 @@
+id: list-saved-view
+name: Run a saved view
+description: A saved view runs as authored.
+tags: [queries, views]
+cli: list --view "Open bugs"
+mcp:
+  call: { tool: list_tasks, args: { view: Open bugs } }
+post:
+  - output: { keys: ["${task.flaky_checkout_test.key}", "${task.login_crash_dup.key}", "${task.login_crash.key}", "${task.mob_ios_crash.key}"] }
+  - tracker_unchanged: true

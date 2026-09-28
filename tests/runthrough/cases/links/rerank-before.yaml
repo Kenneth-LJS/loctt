@@ -1,0 +1,19 @@
+id: rerank-before
+name: Move a child to the front
+description: Reranking a child before the first sibling puts it first.
+tags: [links, rerank]
+pre:
+  - relationship_order:
+      task: "${task.epic_checkout.key}"
+      type: child
+      targets: ["${task.checkout_cart.key}", "${task.checkout_payment.key}", "${task.checkout_confirm.key}"]
+cli: rerank ${task.epic_checkout.key} child ${task.checkout_confirm.key} --before ${task.checkout_cart.key}
+mcp:
+  call:
+    tool: reorder_relationship
+    args: { source: "${task.epic_checkout.key}", type: child, target: "${task.checkout_confirm.key}", before: "${task.checkout_cart.key}" }
+post:
+  - relationship_order:
+      task: "${task.epic_checkout.key}"
+      type: child
+      targets: ["${task.checkout_confirm.key}", "${task.checkout_cart.key}", "${task.checkout_payment.key}"]

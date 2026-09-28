@@ -1,0 +1,11 @@
+id: shortcuts-disable
+name: Switch off a keyboard shortcut
+description: The current user's settings record the disabled shortcut.
+tags: [settings]
+pre:
+  - yaml: { file: "users/${user.ada.id}/settings.yaml", path: "", absent: true }
+cli: user shortcuts --off new-task
+mcp:
+  call: { tool: set_keyboard_shortcuts, args: { off: [new-task] } }
+post:
+  - yaml: { file: "users/${user.ada.id}/settings.yaml", path: keyboard_shortcuts.disabled, equals: [new-task] }

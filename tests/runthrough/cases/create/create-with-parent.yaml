@@ -1,0 +1,23 @@
+id: create-with-parent
+name: Create a task under a parent given by key
+description: >
+  K140/B39: the new task stores the parent's ID (not the key that was
+  typed), and the parent gains the matching child link — both sides, in
+  one operation. The new child is last among the parent's children.
+tags: [create, b39]
+known_doctor_findings:
+  - match: "key index: \\d+ task dir\\(s\\) not in index"
+    bug: "create does not add the new key to an on-disk key index that already exists (the parent lookup built it)"
+cli: create "Refund flow" --parent ${task.checkout_payment.key}
+mcp:
+  call: { tool: create_task, args: { title: Refund flow, parent: "${task.checkout_payment.key}" } }
+capture:
+  t: { new_task: { title: Refund flow } }
+post:
+  - relationship: { task: "${var.t.id}", type: parent, target: "${task.checkout_payment.key}" }
+  - relationship: { task: "${task.checkout_payment.key}", type: child, target: "${var.t.id}" }
+  - bilateral: "${var.t.id}"
+  - relationship_order:
+      task: "${task.checkout_payment.key}"
+      type: child
+      targets: ["${task.payment_card_form.key}", "${task.payment_3ds.key}", "${var.t.id}"]

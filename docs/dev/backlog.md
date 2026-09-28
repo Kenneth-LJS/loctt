@@ -27,23 +27,7 @@ Every relationship group, including the Children tree's direct children,
 gets the same 24px drag/keyboard handle; grandchildren sort by rank;
 ancestor pages refresh after a reorder.
 
-## B42 · Runthrough tests over a seed tracker (K144) — **in progress**
-
-- A checked-in seed tracker (`tests/fixtures/trackers/seed/`) with
-  realistic data across every entity, pinned to the current format;
-  `npm run seed:upgrade`.
-- One YAML file per test (`tests/runthrough/cases/<slug>.yaml`): id, name,
-  description, pre, CLI command(s), MCP call,
-  post (or expected error + "nothing changed"); plus scenario tests.
-- A runner (`npm run test:runthrough`): fresh seed copy per test, CLI and
-  scripted MCP, pre/post checks that read files directly, doctor after
-  every test, failure names the step and the diff. Part of every gate.
-- Initial coverage: create (incl. with parent), edit fields, link/unlink,
-  rerank, bulk set/archive/delete, move project, archive/unarchive,
-  comments, attachments, views, search/list queries, sprints, milestones,
-  labels, users, settings, doctor repairs, and error cases.
-
-## B43 · Consolidate test suites (K145) — **todo** (after B42)
+## B43 · Consolidate test suites (K145) — **todo**
 
 - Rewrite each `tests/e2e` journey as a runthrough scenario (same steps,
   same assertions, plus the automatic checks); move the MCP tool-list

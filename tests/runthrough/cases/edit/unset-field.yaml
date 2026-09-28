@@ -1,0 +1,11 @@
+id: unset-field
+name: Clear a field
+description: Unsetting removes the key from the frontmatter rather than writing null.
+tags: [edit]
+pre:
+  - field: { task: "${task.ops_certs.key}", field: due_date, equals: "2026-10-01" }
+cli: unset ${task.ops_certs.key} due_date
+mcp:
+  call: { tool: unset_field, args: { ref: "${task.ops_certs.key}", field: due_date } }
+post:
+  - field: { task: "${task.ops_certs.key}", field: due_date, absent: true }

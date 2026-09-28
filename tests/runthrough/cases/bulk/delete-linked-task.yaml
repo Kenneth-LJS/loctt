@@ -1,0 +1,20 @@
+id: delete-linked-task
+name: Deleting a linked task removes the partner's link too
+description: >
+  After deleting ${task.flaky_checkout_test.key}, its relates_to partner
+  must not keep an edge to a task that no longer exists. Today delete
+  removes only the task directory, so the partner keeps a dangling edge
+  and doctor reports it (A19 lets unlink clean it up by hand).
+tags: [bulk, delete, links]
+known_bug:
+  cli: "delete leaves the partner's inverse edge pointing at the deleted task"
+  mcp: "delete leaves the partner's inverse edge pointing at the deleted task"
+known_doctor_findings:
+  - match: "key index: \\d+ stale entr"
+    bug: "delete leaves the deleted keys in the on-disk key index"
+cli: delete ${task.flaky_checkout_test.key} --yes
+mcp:
+  call: { tool: delete_task, args: { refs: ["${task.flaky_checkout_test.key}"], confirm: true } }
+post:
+  - task_absent: "${task.flaky_checkout_test.id}"
+  - relationship: { task: "${task.checkout_payment.key}", type: relates_to, target: "${task.flaky_checkout_test.id}", present: false }

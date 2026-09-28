@@ -1,0 +1,10 @@
+id: list-by-priority
+name: List tasks by priority
+description: A DSL query returns exactly the matching active tasks, and reads write nothing.
+tags: [queries]
+cli: list --query "priority = critical"
+mcp:
+  call: { tool: list_tasks, args: { query: priority = critical } }
+post:
+  - output: { keys: ["${task.checkout_payment.key}", "${task.login_crash.key}", "${task.mob_ios_crash.key}", "${task.ops_certs.key}"] }
+  - tracker_unchanged: true

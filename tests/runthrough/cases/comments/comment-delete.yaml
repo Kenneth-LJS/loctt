@@ -1,0 +1,11 @@
+id: comment-delete
+name: Delete a comment
+description: Only the named comment goes; the other stays.
+tags: [comments]
+cli: comment-delete ${task.login_crash.key} ${comment.login_repro.id} --yes
+mcp:
+  call: { tool: delete_comment, args: { ref: "${task.login_crash.key}", comment_id: "${comment.login_repro.id}", confirm: true } }
+post:
+  - comment: { task: "${task.login_crash.key}", id: "${comment.login_repro.id}", present: false }
+  - comment: { task: "${task.login_crash.key}", id: "${comment.login_reply.id}" }
+  - comment_count: { task: "${task.login_crash.key}", equals: 1 }
