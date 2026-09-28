@@ -28,6 +28,13 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 - Sync ranks unranked incoming links with the upgrade's ranking step;
   close G8 in known-gaps.md; tests red-proven.
 
+## B47 · Bulk add/remove, all-or-nothing (K152) — **todo** (fix round)
+
+`loctt set <k1,k2,…> <field> --add/--remove [--create]`, MCP
+`bulk_update_tasks` add/remove, web bulk bar if it edits lists; validate
+every task first and write none if any would fail; one bulk_op_id; tests
+and runthrough cases.
+
 ## B45 · Add/remove for multi-value fields; open choice fields (K150) — **todo** (after B41)
 
 - Core list add/remove under the lock for labels and every `multi` custom

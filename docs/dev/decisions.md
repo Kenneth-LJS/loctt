@@ -22685,6 +22685,16 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K152 · Bulk add/remove, all-or-nothing
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+B45 left bulk add/remove refused. Asked whether `loctt set WEB-1,WEB-2
+labels --add urgent` (and MCP `bulk_update_tasks`) should work, and
+whether it should be all-or-nothing like the other bulk writes, Ken:
+*"(a)"*: yes, all-or-nothing (if any task would fail, none change),
+matching bulk set, archive and delete.
+
 ### K151 · No `1` anywhere, git branches included; sync orders incoming links
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
