@@ -172,7 +172,8 @@ export async function run(args: string[], root: string): Promise<void> {
           ...(avatarSourcePath !== undefined ? { avatarSourcePath } : {}),
           ...(removeAvatar ? { removeAvatar: true } : {}),
         });
-        console.log(`Updated user ${target.id}`);
+        // K148: the CLI prints names.
+        console.log(`Updated user ${name ?? target.name ?? target.id}`);
       });
       break;
     }

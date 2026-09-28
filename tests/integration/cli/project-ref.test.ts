@@ -33,7 +33,7 @@ describe("CLI project references (spawned binary)", () => {
       // The failure mode being fixed: exit 0 and "No tasks found.", which
       // is indistinguishable from a real project that happens to be empty.
       expect(bogus.exitCode).not.toBe(0);
-      expect(`${bogus.stdout}${bogus.stderr}`).toMatch(/unknown project/i);
+      expect(`${bogus.stdout}${bogus.stderr}`).toMatch(/No project named 'NoSuchProject'/); // K148 wording
     });
   });
 
@@ -56,7 +56,7 @@ describe("CLI project references (spawned binary)", () => {
       const dup = await runCli(["duplicate", "T-1", "--project", "NoSuchProject"], { cwd: root });
       expect(dup.exitCode).not.toBe(0);
       const out = `${dup.stdout}${dup.stderr}`;
-      expect(out).toMatch(/unknown project/i);
+      expect(out).toMatch(/No project named 'NoSuchProject'/); // K148 wording
       expect(out).not.toMatch(/key allocation state/);
     });
   });

@@ -625,12 +625,13 @@ describe("resolveProjectIdFromInput", () => {
     await createProject(locttDir, { name: "Twin", prefix: "TA" });
     await createProject(locttDir, { name: "Twin", prefix: "TB" });
     const cfg = await loadProjectsConfig(locttDir);
-    expect(() => resolveProjectIdFromInput(cfg, "Twin")).toThrow(/ambiguous/);
+    // K148: refused, listing each match with its ID.
+    expect(() => resolveProjectIdFromInput(cfg, "Twin")).toThrow(/^'Twin' matches 2 projects: Twin \(\w{26}\), Twin \(\w{26}\)\. Use the ID\.$/);
   });
 
   it("throws on unknown input", async () => {
     const cfg = await loadProjectsConfig(locttDir);
-    expect(() => resolveProjectIdFromInput(cfg, "Nope")).toThrow(/unknown/i);
+    expect(() => resolveProjectIdFromInput(cfg, "Nope")).toThrow("No project named 'Nope'.");
   });
 });
 

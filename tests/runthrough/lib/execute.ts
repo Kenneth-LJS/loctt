@@ -196,10 +196,13 @@ async function verifyStep(
   if (result.earlyFailure) return [fail("action", result.earlyFailure)];
 
   if (step.expect_error) {
+    // The README promises `${…}` in any string; the expected message is
+    // one (an ambiguity message names IDs captured by an earlier step).
+    const expected = interpolate(step.expect_error, ctxOf(seed, state));
     if (!result.error) {
       failures.push(fail("expect_error", `expected the action to fail, but it succeeded:\n${result.output}`));
     } else if (surface === "cli") {
-      const want = step.expect_error.cli;
+      const want = expected.cli;
       if (want && result.error.exitCode !== want.exit_code) {
         failures.push(fail("expect_error", `expected exit code ${want.exit_code}, got ${String(result.error.exitCode)}: ${result.error.message}`));
       }
@@ -207,7 +210,7 @@ async function verifyStep(
         failures.push(fail("expect_error", `expected the error to contain ${JSON.stringify(want.message)}, got: ${result.error.message}`));
       }
     } else {
-      const want = step.expect_error.mcp;
+      const want = expected.mcp;
       if (want?.message !== undefined && !result.error.message.includes(want.message)) {
         failures.push(fail("expect_error", `expected the error to contain ${JSON.stringify(want.message)}, got: ${result.error.message}`));
       }

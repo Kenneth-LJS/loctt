@@ -443,4 +443,60 @@ describe("relationships", () => {
       expect(updated.frontmatter.relationships).toBeUndefined();
     });
   });
+
+  /**
+   * @verifies REL-C9
+   *
+   * G1: a link stored as a key more than one task has held. Resolving
+   * the key finds one holder's id, so the id-based removal never matched
+   * the stored text and no surface could remove the link.
+   */
+  describe("unlinkTask by the stored target (G1)", () => {
+    const holderB: Task = { ...seedB, frontmatter: { ...seedB.frontmatter, key: "T-9" } };
+    const formerC: Task = {
+      frontmatter: {
+        id: "c", key: "T-3", key_history: ["T-9"], title: "C",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+
+    async function seedAmbiguous(bRels?: Task["frontmatter"]["relationships"]): Promise<void> {
+      await writeTask(locttDir, "a", {
+        ...seedA,
+        frontmatter: { ...seedA.frontmatter, relationships: [{ type: "related_to", target: "T-9" }] },
+      });
+      await writeTask(locttDir, "b", {
+        ...holderB,
+        frontmatter: { ...holderB.frontmatter, ...(bRels ? { relationships: bRels } : {}) },
+      });
+      await writeTask(locttDir, "c", formerC);
+    }
+
+    it("removes the edge whose stored target is the ref as given, and logs it", async () => {
+      await seedAmbiguous();
+      // What every surface passes: the key resolved to its current holder.
+      await unlinkTask({ locttDir, taskId: "a", type: "related_to", target: "b", storedTarget: "T-9", workflowConfig: workflow });
+      expect((await readTask(locttDir, "a")).frontmatter.relationships).toBeUndefined();
+      expect((await readHistory(locttDir, "a")).at(-1)).toMatchObject({
+        kind: "link_removed", meta: { type: "related_to", target: "T-9" },
+      });
+    });
+
+    it("removes the inverse from the holder that has it", async () => {
+      await seedAmbiguous([{ type: "related_to", target: "a" }]);
+      await unlinkTask({ locttDir, taskId: "a", type: "related_to", target: "b", storedTarget: "T-9", workflowConfig: workflow });
+      expect((await readTask(locttDir, "a")).frontmatter.relationships).toBeUndefined();
+      expect((await readTask(locttDir, "b")).frontmatter.relationships).toBeUndefined();
+      expect((await readHistory(locttDir, "b")).at(-1)).toMatchObject({
+        kind: "link_removed", meta: { type: "related_to", target: "a" },
+      });
+    });
+
+    it("still refuses when no edge stores the ref", async () => {
+      await seedAmbiguous();
+      await expect(unlinkTask({ locttDir, taskId: "a", type: "related_to", target: "c", storedTarget: "T-3", workflowConfig: workflow }))
+        .rejects.toThrow(/does not exist on task a/);
+    });
+  });
 });

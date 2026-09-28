@@ -30,7 +30,7 @@ describe("entity operations enforce their preconditions", () => {
       // the user only sees because the command got that far.
       const res = await runCli(["project", "delete", "NoSuchProject", "--yes"], { cwd: root });
       expect(res.exitCode).not.toBe(0);
-      expect(`${res.stdout}${res.stderr}`).toMatch(/unknown project/i);
+      expect(`${res.stdout}${res.stderr}`).toMatch(/No project named 'NoSuchProject'/); // K148 wording
       expect(await cfg(root, "projects.yaml")).toBe(before);
     });
   });

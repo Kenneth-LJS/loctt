@@ -23121,6 +23121,190 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A360 · Runthrough bugs G1–G7 fixed; names and IDs everywhere (B44, K147, K148)
+
+#### A360 · B44 implementation calls (G1–G7, K147, K148)
+
+**Ticket:** B44 · **Date:** 2026-09-28 · **Commit:** (this one)
+
+**The situation.** B44 fixes the runthrough's G1–G7 and builds K147
+(delete removes the other side of its links) and K148 (IDs recognised by
+shape; names accepted everywhere; ID-shaped names refused; CLI prints
+names, MCP returns both). The rulings and the gap entries left the calls
+below open. None changes scope or a recorded decision; each is contained
+and listed with its revert path.
+
+**What had to be decided.** How each fix is shaped where the ruling or
+the gap's "possible fix" did not say.
+
+**Options considered.** (per call; the chosen one first)
+
+1. *Key index owner (G5, G6).* (a) Two incremental helpers in
+   `state/key-index.ts` (`recordTaskKeys`, `forgetTasks`) used by create,
+   move and delete; bulk rewrites (reconcile, restore, prefix change)
+   keep their full `rebuildKeyIndex`. Neither helper creates an index
+   when none is on disk (it is built lazily; creating one would change
+   when). (b) Rebuild the whole index after every create and delete:
+   O(tasks) reads per write. (a) chosen. `forgetTasks` drops every entry
+   pointing at a deleted id, current and former keys alike; a key also
+   held by another task (only after a merge) then resolves through
+   lookup's existing fold path, as the old drop-dangling path did.
+2. *What a delete detaches (K147).* (a) The partners are the targets of
+   the deleted task's own links; each partner loses every link that
+   points at a deleted task (the inverse and any stray link of another
+   type), with one `link_removed` history entry per link removed
+   (`meta: {type, target}`, and the batch's `bulk_op_id` on a bulk
+   delete). A partner deleted in the same batch, gone, unreadable, or
+   with unreadable `relationships` is skipped. The directories are
+   removed first, the partners written after, so a crash in between
+   leaves dangling links (which `unlink` and doctor handle), never a
+   one-sided link the K141 repair would complete back onto a deleted
+   task. (b) Scan every task for links to the deleted id: O(tasks) reads
+   per delete, only for links that were already one-sided (a doctor
+   finding before the delete). (a) chosen. `link_removed` is the kind
+   `unlink` writes on the far side, so the activity feed already renders
+   it. Tests that used `loctt delete` to make a dangling link now remove
+   the directory out of band (`removeTaskOutOfBand`), which is what
+   REL-24 and XS-40 describe.
+3. *Unlink by stored target (G1).* (a) Core `unlinkTask` takes an
+   optional `storedTarget` (the ref as typed); when this task has no link
+   to the resolved id but has one storing exactly that text, that link is
+   removed. The check runs before the inverse-only case, so a holder's
+   inverse is not removed while the source keeps its key link (a first
+   draft had that bug; a test caught it). The inverse is removed from any
+   task holding that key (current or former) that links back, unless the
+   source still links to that task by id. (b) Surface-side fallback in
+   each of CLI, MCP and web: three copies of the same rule. (a) chosen.
+   MCP `unlink_tasks` also stopped refusing a target that resolves to no
+   task: its description always said a deleted target was tolerated, and
+   the handler failed with "task not found". Doctor's ambiguous-key
+   message now ends "Remove this link, then link the right task." (the
+   web row's remove action and `unlink` both do it now).
+4. *`loctt set` values (G2, G3).* (a) CLI-only conversion
+   (`apps/cli/src/runtime/set-value.ts`): `labels` and any `multi`
+   custom field take a comma list (the CLI's existing list syntax for
+   refs); `number` and `boolean` custom fields are parsed (booleans
+   accept the CLI's flag spellings true/false/yes/no/on/off/1/0);
+   `fields.<key>` names a declared custom field; everything else passes
+   through for core to validate. A number or boolean that does not parse
+   is refused before any task is touched, as `validation_failed`
+   (exit 1): `risk takes a number, not "high".` (b) Coerce in core:
+   MCP and web already send typed JSON, so core would guess types for
+   no caller that needs it. (a) chosen. `set <task> labels a,b`
+   **replaces** the labels (MCP `update_task` and the web do the same);
+   there are no add/remove flags, and a label name containing a comma
+   can't be written this way (use its ID). If Ken wants add/remove, it is
+   a CLI-shape addition on top of this.
+5. *`show` user names (G7).* The profile's name, else the stored id
+   (unreadable or deleted profile), matching milestones/sprints/labels.
+6. *The one resolver (K148).* `packages/core/src/utils/entity-ref.ts`
+   (`matchEntityRef`, `resolveEntityRefOrThrow`,
+   `assertNameNotIdShaped`); the five `*IdFromInput`/`resolveUserRef`
+   resolvers delegate to it, so every write path, the CLI, MCP and web
+   share it. Calls the ruling left open:
+   - A project's slug is matched as a name, ahead of the display name
+     (K3 unchanged). Users keep the unique case-insensitive prefix match
+     after the exact name. Archived entities are excluded unless the
+     caller asks, as before; projects keep their "is archived" message.
+   - An ID-shaped input that matches nothing: `No <entity> with ID
+     '<x>'.` (the ruling gave only the name sentence).
+   - Ambiguous: `'<x>' matches N <entities>: <name> (<id>), … Use the
+     ID.`
+   - A non-ID-shaped input that matches no name falls back to an exact
+     ID match. LocTT writes only ULIDs, so this only reaches an entity
+     whose ID was hand-edited into another shape, which the strict rule
+     would make unreachable. It never overrides a name match.
+   - The shape test is case-sensitive (upper case, as the ruling's
+     regex): `01m3…` is a name.
+   - ID-shaped names are refused in core's create/edit for labels,
+     milestones, sprints, projects, users and saved views (field
+     `name`). `ViewError` gained an optional `field` so the web answers
+     400 at `name` (it said `filters` for every view error except a
+     taken name).
+7. *Names in queries (K148).* A pass over the parsed query
+   (`query/entities.ts`) rewrites names to IDs for `labels`, `assignee`,
+   `reporter`, `comment_mentions`, `milestone`, `sprint`, `project` under
+   `=`, `!=`, `in`, `not in`; `~` and `is empty` are untouched. An
+   ID-shaped value is never refused (a task may hold a deleted entity's
+   ID). An ad hoc query naming nothing, or something ambiguous, is a
+   `QueryValidationError` (the sentence loses its full stop, because the
+   class appends " at position N"). A saved view naming something since
+   renamed or deleted warns and runs, as a view naming a deleted field
+   does. Loaded per list call (`resolveEntityNamesContext`) only when a
+   query or view is in play; a kind whose file can't be read is left
+   unresolved rather than refused. The tokenizer reads an unquoted
+   ID-shaped word as one value (it read `01…` as a number and a word and
+   refused `labels in (urgent, 01…)`).
+   The web's structured list URL params (`?labels=`, `?project=`, …) are
+   folded into the same query, so an unknown non-ID value there is now a
+   400 naming it (it was an empty list). The UI's facets send IDs (and
+   the project slug, already resolved), so only a hand-typed or stale
+   URL reaches this. Two web tests asserted the empty list / used a
+   label that did not exist and were updated; two UI specs used fake
+   "IDs" containing L (not ID-shaped) and now use ID-shaped ones.
+8. *MCP names beside IDs (K148).* Additive siblings, never a changed
+   field: `get_task` gains `project_name`, `assignee_name`,
+   `reporter_name`, `milestone_name`, `sprint_name` and `label_names`
+   (aligned with `labels`, `null` for a label that no longer exists; a
+   scalar reference to a deleted entity gets no `*_name`).
+   `get_task_history` entries gain `actor_name` and, for entity fields
+   and label add/remove, `before_name`/`after_name`. Entity tools:
+   edit/archive/unarchive texts read `name (id)`; delete and
+   `count_user_references` JSON gain `name`; `get_sprint_burndown` gains
+   `sprintName`; `list_users` gains `current_name`; the user-settings,
+   sidebar and shortcut tools gain `user_name`; `set_default_project`
+   names the project. `list_*` already return whole entities and
+   `list_tasks` rows hold no references. (b) A nested `refs: {field:
+   {id, name}}` object: one more level for every read. (a) chosen.
+9. *CLI names (K148).* `log` names users, labels, milestones, sprints
+   and projects (the id when it can't); `sprint burndown`'s table prints
+   the sprint name (the id stays in `--format json`); `project edit` and
+   `user edit` confirmations print names. Listing commands that print an
+   ID column on request (`--ids`, `user list`) are unchanged: that is how
+   a user finds an ID to pass.
+10. *Runthrough harness.* `expect_error` messages are now interpolated
+    (`${…}`), which the README already promised for "any string"; the
+    ambiguity case needs an ID captured by its first step.
+11. *Web client.* `useBulk`'s private `isUlid` now uses contracts'
+    `isIdShaped` (first character 0–7, as a ULID's is).
+
+**Decided.** As chosen in 1–11.
+
+**Why.** Each keeps the ruling's rule in one place (core for behaviour,
+the surface only for its own text format), keeps existing response
+shapes, and degrades rather than refuses where the cause is unreadable
+data (P-7), per the corruption-handling guide.
+
+**To revert.**
+1. `recordTaskKeys` / `forgetTasks` in `packages/core/src/state/key-index.ts`
+   and their calls in `task/create.ts`, `task/move.ts` (`reindexKey`),
+   `task/lifecycle.ts` (`deleteTask`), `task/bulk.ts` (`bulkDelete`).
+2. `detachDeletedTasks` in `task/relationships.ts` and its calls in
+   `deleteTask` / `bulkDelete`; `removeTaskOutOfBand` in
+   `tests/integration/fixtures/tmp-loctt.ts`.
+3. `storedTarget` / `removeStoredEdge` in `task/relationships.ts`; the
+   `storedTarget:` argument in `apps/cli/src/commands/task-links.ts`,
+   `apps/mcp/src/tools/task-links.ts`, `handleUnlink` in
+   `apps/web/src/server/server.ts`; the message in `task/traversal.ts`.
+4. `apps/cli/src/runtime/set-value.ts` and `coerceSetValue` in
+   `apps/cli/src/commands/task-crud.ts` (`set`).
+5. `nameOfUser` in `apps/cli/src/commands/task-crud.ts`.
+6. `packages/core/src/utils/entity-ref.ts`; the delegating bodies of
+   `resolve{Label,Milestone,Sprint,Project}IdFromInput` and
+   `resolveUserRef`; the `assertNameNotIdShaped` calls in the create/edit
+   functions; `ViewError.field`; `packages/contracts/src/id-shape.ts`.
+7. `packages/core/src/query/entities.ts`, `ListContext.entities` and
+   `resolveEntityNamesContext` in `query/list.ts`, the five list/export
+   call sites, the ID branch in `query/tokenizer.ts`.
+8. `apps/mcp/src/runtime/names.ts` and its uses in `tools/task-crud.ts`,
+   `label.ts`, `milestone.ts`, `sprint.ts`, `project.ts`, `user.ts`.
+9. `apps/cli/src/format/history.ts` (`entityNames`, `labelName`),
+   `buildHistoryDisplayContext`, `sprint.ts` burndown, `project.ts` and
+   `user.ts` edit messages.
+10. The `expected` interpolation in `verifyStep`
+    (`tests/runthrough/lib/execute.ts`).
+11. `apps/web/src/client/api/hooks/useBulk.ts`.
+
 ### A359 · Runthrough tests over a seed tracker (B42)
 
 #### A359 · B42 runthrough harness: the calls K144 did not settle

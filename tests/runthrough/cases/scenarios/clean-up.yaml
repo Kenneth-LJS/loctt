@@ -4,13 +4,6 @@ description: >
   Archive three stale tasks in one go, bring one back, then permanently
   delete the other two.
 tags: [scenario, bulk, archive, delete]
-known_doctor_findings:
-  - match: "key index: \\d+ stale entr"
-    bug: "delete leaves the deleted keys in the on-disk key index"
-  - match: "relationships: \\d+ issue"
-    bug: "delete leaves the partner's inverse edge pointing at the deleted task"
-  - match: "data integrity: .*target task .* does not exist"
-    bug: "delete leaves the partner's inverse edge pointing at the deleted task"
 steps:
   - name: archive three
     cli: archive ${task.theme_tokens.key},${task.perf_budget.key},${task.mob_tablet.key}

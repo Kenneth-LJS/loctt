@@ -16,6 +16,7 @@ import {
 } from "../state/index.js";
 import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
+import { assertNameNotIdShaped } from "../utils/entity-ref.js";
 import { copyAvatar, removeAvatar } from "./avatar.js";
 import { readCurrentUserId, writeCurrentUserId } from "./current.js";
 import { UserError } from "./errors.js";
@@ -78,6 +79,7 @@ export async function createUser(
   locttDir: string,
   options: CreateUserOptions,
 ): Promise<UserProfile> {
+  assertNameNotIdShaped(options.name, m => new UserError(m, { field: "name" }));
   if (options.name.trim().length === 0) {
     throw new UserError("Name must not be empty.");
   }
@@ -125,6 +127,7 @@ export async function updateUser(
   userId: string,
   changes: EditUserOptions,
 ): Promise<UserProfile> {
+  assertNameNotIdShaped(changes.name, m => new UserError(m, { field: "name" }));
   assertValidEmail(changes.email);
   return withStateLock(locttDir, async () => {
     const existing = await loadUserProfile(locttDir, userId);

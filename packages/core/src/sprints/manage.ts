@@ -18,6 +18,7 @@ import {
 } from "../state/index.js";
 import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
+import { assertNameNotIdShaped, resolveEntityRefOrThrow } from "../utils/entity-ref.js";
 
 /**
  * Entity errors carry `validation_failed` and `not_saved`: every throw
@@ -84,18 +85,8 @@ export function resolveSprintIdFromInput(
   input: string,
   options: { includeArchived?: boolean } = {},
 ): string {
-  const byId = config.sprints.find(s => s.id === input
-    && (options.includeArchived === true || s.archived !== true));
-  if (byId) return byId.id;
-  const byName = resolveSprintByName(config, input, options);
-  if (byName.kind === "match") return byName.sprint.id;
-  if (byName.kind === "ambiguous") {
-    const ids = byName.matches.map(s => s.id).join(", ");
-    throw new SprintError(
-      `Sprint name '${input}' is ambiguous. Matches ${byName.matches.length} sprints (${ids}). Pass the id instead.`,
-    );
-  }
-  throw new SprintError(`Unknown sprint: ${input}`);
+  // K148: one resolver for every entity, IDs recognised by shape.
+  return resolveEntityRefOrThrow("sprint", config.sprints, input, options, m => new SprintError(m)).id;
 }
 
 /** Input to createSprint. Core generates the id. */
@@ -112,6 +103,7 @@ export async function createSprint(
   locttDir: string,
   input: CreateSprintInput,
 ): Promise<SprintDef> {
+  assertNameNotIdShaped(input.name, m => new SprintError(m, { field: "name" }));
   assertIsoDate(input.start_date, "start_date");
   assertIsoDate(input.end_date, "end_date");
   if (input.end_date < input.start_date) {
@@ -152,6 +144,7 @@ export async function editSprint(
   id: string,
   changes: EditSprintOptions,
 ): Promise<void> {
+  assertNameNotIdShaped(changes.name, m => new SprintError(m, { field: "name" }));
   if (changes.start_date !== undefined) assertIsoDate(changes.start_date, "start_date");
   if (changes.end_date !== undefined) assertIsoDate(changes.end_date, "end_date");
   if (changes.state !== undefined && !VALID_SPRINT_STATES.has(changes.state)) {

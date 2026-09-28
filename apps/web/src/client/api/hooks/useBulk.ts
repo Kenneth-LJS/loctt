@@ -1,4 +1,5 @@
 import type { BulkResponse } from "@loctt/contracts";
+import { isIdShaped } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { DELETE_CONFIRM_WORD } from "../../list/DeleteConfirmDialog.tsx";
@@ -100,10 +101,6 @@ export function useBulkDelete() {
  * purpose (BLK-38, BLK-39): "12 tasks deleted" must not appear when
  * three of them did not.
  */
-/** Crockford base32, 26 chars — the shape core's ids take. */
-function isUlid(ref: string): boolean {
-  return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(ref);
-}
 
 export function describeBulkResult(
   result: BulkResponse,
@@ -153,7 +150,7 @@ export function describeBulkResult(
     return { message: `${okText}${suffix}`, failures: [] };
   }
   const failures = result.failed.map(f => {
-    const key = keyOf?.(f.taskId) ?? (isUlid(f.taskId) ? undefined : f.taskId);
+    const key = keyOf?.(f.taskId) ?? (isIdShaped(f.taskId) ? undefined : f.taskId);
     return `${key ?? "a task no longer listed"}: ${f.error}`;
   });
   if (ok === 0) {

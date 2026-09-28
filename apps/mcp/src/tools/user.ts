@@ -72,6 +72,8 @@ export const TOOLS: readonly ToolDef[] = [
       const filtered = pageConfigList(filterByName(scoped, getQ(args)), args);
       return text(JSON.stringify({
         current: current?.id ?? null,
+        // K148: name beside the ID.
+        ...(current?.name !== undefined ? { current_name: current.name } : {}),
         users: filtered,
       }, null, 2));
     },
@@ -98,7 +100,7 @@ export const TOOLS: readonly ToolDef[] = [
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       const settings = await loadUserSettings(locttDir, current.id);
-      return text(JSON.stringify({ user: current.id, settings }, null, 2));
+      return text(JSON.stringify({ user: current.id, user_name: current.name, settings }, null, 2));
     },
   },
   {
@@ -141,7 +143,7 @@ export const TOOLS: readonly ToolDef[] = [
       // Every item id (groups + filters, B2 bug 3), resolved as the web
       // sidebar renders it (A346), matching the CLI read.
       const resolved = resolveRenderedSidebarItems(stored);
-      return text(JSON.stringify({ user: current.id, stored, resolved }, null, 2));
+      return text(JSON.stringify({ user: current.id, user_name: current.name, stored, resolved }, null, 2));
     },
   },
   {
@@ -199,7 +201,7 @@ export const TOOLS: readonly ToolDef[] = [
       // Every item id (groups + filters, B2 bug 3), resolved as the web
       // sidebar renders it (A346), matching the CLI read.
       const resolved = resolveRenderedSidebarItems(after);
-      return text(JSON.stringify({ user: current.id, stored: after, resolved }, null, 2));
+      return text(JSON.stringify({ user: current.id, user_name: current.name, stored: after, resolved }, null, 2));
     },
   },
   {
@@ -214,7 +216,7 @@ export const TOOLS: readonly ToolDef[] = [
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       const stored = readKeyboardShortcuts(await loadUserSettings(locttDir, current.id));
-      return text(JSON.stringify({ user: current.id, stored, ...shortcutPayload(stored) }, null, 2));
+      return text(JSON.stringify({ user: current.id, user_name: current.name, stored, ...shortcutPayload(stored) }, null, 2));
     },
   },
   {
@@ -257,7 +259,7 @@ export const TOOLS: readonly ToolDef[] = [
         await saveUserSettings(locttDir, current.id, withKeyboardShortcuts(settings, next));
       }
       const stored = readKeyboardShortcuts(await loadUserSettings(locttDir, current.id));
-      return text(JSON.stringify({ user: current.id, stored, ...shortcutPayload(stored) }, null, 2));
+      return text(JSON.stringify({ user: current.id, user_name: current.name, stored, ...shortcutPayload(stored) }, null, 2));
     },
   },
   {
@@ -341,7 +343,7 @@ export const TOOLS: readonly ToolDef[] = [
     handler: async ({ locttDir }, args) => {
       const target = await resolveUserRef(locttDir, args["ref"] as string);
       const counts = await countUserReferences(locttDir, target.id);
-      return text(JSON.stringify({ id: target.id, ...counts }, null, 2));
+      return text(JSON.stringify({ id: target.id, name: target.name, ...counts }, null, 2));
     },
   },
   {
@@ -369,7 +371,7 @@ export const TOOLS: readonly ToolDef[] = [
         ...(remapTo !== undefined ? { remapTo } : {}),
         ...(unassign ? { unassign: true } : {}),
       });
-      return text(JSON.stringify({ deleted: target.id, ...result }, null, 2));
+      return text(JSON.stringify({ deleted: target.id, name: target.name, ...result }, null, 2));
     },
   },
 ];

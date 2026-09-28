@@ -38,6 +38,7 @@ import {
   orderRelationships,
   readHistory,
   resolveCommentMentionsContext,
+  resolveEntityNamesContext,
   resolveProjectIdForUser,
   resolveProjectIdFromInput,
   resolveView,
@@ -54,6 +55,7 @@ import {
   validateUnsetFieldArgs,
   validateUpdateTaskArgs,
 } from "../runtime/fields.js";
+import { historyEntryNames, loadEntityNames, taskReferenceNames } from "../runtime/names.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
 import type { ToolDef } from "../types.js";
 
@@ -107,8 +109,14 @@ export const TOOLS: readonly ToolDef[] = [
         ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
         aux,
       });
+      // K148: each entity reference also by name (additive siblings).
+      const refNames = taskReferenceNames(
+        model.task.frontmatter as unknown as Record<string, unknown>,
+        await loadEntityNames(locttDir),
+      );
       const result: Record<string, unknown> = {
         ...model.task.frontmatter,
+        ...refNames,
         // DEG-C2: an untitled task (title never set, or lifted whole into
         // `health`) shows its key where the title would go — never absent,
         // never "undefined". Mirrors the web and `list_tasks` (DEG-8). The
@@ -268,9 +276,10 @@ export const TOOLS: readonly ToolDef[] = [
       const listViewQuery = view !== undefined && queriesConfig !== undefined
         ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
         : [];
-      const listCtx = await resolveCommentMentionsContext(
+      // K148: names in the query resolve to the IDs the tasks store.
+      const listCtx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
         locttDir, tasks, buildListContext(tasks), [baseQuery, ...listViewQuery],
-      );
+      ), [baseQuery, view]);
       const result = listTasks({
         tasks,
         options: {
@@ -384,9 +393,9 @@ export const TOOLS: readonly ToolDef[] = [
       const exportViewQuery = view !== undefined && queriesConfig !== undefined
         ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
         : [];
-      const exportCtx = await resolveCommentMentionsContext(
+      const exportCtx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
         locttDir, tasks, buildListContext(tasks), [baseQuery, ...exportViewQuery],
-      );
+      ), [baseQuery, view]);
       const result = listTasks({
         tasks,
         options: {
@@ -750,8 +759,10 @@ export const TOOLS: readonly ToolDef[] = [
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
       });
+      // K148: actor and entity values also by name (additive siblings).
+      const names = await loadEntityNames(locttDir);
       return text(JSON.stringify({
-        entries: page.entries,
+        entries: page.entries.map(e => historyEntryNames(e as unknown as Record<string, unknown>, names)),
         total: page.total,
         offset: offset ?? 0,
         ...(limit !== undefined ? { limit } : {}),

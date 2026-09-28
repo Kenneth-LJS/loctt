@@ -41,11 +41,11 @@ at the same filename in both trees.
 
 | Flow | Covers | Cases |
 |---|---|---|
-| [flow-tasks.md](flow-tasks.md) | Create, read, update, unset, duplicate, move, export | 9 |
-| [flow-list.md](flow-list.md) | Query DSL, list, sort, pagination, saved views | 6 |
-| [flow-relationships.md](flow-relationships.md) | Links, inverse edges, cycle guards, attachments | 5 |
+| [flow-tasks.md](flow-tasks.md) | Create, read, update, unset, duplicate, move, export, typed `set`, key index | 13 |
+| [flow-list.md](flow-list.md) | Query DSL, list, sort, pagination, saved views, names in queries | 7 |
+| [flow-relationships.md](flow-relationships.md) | Links, inverse edges, cycle guards, attachments, delete and unlink | 9 |
 | [flow-comments-activity.md](flow-comments-activity.md) | Comments, body edits, history/activity | 8 |
-| [flow-projects-users.md](flow-projects-users.md) | Project & user CRUD, current user, avatars, recents, shortcut switches | 14 |
+| [flow-projects-users.md](flow-projects-users.md) | Project & user CRUD, current user, avatars, recents, shortcut switches, names and IDs | 16 |
 | [flow-sprints.md](flow-sprints.md) | Sprints, burndown, board reorder | 3 |
 | [flow-milestones-labels.md](flow-milestones-labels.md) | Milestones, progress, labels | 3 |
 | [flow-settings.md](flow-settings.md) | Workflow config, config get/set, calendar, drift | 5 |
@@ -54,7 +54,7 @@ at the same filename in both trees.
 | [flow-backup-restore.md](flow-backup-restore.md) | Backup export/import, restore, dry-run, integrity | 24 |
 | [flow-degradation.md](flow-degradation.md) | Corrupt-data degradation, CLI & MCP halves | 8 |
 
-**105 cases.**
+**116 cases.**
 
 ## Why one tree, not one per surface
 

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -208,5 +208,63 @@ describe("POST /api/tasks/:ref/unlink removes the inverse edge", () => {
 
     expect(await relsOf("T-3")).toHaveLength(0);
     expect(await relsOf("T-4")).toHaveLength(0);
+  });
+});
+
+/**
+ * @verifies REL-C9
+ *
+ * G1: a link stored as a key more than one task has held. The route
+ * resolved the key to one holder's id, core found no edge to that id,
+ * and the row's "Remove this link" failed with "does not exist".
+ */
+describe("POST /api/tasks/:ref/unlink removes a link stored as an ambiguous key", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+  const csrf = { "Content-Type": "application/json", "X-Loctt-Client": "test" };
+
+  const taskFile = async (key: string): Promise<string> => {
+    const dir = join(root, ".loctt/tasks");
+    for (const id of await readdir(dir)) {
+      const file = join(dir, id, "task.md");
+      if ((await readFile(file, "utf-8")).includes(`\nkey: ${key}\n`)) return file;
+    }
+    throw new Error(`no task file for ${key}`);
+  };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-unlink-ambiguous-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    base = `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : app.port}`;
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("removes the edge by the key it stores", async () => {
+    for (const title of ["source", "holder", "former holder"]) {
+      await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ title }),
+      });
+    }
+    const former = await taskFile("T-3");
+    await writeFile(former, (await readFile(former, "utf-8"))
+      .replace("\nkey: T-3\n", "\nkey: T-3\nkey_history:\n  - T-2\n"), "utf-8");
+    const source = await taskFile("T-1");
+    await writeFile(source, (await readFile(source, "utf-8"))
+      .replace("\nkey: T-1\n", "\nkey: T-1\nrelationships:\n  - type: relates_to\n    target: T-2\n"), "utf-8");
+
+    const res = await fetch(`${base}/api/tasks/T-1/unlink`, {
+      method: "POST", headers: csrf,
+      body: JSON.stringify({ type: "relates_to", target: "T-2" }),
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await readFile(source, "utf-8")).not.toMatch(/relationships:/);
   });
 });

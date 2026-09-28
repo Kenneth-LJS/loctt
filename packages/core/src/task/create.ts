@@ -5,6 +5,7 @@ import { ulid } from "ulid";
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
+import { recordTaskKeys } from "../state/key-index.js";
 import { allocateKey } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
@@ -241,6 +242,11 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   };
 
   await writeTask(locttDir, id, task);
+  // Keep an existing on-disk key index complete (G6). An index is
+  // written by the first lookup, including `--parent`'s own; without
+  // this, doctor found the new task "not in index" after an ordinary
+  // create.
+  await recordTaskKeys(locttDir, id, [frontmatter.key]);
   // Record what the task was created as (M3), so history reconstructs
   // the task's whole life rather than starting from its first edit.
   // Without this, replaying history from `created` yields nothing to

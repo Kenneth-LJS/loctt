@@ -530,7 +530,8 @@ describe("MCP executeTool", () => {
     it("returns a clean error for an unknown sprint", async () => {
       const result = await executeTool(root, "get_sprint_burndown", { sprint: "01HXNOSUCH" });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? "").toBe("Error: Unknown sprint: 01HXNOSUCH");
+      // K148 wording: not ID-shaped, so a name that matches nothing.
+      expect(result.content[0]?.text ?? "").toBe("Error: No sprint named '01HXNOSUCH'.");
     });
   });
 

@@ -152,3 +152,40 @@ is clean and `loctt unlink <child> parent T-4` removes both sides.
 GAME-4 lists none of them, **when** `loctt doctor --repair-relationships`
 runs, **then** each child stores GAME-4's id, GAME-4 lists all three,
 `doctor` is clean, and running the repair again changes nothing.
+
+### REL-C8 · blocker · P1 P7 · CLI MCP UI
+**Deleting a task removes the other side of its links.** (K147, G4)
+Delete removed only the task's directory, so every partner kept a link
+to a task that no longer exists and `doctor` reported it.
+
+- Deleting a task (one or many, on any surface) removes, from every task
+  it was linked to, each link pointing at it, in the same operation.
+- Each partner's history records a `link_removed` entry for each link
+  removed (with the batch's `bulk_op_id` for a bulk delete).
+- A partner deleted in the same batch is not written to.
+- The partner's other links are untouched; afterwards `loctt doctor`
+  reports no relationship finding.
+- A task deleted out of band (by hand or a pull) still leaves dangling
+  links, which REL-24 renders and `unlink` removes.
+
+**Given** WEB-21 `relates_to` WEB-5, **when** `loctt delete WEB-21 --yes`
+runs, **then** WEB-5 has no link to WEB-21, its log shows `link removed`,
+and `doctor` is clean.
+
+### REL-C9 · major · P1 P10 · CLI MCP UI
+**A link stored as a key more than one task has held can be removed.** (G1)
+The relationship repair keeps such a link (it can't tell which task was
+meant) and `doctor` reports it, but every surface resolved the key to
+one holder's id and `unlink` answered "does not exist".
+
+- `loctt unlink`, MCP `unlink_tasks` and the web's remove action remove
+  a link by the exact target it stores when no link to the resolved id
+  exists.
+- The holder that has the other side of that link loses it, unless the
+  source also links to that holder by id.
+- `doctor`'s finding for such a link says to remove it and link the
+  right task (not to hand-edit the file).
+
+**Given** T-1 stores `relates_to: T-2`, and T-2 and T-3 have both held
+`T-2`, **when** `loctt unlink T-1 relates_to T-2` runs, **then** T-1 has
+no relationships.

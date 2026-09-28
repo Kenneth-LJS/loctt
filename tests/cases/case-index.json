@@ -1,9 +1,9 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1069,
+    "total": 1078,
     "ui": 962,
-    "surface": 107,
+    "surface": 116,
     "resolved": 4
   },
   "cases": [
@@ -10009,6 +10009,42 @@
       "resolved": false
     },
     {
+      "id": "PRU-C15",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-projects-users.md",
+      "line": 260,
+      "title": "Names and IDs are told apart by shape, everywhere.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P4",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "PRU-C16",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-projects-users.md",
+      "line": 276,
+      "title": "The CLI prints names; MCP returns names beside IDs.",
+      "severity": "major",
+      "principles": [
+        "P4",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
       "id": "QBLD-1",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-list.md",
@@ -10181,6 +10217,25 @@
       ],
       "surfaces": [
         "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "QRY-C7",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-list.md",
+      "line": 115,
+      "title": "A query may name a label, user, milestone, sprint or project.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P4",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
       ],
       "resolved": false
     },
@@ -11129,6 +11184,42 @@
         "P1",
         "P5",
         "P11"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "REL-C8",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-relationships.md",
+      "line": 156,
+      "title": "Deleting a task removes the other side of its links.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P7"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "REL-C9",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-relationships.md",
+      "line": 175,
+      "title": "A link stored as a key more than one task has held can be removed.",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P10"
       ],
       "surfaces": [
         "CLI",
@@ -15823,6 +15914,72 @@
       ],
       "surfaces": [
         "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-C10",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-tasks.md",
+      "line": 198,
+      "title": "`loctt set` converts its value to the field's type.",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-C11",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-tasks.md",
+      "line": 217,
+      "title": "`loctt set <task> labels` changes a task's labels.",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-C12",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-tasks.md",
+      "line": 232,
+      "title": "`loctt show` prints assignee and reporter by name.",
+      "severity": "minor",
+      "principles": [
+        "P4",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-C13",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-tasks.md",
+      "line": 245,
+      "title": "Create and delete keep the on-disk key index complete.",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P7"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
       ],
       "resolved": false
     },

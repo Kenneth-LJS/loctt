@@ -359,11 +359,13 @@ export { dslAtom, queryNodeToDsl } from "./query/index.js";
 // K102: a saved view stores an ordered filter list; these turn it into
 // something runnable (an in-memory AST), readable (a display summary),
 // or scannable, and normalize it for storage (spacing only).
+export type { EntityDirectory } from "./query/index.js";
 export { FilterError, filtersToNode, filtersToScannableText, filtersToSummary, filterToNode, filterToSummary, normalizeFilter, normalizeFilters } from "./query/index.js";
 export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
-export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, loadCommentMentions, queryReferencesCommentMentions, resolveCommentMentionsContext, resolveView } from "./query/index.js";
+export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, loadCommentMentions, queryReferencesCommentMentions, resolveCommentMentionsContext, resolveEntityNamesContext, resolveView } from "./query/index.js";
+export { loadEntityDirectory } from "./query/index.js";
 export type { BoardMoveOptions, BoardMoveResult } from "./rank/index.js";
 export type {
   ReorderBoardRankOptions,

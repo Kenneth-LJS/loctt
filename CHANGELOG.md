@@ -14,6 +14,31 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
   id and adds the child link on the parent, exactly as `loctt link` does,
   and a parent that doesn't exist or is archived is refused with nothing
   created.
+- Deleting a task left every task it was linked to with a link pointing at
+  nothing. Delete now removes the other side of each link in the same
+  operation and records it in that task's history.
+- A link stored as a task key that more than one task has held could not
+  be removed; `unlink` (CLI, MCP and the web) now removes it by that key.
+- `loctt set` could not write number, boolean or multi-value custom
+  fields, or change a task's labels: it now converts the value by the
+  field's type, takes comma-separated lists, and accepts `fields.<key>`.
+- `loctt show` printed the assignee and reporter as IDs; it prints names.
+- `loctt doctor` warned about the key index after an ordinary create or
+  delete; both now keep it in sync.
+- A query naming a label, user, milestone, sprint or project
+  (`labels = urgent`) matched nothing; names now resolve on every
+  surface, and a name that matches nothing, or several things, is an
+  error rather than an empty result.
+
+### Changed
+
+- Names and IDs are told apart by shape: a value shaped like an ID is an
+  ID, anything else is a name. Creating or renaming a label, user,
+  milestone, sprint, project or saved view with an ID-shaped name is
+  refused. An ambiguous name is refused listing each match with its ID.
+- The CLI prints names (`log`, `sprint burndown`, edit confirmations);
+  MCP results add names beside the IDs they return (`assignee_name`,
+  `label_names`, `actor_name`, …) without changing existing fields.
 
 ### Added
 

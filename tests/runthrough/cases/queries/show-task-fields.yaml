@@ -3,12 +3,10 @@ name: show prints a task's fields by name
 description: >
   `loctt show` names every referenced entity the way a person reads it:
   milestone, sprint and labels by name — and assignee and reporter by
-  name too, as the CLI reference's example shows ("Assignee: Jordan").
-  Today it prints the users' ids.
+  name too, as the CLI reference's example shows ("Assignee: Jordan")
+  (G7).
 tags: [queries, users]
 surfaces: [cli]
-known_bug:
-  cli: "`loctt show` prints Assignee/Reporter as user ids, not names"
 cli: show ${task.login_crash.key}
 post:
   - output: { contains: ["Sprint: Sprint 2", "Labels: urgent, backend"] }

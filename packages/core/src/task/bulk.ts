@@ -5,6 +5,7 @@ import { ulid } from "ulid";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { getTaskDir, getTaskFilePath } from "../paths/index.js";
+import { forgetTasks } from "../state/key-index.js";
 import { withStateLock } from "../state/lock.js";
 import { stagedSwap } from "../state/staged-swap.js";
 import { assembleTaskFile } from "./frontmatter.js";
@@ -13,7 +14,7 @@ import { assertWriteSafe, readTask } from "./io.js";
 import { applyArchiveState } from "./lifecycle.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
 import { clearLookupCaches } from "./lookup-cache.js";
-import { linkTask } from "./relationships.js";
+import { detachDeletedTasks, linkTask } from "./relationships.js";
 import {
   assertChangesWritable,
   type DeferredFieldWrite,
@@ -249,9 +250,10 @@ export interface BulkDeleteOptions {
  *
  * The whole directory goes — `task.md`, `_history.yaml`, `_comments.yaml`,
  * attachments — so there is nothing to undo afterwards and no history
- * entry to write (the file it would live in is being deleted). That is
- * what distinguishes this from `bulkArchive`, which is reversible and
- * does record one.
+ * entry to write on the deleted task (the file it would live in is being
+ * deleted). That is what distinguishes this from `bulkArchive`, which is
+ * reversible and does record one. Each partner a deleted task linked to
+ * loses its side of the link and records a `link_removed` (K147).
  *
  * The removal is inlined rather than delegating to `deleteTask`:
  * `deleteTask` takes the state lock itself and `withStateLock` is not
@@ -263,6 +265,7 @@ export async function bulkDelete(opts: BulkDeleteOptions): Promise<BulkResult> {
   const bulkOpId = ulid();
   return withStateLock(opts.locttDir, async () => {
     const succeeded: string[] = [];
+    const removed: Task[] = [];
     const failed: { taskId: string; error: string }[] = [];
     for (const ref of opts.taskRefs) {
       try {
@@ -272,6 +275,7 @@ export async function bulkDelete(opts: BulkDeleteOptions): Promise<BulkResult> {
         const id = looked.frontmatter.id;
         await rm(getTaskDir(opts.locttDir, id), { recursive: true, force: true });
         succeeded.push(id);
+        removed.push(looked);
       } catch (err) {
         if (err instanceof TaskNotFoundError) {
           failed.push({ taskId: ref, error: "task not found" });
@@ -286,6 +290,10 @@ export async function bulkDelete(opts: BulkDeleteOptions): Promise<BulkResult> {
     // here so bulk and single delete stay the same shape if the cache
     // ever gains a positive side.
     if (succeeded.length > 0) clearLookupCaches(opts.locttDir);
+    // One pass over the whole set, so a partner deleted in the same
+    // batch is not written to (K147), then the index entries (G5).
+    await detachDeletedTasks(opts.locttDir, removed, new Date().toISOString(), bulkOpId);
+    await forgetTasks(opts.locttDir, succeeded);
     return { bulk_op_id: bulkOpId, succeeded, failed };
   });
 }

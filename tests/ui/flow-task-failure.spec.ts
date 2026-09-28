@@ -295,13 +295,11 @@ test.describe("XS-7 / TSK-34 / XS-8 — the shape of the write", () => {
     await expect
       .poll(async () => tracker.run(["show", key]), { timeout: 15_000 })
       .toMatch(/Not now|p7_no/);
-    // `loctt show` prints the assignee's stored id, not their name
-    // (`task-crud.ts`: `Assignee: ${fm.assignee}`), so this matches the
-    // exact id rather than the display name. An alternation that also
-    // accepted any ULID would match the task's own `id` line and
-    // assert nothing.
+    // `loctt show` prints the assignee by name (G7). This line used to
+    // match the stored id, asserting the bug the runthrough found; the
+    // id is still checked on disk below.
     const shown = await tracker.run(["show", key]);
-    expect(shown).toMatch(new RegExp(`^Assignee:\\s*${userId}\\s*$`, "m"));
+    expect(shown).toMatch(/^Assignee:\s*Alex Reed\s*$/m);
 
     // And on disk, unambiguously: both fields, neither reverted.
     const fm = await frontmatterOf(tracker.root, key);

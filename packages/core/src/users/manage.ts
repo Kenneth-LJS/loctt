@@ -1,49 +1,27 @@
 import type { UserProfile } from "@loctt/contracts";
+import { isIdShaped } from "@loctt/contracts";
 
+import { resolveEntityRefOrThrow } from "../utils/entity-ref.js";
 import { readCurrentUserId, writeCurrentUserId } from "./current.js";
 import { UserError } from "./errors.js";
 import { createUser } from "./lifecycle.js";
 import { loadAllUsers, loadUserProfile, userExists } from "./profile.js";
 
 /**
- * Resolves a user reference (ULID, exact name, or unique
- * case-insensitive name prefix) against the registered users.
- * Useful for CLI/MCP commands that accept either form.
- *
- * Resolution order: ULID match → exact name match → unique
- * case-insensitive name prefix. Ambiguous prefixes throw.
+ * Resolves a user reference against the registered users, archived ones
+ * included, by the one K148 rule: an ID-shaped ref is an ID; anything
+ * else is the exact name, else a unique case-insensitive name prefix.
+ * Ambiguous and unmatched names are refused (see `utils/entity-ref.ts`).
  */
 export async function resolveUserRef(
   locttDir: string,
   ref: string,
 ): Promise<UserProfile> {
-  if (await userExists(locttDir, ref)) {
+  if (isIdShaped(ref) && await userExists(locttDir, ref)) {
     return loadUserProfile(locttDir, ref);
   }
   const all = await loadAllUsers(locttDir);
-  const exact = all.filter(u => u.name === ref);
-  if (exact.length === 1) {
-    const only = exact[0];
-    if (only) return only;
-  }
-  if (exact.length > 1) {
-    throw new UserError(
-      `Multiple users named '${ref}'. Refer by ID instead.`,
-    );
-  }
-  const lowered = ref.toLowerCase();
-  const prefix = all.filter(u => u.name?.toLowerCase().startsWith(lowered) ?? false);
-  if (prefix.length === 1) {
-    const only = prefix[0];
-    if (only) return only;
-  }
-  if (prefix.length > 1) {
-    throw new UserError(
-      `'${ref}' matches ${prefix.length} users (${prefix.map(u => u.name ?? u.id).join(", ")}). ` +
-      `Refer by ID or full name instead.`,
-    );
-  }
-  throw new UserError(`Unknown user: ${ref}`);
+  return resolveEntityRefOrThrow("user", all, ref, { includeArchived: true, prefix: true }, m => new UserError(m));
 }
 
 /**

@@ -1,0 +1,12 @@
+id: name-id-shaped-refused
+name: A name shaped like an ID is refused
+description: >
+  K148: a value shaped like a ULID is an ID, so no label, user,
+  milestone, sprint, project or saved view may be named like one.
+tags: [labels, k148]
+expect_error:
+  cli: { message: "That looks like an ID; choose a different name." }
+  mcp: { message: "That looks like an ID; choose a different name." }
+cli: label create 01M3JSJ7J3QBTDKH0VT5THF6EZ
+mcp:
+  call: { tool: create_label, args: { name: 01M3JSJ7J3QBTDKH0VT5THF6EZ } }

@@ -140,6 +140,9 @@ describe("GET /api/tasks (sort + pagination)", () => {
   // maps to 400. Quoted (`labels = "and"`) it is a valid query that
   // matches nothing, i.e. 200 with an empty set.
   it("quotes a keyword-shaped filter value so the query stays valid (Fix 1)", async () => {
+    // K148: a label name that matches no label is refused, so the label
+    // exists here; the point is that the keyword-shaped value is quoted.
+    await fetch(`${base}/api/labels`, { method: "POST", headers: csrf, body: JSON.stringify({ name: "and" }) });
     const res = await fetch(`${base}/api/tasks?labels=and`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: TaskFrontmatterPublic[] };
@@ -153,6 +156,8 @@ describe("GET /api/tasks (sort + pagination)", () => {
     // `labels = or` etc., which is invalid DSL (the old regex passed them
     // through, giving a 400). Quoted, each is a valid string comparison.
     for (const value of ["or", "in", "is"]) {
+      // K148: the label must exist, or its name is refused as unknown.
+      await fetch(`${base}/api/labels`, { method: "POST", headers: csrf, body: JSON.stringify({ name: value }) });
       const res = await fetch(`${base}/api/tasks?labels=${value}`);
       expect(res.status, `labels=${value}`).toBe(200);
     }

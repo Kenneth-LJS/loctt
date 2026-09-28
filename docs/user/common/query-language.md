@@ -70,6 +70,22 @@ not a query that matches nothing.
   `startOfWeek()`, `startOfMonth()`, `endOfDay()`, `endOfWeek()`,
   `endOfMonth()`
 
+### Labels, users, milestones, sprints and projects
+
+Tasks store these by ID, and a query may use either the name or the ID:
+`labels = urgent`, `assignee = Bea`, `milestone in (GA, Beta)`,
+`project = web`. A value shaped like an ID (26 characters,
+`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`) is an ID, and may be written unquoted;
+anything else is a name. A project's slug counts as a name, and a user
+may also be named by a unique prefix of their name.
+
+A name that matches nothing is an error (`No label named 'nope'`), not
+an empty result, and a name several entities share is an error listing
+each with its ID, so you can use the one you mean. An ID is never
+refused: a task may still hold the ID of a label since deleted. A saved
+view naming something since renamed or deleted still runs, with a
+warning, and that condition matches nothing.
+
 ### `today`
 
 `today` resolves to the current calendar date in the **workspace**
@@ -297,13 +313,14 @@ $ loctt list --query "status = frobnik"
 Error: unknown status value "frobnik" at position 0
 ```
 
-Four cases are distinguished, because they mean different things:
+Five cases are distinguished, because they mean different things:
 
 | Situation | Result |
 |---|---|
 | Unknown field name | Error, with suggestions |
 | Unknown `fields.<key>` custom field | Error, listing declared custom fields |
 | Known field, unknown enum value | Error, listing valid values |
+| A label, user, milestone, sprint or project name that matches nothing, or matches several | Error, naming it (and listing each match with its ID) |
 | `text` with any operator but `~` | Error — `text` is substring search, use `text ~ <term>` |
 | Valid query that matches no tasks | **Not an error** — an empty result |
 

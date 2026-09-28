@@ -112,7 +112,7 @@ describe("CLI project set-prefix (spawned binary)", () => {
       // RUNTIME (1), not SUCCESS: resolution happens before the prompt,
       // so a typo'd ref must not look like a completed rename.
       expect(res.exitCode).toBe(1);
-      expect(res.stderr).toMatch(/unknown project/i);
+      expect(res.stderr).toMatch(/No project named 'Nope'/); // K148 wording
     });
   });
 

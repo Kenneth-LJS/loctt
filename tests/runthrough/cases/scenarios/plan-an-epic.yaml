@@ -5,9 +5,6 @@ description: >
   one child to another project. The links survive the move because they
   are stored by id.
 tags: [scenario, create, links, move, b39]
-known_doctor_findings:
-  - match: "key index: \\d+ task dir\\(s\\) not in index"
-    bug: "create does not add the new key to an on-disk key index that already exists (the parent lookup built it)"
 steps:
   - name: create the epic
     cli: create "Loyalty programme" --type feature --priority high --milestone GA

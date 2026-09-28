@@ -10,6 +10,7 @@ import {
   loadAllTasksDetailed,
   loadOptionalConfigs,
   loadProjectsConfig,
+  resolveEntityNamesContext,
   resolveLocttDir,
   resolveProjectIdFromInput,
 } from "@loctt/core";
@@ -91,7 +92,8 @@ export async function exportTasks(args: string[], root: string): Promise<void> {
     },
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-    ctx: buildListContext(tasks),
+    // K148: names in the query resolve to the IDs the tasks store.
+    ctx: await resolveEntityNamesContext(locttDir, buildListContext(tasks), [baseQuery, view]),
     onWarning: err => {
       process.stderr.write(`Warning: saved view "${view ?? ""}" — ${err.message}\n`);
     },

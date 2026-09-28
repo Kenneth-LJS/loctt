@@ -190,3 +190,70 @@ labels, milestone, sprint, and estimate despite promising "full details".
 
 **Given** an agent reading the Tasks section, **when** it looks for a way to
 reorder, **then** it finds the tool without scanning the Labels section.
+
+---
+
+## E. Setting values from the command line (B44)
+
+### TSK-C10 · major · P1 P10 · CLI
+**`loctt set` converts its value to the field's type.** (G2)
+The command line has only text, and a number, boolean or multi-value
+custom field refused it (`expected finite number, got string`), so the
+CLI could not write what MCP and the web could.
+
+- A `number` custom field stores a number, a `boolean` one a boolean
+  (`true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`), and any `multi`
+  field a list from a comma-separated value (`ios,android`).
+- `fields.<key>` names the same field as `<key>`.
+- A value that isn't of the field's type is refused, naming the field
+  and the value (`risk takes a number, not "high".`), exit 1, and no
+  task file changes.
+- A bulk `set` (`WEB-1,WEB-2`) converts the same way.
+- MCP `update_task` and the web still take typed JSON unchanged.
+
+**Given** a `number` field `risk`, **when** `loctt set WEB-16 risk 5`
+runs, **then** the task stores `risk: 5`, a number.
+
+### TSK-C11 · major · P1 P10 · CLI
+**`loctt set <task> labels` changes a task's labels.** (G3)
+Labels could be set on create (`--label`) and never changed afterwards
+from the CLI.
+
+- The value is a comma-separated list of label names or IDs, and it
+  replaces the task's labels; the task stores the labels' IDs.
+- `loctt unset <task> labels` clears them.
+- An unknown or ambiguous label name is refused (PRU-C15) and nothing
+  is written.
+
+**Given** labels `frontend` and `infra`, **when** `loctt set WEB-20
+labels frontend,infra` runs, **then** the task stores both labels' IDs,
+in that order.
+
+### TSK-C12 · minor · P4 P10 · CLI
+**`loctt show` prints assignee and reporter by name.** (G7)
+Milestone, sprint and labels printed by name; the two user fields
+printed raw IDs, unlike the reference's example.
+
+- `Assignee:` and `Reporter:` show the user's name.
+- A user whose profile can't be read shows the stored ID, and `show`
+  still succeeds.
+
+**Given** WEB-13 assigned to Bea and reported by Ada, **when** `loctt
+show WEB-13` runs, **then** it prints `Assignee: Bea` and `Reporter:
+Ada`.
+
+### TSK-C13 · major · P1 P7 · CLI MCP UI
+**Create and delete keep the on-disk key index complete.** (G5, G6)
+`doctor` warned after ordinary use: `N stale entries` after any delete,
+and `task dir(s) not in index` after a create once any lookup had
+written `.loctt/local/key-index.yaml`.
+
+- A create adds the new key to the index when the index exists; with no
+  index on disk, none is written.
+- A delete (single or bulk) removes every entry for the deleted tasks,
+  current and former keys alike.
+- After either, `loctt doctor` reports the key index in sync.
+
+**Given** a tracker whose key index exists, **when** a task is created
+and another deleted, **then** `loctt doctor` reports no key-index
+finding.

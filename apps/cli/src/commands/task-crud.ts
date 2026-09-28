@@ -23,6 +23,7 @@ import {
   loadProjectsConfig,
   loadSprintsConfig,
   loadState,
+  loadUserProfile,
   loadWorkflowConfig,
   lookupTask,
   moveTaskToProject,
@@ -30,6 +31,7 @@ import {
   readHistory,
   readTaskBody,
   resolveCommentMentionsContext,
+  resolveEntityNamesContext,
   resolveLocttDir,
   resolveProjectIdForUser,
   resolveProjectIdFromInput,
@@ -48,6 +50,7 @@ import { formatHistoryEntry } from "../format/history.js";
 import { getArg, getNonNegativeIntArg, hasFlag, parseOptionalArchivedScope, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
+import { coerceSetValue } from "../runtime/set-value.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
 
 /**
@@ -279,12 +282,13 @@ export async function list(args: string[], root: string): Promise<void> {
   const viewQuery = view !== undefined && queriesConfig !== undefined
     ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
     : [];
-  const ctx = await resolveCommentMentionsContext(
+  // K148: names in the query resolve to the IDs the tasks store.
+  const ctx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
     locttDir,
     tasks,
     buildListContext(tasks),
     [baseQuery, ...viewQuery],
-  );
+  ), [baseQuery, view]);
 
   const requestedScope = parseOptionalArchivedScope(args);
 
@@ -381,6 +385,15 @@ async function nameOfEntity(
   }
 }
 
+/** A user's name for display; the id when the profile can't be read. */
+async function nameOfUser(locttDir: string, id: string): Promise<string> {
+  try {
+    return (await loadUserProfile(locttDir, id)).name ?? id;
+  } catch {
+    return id;
+  }
+}
+
 /**
  * Loads the workflow config and user roster once per `log` invocation so
  * the formatter can render labels and display names instead of stored
@@ -394,7 +407,14 @@ async function nameOfEntity(
 async function buildHistoryDisplayContext(
   locttDir: string,
 ): Promise<HistoryDisplayContext> {
-  const ctx: { workflow?: WorkflowConfig; users?: Map<string, string> } = {};
+  const ctx: {
+    workflow?: WorkflowConfig;
+    users?: Map<string, string>;
+    labels?: Map<string, string>;
+    milestones?: Map<string, string>;
+    sprints?: Map<string, string>;
+    projects?: Map<string, string>;
+  } = {};
   try {
     ctx.workflow = await loadWorkflowConfig(locttDir);
   } catch {
@@ -410,6 +430,14 @@ async function buildHistoryDisplayContext(
   } catch {
     // Leave undefined — actor ids render in place of names.
   }
+  // K148: the log names labels, milestones, sprints and projects as
+  // `show` does. Each is best-effort on its own, like the two above.
+  const byName = (list: readonly { id: string; name: string }[]): Map<string, string> =>
+    new Map(list.map(e => [e.id, e.name]));
+  try { ctx.labels = byName((await loadLabelsConfig(locttDir)).labels); } catch { /* ids */ }
+  try { ctx.milestones = byName((await loadMilestonesConfig(locttDir)).milestones); } catch { /* ids */ }
+  try { ctx.sprints = byName((await loadSprintsConfig(locttDir)).sprints); } catch { /* ids */ }
+  try { ctx.projects = byName((await loadProjectsConfig(locttDir)).projects); } catch { /* ids */ }
   return ctx;
 }
 
@@ -456,8 +484,10 @@ export async function show(args: string[], root: string): Promise<void> {
   if (fm.status) console.log(`Status: ${fm.status}`);
   if (fm.priority) console.log(`Priority: ${fm.priority}`);
   if (fm.task_type) console.log(`Type: ${fm.task_type}`);
-  if (fm.assignee) console.log(`Assignee: ${fm.assignee}`);
-  if (fm.reporter) console.log(`Reporter: ${fm.reporter}`);
+  // Users are stored by id too; print the name, as the reference's
+  // example does (G7). An unreadable or deleted user falls back to the id.
+  if (fm.assignee) console.log(`Assignee: ${await nameOfUser(locttDir, fm.assignee)}`);
+  if (fm.reporter) console.log(`Reporter: ${await nameOfUser(locttDir, fm.reporter)}`);
   if (fm.start_date) console.log(`Start: ${fm.start_date}`);
   if (fm.due_date) console.log(`Due: ${fm.due_date}`);
   if (fm.completed_date) console.log(`Completed: ${fm.completed_date}`);
@@ -687,6 +717,10 @@ export async function set(args: string[], root: string): Promise<void> {
   const { workflowConfig } = await loadOptionalConfigs(locttDir);
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
   const refs = splitRefs(ref);
+  // Typed custom fields and list fields from the command line's text
+  // (G2, G3). A number or boolean that doesn't parse is refused here,
+  // before any task is touched.
+  const { field: target, value: typed } = coerceSetValue(field, value, workflowConfig);
 
   // The enum check used to run first, so `set T-999 status doing` on an
   // absent task blamed the status vocabulary and exited 2 (usage) rather
@@ -707,7 +741,7 @@ export async function set(args: string[], root: string): Promise<void> {
     const result = await bulkSetFields({
       locttDir,
       taskRefs: refs,
-      changes: [{ field, value }],
+      changes: [{ field: target, value: typed }],
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       archivedGuard,
     });
@@ -720,8 +754,8 @@ export async function set(args: string[], root: string): Promise<void> {
   await setField({
     locttDir,
     taskId: task.frontmatter.id,
-    field,
-    value,
+    field: target,
+    value: typed,
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
     archivedGuard,
   });

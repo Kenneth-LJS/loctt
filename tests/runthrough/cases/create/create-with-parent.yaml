@@ -5,9 +5,6 @@ description: >
   typed), and the parent gains the matching child link — both sides, in
   one operation. The new child is last among the parent's children.
 tags: [create, b39]
-known_doctor_findings:
-  - match: "key index: \\d+ task dir\\(s\\) not in index"
-    bug: "create does not add the new key to an on-disk key index that already exists (the parent lookup built it)"
 cli: create "Refund flow" --parent ${task.checkout_payment.key}
 mcp:
   call: { tool: create_task, args: { title: Refund flow, parent: "${task.checkout_payment.key}" } }

@@ -1111,8 +1111,10 @@ test("REL-24: a dangling target renders as a broken row offering removal, distur
   await tracker.run(["link", root ?? "", "blocks", doomed ?? ""]);
   const goneId = await taskId(tracker.root, doomed ?? "");
 
-  // Deleted out of band, leaving the edge on root pointing at nothing.
-  await tracker.run(["delete", doomed ?? "", "--yes"]);
+  // Deleted out of band (a hand delete or a pull), leaving the edge on
+  // root pointing at nothing. Not `loctt delete`: that removes root's
+  // edge too (K147).
+  await rm(await taskDir(tracker.root, doomed ?? ""), { recursive: true, force: true });
 
   await openTask(page, tracker, root ?? "");
 

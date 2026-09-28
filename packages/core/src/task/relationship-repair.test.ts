@@ -264,7 +264,7 @@ describe("repairRelationships (K141)", () => {
     expect(messages).toEqual([
       `relationships[0].target: target task "NOPE-7" does not exist`,
       `relationships[1].target: target "GAME-9" is a key more than one task has had, so it `
-      + `can't be matched to one task. Replace it with the right task's id.`,
+      + `can't be matched to one task. Remove this link, then link the right task.`,
       `relationships[2].target: target "GAME-11" is this task's own key. A task can't link `
       + `to itself. Remove this link.`,
     ]);

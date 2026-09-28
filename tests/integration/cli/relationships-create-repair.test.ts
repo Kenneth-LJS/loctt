@@ -133,9 +133,6 @@ describe("CLI: doctor --repair-relationships and --fix (K141)", () => {
       );
       expect(before.stdout).toContain(`target "T-1" is a task key, not a task id.`);
 
-      const unlink = await cli(root, "unlink", "T-2", "parent", "T-1");
-      expect(unlink.exitCode).toBe(1); // what the reporter hit
-
       const repair = await cli(root, "doctor", "--repair-relationships");
       expect(repair.stdout).toContain(
         "✓ relationship repair: repaired: 2 key(s) rewritten to ids, 2 missing side(s) added",
@@ -153,6 +150,23 @@ describe("CLI: doctor --repair-relationships and --fix (K141)", () => {
       expect(again.stdout).toContain("✓ relationship repair: nothing to repair");
 
       expect((await cli(root, "unlink", "T-2", "parent", "T-1")).exitCode).toBe(0);
+    });
+  });
+
+  /**
+   * @verifies REL-C9
+   *
+   * The reporter also hit "unlink can't remove them". The test above
+   * asserted that failure (exit 1) before repairing; since G1, `unlink`
+   * removes a link by the key it stores, repaired or not.
+   */
+  it("unlink removes a link stored as a key, before any repair", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await cli(root, "create", "the parent");
+      await writeKeyValuedChild(root, "T-2", "T-1");
+      const unlink = await cli(root, "unlink", "T-2", "parent", "T-1");
+      expect(unlink.exitCode, unlink.stderr).toBe(0);
+      expect(await relsOf(root, "T-2")).toBeUndefined();
     });
   });
 

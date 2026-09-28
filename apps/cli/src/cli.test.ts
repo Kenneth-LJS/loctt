@@ -734,7 +734,8 @@ describe("CLI commands", () => {
     await main();
     expect(process.exitCode).toBe(1);
     const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
-    expect(stderr).toContain("Error: Unknown sprint: Nonexistent");
+    // K148 wording for a name that matches nothing.
+    expect(stderr).toContain("Error: No sprint named 'Nonexistent'.");
   });
 
   it("sprint burndown rejects an unknown --format", async () => {

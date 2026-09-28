@@ -78,9 +78,14 @@ describe("entity references are stored as ids, not names", () => {
       // so 0 is correct here and asserting 1 would be asserting a bug.
       // The totals themselves are covered by burndown.test.ts, which
       // controls created_at.
-      const bd = await runCli(["sprint", "burndown", "Alpha"], { cwd: root });
+      const bd = await runCli(["sprint", "burndown", "Alpha", "--format", "json"], { cwd: root });
       expect(bd.exitCode).toBe(0);
       expect(bd.stdout).toContain(id);
+      // K148: the table prints the sprint's name, not its id. This line
+      // used to assert the id in the table, which the ruling replaced.
+      const table = await runCli(["sprint", "burndown", "Alpha"], { cwd: root });
+      expect(table.stdout).toMatch(/^Sprint:\s+Alpha$/m);
+      expect(table.stdout).not.toContain(id);
     });
   });
 

@@ -24,6 +24,12 @@ import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { getCurrentUser } from "../users/manage.js";
 import { loadUserSettings } from "../users/settings.js";
+import {
+  assertNameNotIdShaped,
+  entityAmbiguousMessage,
+  entityNotFoundMessage,
+  matchEntityRef,
+} from "../utils/entity-ref.js";
 import { assertValidPrefix } from "./prefix.js";
 import { allocateSlug, isValidSlug } from "./slug.js";
 
@@ -131,26 +137,13 @@ export function resolveProjectIdFromInput(
   input: string,
   options: { includeArchived?: boolean } = {},
 ): string {
-  // Direct id match (fast path)
-  const byId = config.projects.find(p => p.id === input
-    && (options.includeArchived === true || p.archived !== true));
-  if (byId) return byId.id;
-
-  // Slug next, ahead of name: it is the handle URLs and the CLI carry,
-  // it is unique where names are not, and it is immutable where names
-  // are not (K3). A name that happens to equal another project's slug
-  // therefore loses — the unambiguous identifier wins.
-  const bySlug = config.projects.find(p => p.slug === input
-    && (options.includeArchived === true || p.archived !== true));
-  if (bySlug) return bySlug.id;
-
-  const byName = resolveProjectByName(config, input, options);
-  if (byName.kind === "match") return byName.project.id;
-  if (byName.kind === "ambiguous") {
-    const ids = byName.matches.map(p => p.id).join(", ");
-    throw new ProjectError(
-      `Project name '${input}' is ambiguous. Matches ${byName.matches.length} projects (${ids}). Pass the id instead.`,
-    );
+  // K148: one resolver for every entity, IDs recognised by shape. The
+  // slug is matched ahead of the name: it is the handle URLs and the
+  // CLI carry, unique where names are not, and immutable (K3).
+  const found = matchEntityRef(config.projects, input, options);
+  if (found.kind === "match") return found.entity.id;
+  if (found.kind === "ambiguous") {
+    throw new ProjectError(entityAmbiguousMessage("project", input, found.matches));
   }
   // An *archived* project exists — saying "unknown" sends the user
   // looking for a typo instead of at the archive, and the recovery is
@@ -168,7 +161,7 @@ export function resolveProjectIdFromInput(
       `Project "${archived.name}" is archived. Unarchive it or pick another.`,
     );
   }
-  throw new ProjectError(`Unknown project: ${input}`);
+  throw new ProjectError(entityNotFoundMessage("project", input));
 }
 
 /**
@@ -327,6 +320,7 @@ export async function createProject(
   locttDir: string,
   input: CreateProjectInput,
 ): Promise<ProjectDef> {
+  assertNameNotIdShaped(input.name, m => new ProjectError(m, { field: "name" }));
   return withStateLock(locttDir, async () => {
     // K88: the prefix is validated at every creation path, not only at
     // `init` and `setProjectPrefix`. A dash is REJECTED, not stripped —
@@ -447,6 +441,7 @@ export async function editProject(
   id: string,
   changes: { name?: string },
 ): Promise<void> {
+  assertNameNotIdShaped(changes.name, m => new ProjectError(m, { field: "name" }));
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
     const idx = config.projects.findIndex(p => p.id === id);

@@ -72,6 +72,22 @@ the server tells the agent on connect:
    Before removing anything from the workflow config, the agent calls
    `get_workflow_key_usage` to see how many tasks a change would touch.
 
+### Names and IDs
+
+Wherever a tool takes a label, user,
+milestone, sprint or project, it takes its name or its ID, and so do
+queries (`labels = urgent`). A value shaped like an ID
+(`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`) is an ID; anything else is a name
+(a project's slug counts as a name; a user may also be named by a
+unique prefix). A name several entities share is refused, listing
+each with its ID: `'urgent' matches 2 labels: urgent (01…), urgent
+(01…). Use the ID.` A name that matches nothing is refused: `No label
+named 'nope'.` Creating or renaming a label, user, milestone, sprint,
+project or saved view with an ID-shaped name is refused: `That looks
+like an ID; choose a different name.` Results return both: wherever a
+result refers to an entity by ID it also carries its name (see
+[Names beside IDs](#names-beside-ids)).
+
 ## Example flows
 
 These transcripts show the tools in their natural habitat — a person
@@ -154,8 +170,8 @@ tools.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `get_task` | One task, optionally with body and a `body_token` for safe writes. Relationships are listed in the web task page's order (kinds in workflow order; within a ranked kind by `rank`, then unranked links in the order they were added), and each ranked link carries its `rank`. | `ref`, `include_body` (default true) |
-| `list_tasks` | Query/filter tasks. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `archived` (`active` default / `archived` / `all`) |
+| `get_task` | One task, optionally with body and a `body_token` for safe writes. Relationships are listed in the web task page's order (kinds in workflow order; within a ranked kind by `rank`, then unranked links in the order they were added), and each ranked link carries its `rank`. Each entity reference also carries its name (`assignee_name`, `label_names`, …). | `ref`, `include_body` (default true) |
+| `list_tasks` | Query/filter tasks. A query may name labels, users, milestones, sprints and projects (`labels = urgent`); an unknown or ambiguous name is refused. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `archived` (`active` default / `archived` / `all`) |
 | `export_tasks` | Export matching tasks as CSV or JSON (a report, not a backup). | `format`, `query`, `view`, `project`, `columns`, `include_body`, `include_archived` |
 | `create_task` | Create a task. `parent` (key or id) links it under the parent exactly as `link_tasks` would: the parent's id is stored and the parent gets the child link. A parent that doesn't exist or is archived is refused and nothing is created. | `title`, `project`, `status`, `priority`, `task_type`, `assignee`, `reporter`, `due_date`, `start_date`, `estimate`, `milestone`, `sprint`, `labels`, `body`, `parent` |
 | `update_task` | Set one writable field. | `ref`, `field`, `value` |
@@ -164,8 +180,8 @@ tools.
 | `duplicate_task` | Copy a task to a new key (no relationships/attachments). | `ref`, `title`, `project` |
 | `move_task` | Reallocate tasks to another project; old keys still resolve. | `refs` (≤500), `project` |
 | `archive_task` / `unarchive_task` | Reversible soft-delete and restore, one or many tasks in one operation. Tasks already in the target state are counted as unchanged; a bad ref is reported without aborting the rest. | `refs` (≤500) |
-| `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. | `refs` (≤500), `confirm` |
-| `get_task_history` | Paginated activity log, newest first. | `ref`, `limit`, `offset` |
+| `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. Every task a deleted task was linked to loses its side of the link, with a `link_removed` entry in its history. | `refs` (≤500), `confirm` |
+| `get_task_history` | Paginated activity log, newest first. Entries carry `actor_name`, and a change to an entity field (or a label added or removed) carries `before_name` / `after_name`. | `ref`, `limit`, `offset` |
 
 A task file that will not parse is an error that names the file and the
 line, never "not found". When a key matches nothing and some task files
@@ -204,7 +220,7 @@ content.
 | Tool | Purpose | Key params |
 |---|---|---|
 | `link_tasks` | Add a relationship from one or many sources to a single target (written on both sides of each edge, one operation). Each edge is committed independently; a bad source is reported without aborting the rest, and an unresolvable target fails every source. | `refs` (≤500), `type`, `target` |
-| `unlink_tasks` | Remove a relationship (written on both sides). Takes a single source. | `ref`, `type`, `target` |
+| `unlink_tasks` | Remove a relationship (written on both sides). Takes a single source. A target deleted out of band is removed by the id the link stores; a link stored as a task key (for example one more than one task has held, which `doctor` reports) is removed by passing that key. | `ref`, `type`, `target` |
 
 ### Reordering
 
@@ -535,6 +551,25 @@ web UI (Settings → Sync), or MCP:
 | `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a schema upgrade. | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |
 | `restore` | Restore a backup (`bare`/`merge`/`overwrite`). Requires `confirm` unless `dry_run`. | `files`, `mode`, `dry_run`, `confirm` |
+
+## Names beside IDs
+
+Storage holds IDs; results add the names as new sibling fields, so every
+existing field keeps its shape (K148):
+
+| Result | Added |
+|---|---|
+| `get_task` | `project_name`, `assignee_name`, `reporter_name`, `milestone_name`, `sprint_name`; `label_names` in the order of `labels` (`null` for a label that no longer exists). A reference to a deleted entity gets no name. |
+| `get_task_history` | `actor_name` on each entry; `before_name` / `after_name` on a change to `assignee`, `reporter`, `milestone`, `sprint` or `project`, and on `label_added` / `label_removed`. |
+| `edit_*`, `archive_*`, `unarchive_*` (labels, milestones, sprints, projects) | The text names the entity as `name (id)`. |
+| `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user`, `count_user_references` | `name` beside the id. |
+| `get_sprint_burndown` | `sprintName` beside `sprintId`. |
+| `list_users` | `current_name` beside `current`. |
+| `get_user_settings`, the sidebar-groups and keyboard-shortcut tools | `user_name` beside `user`. |
+| `set_default_project` | The text names the project as `name (id)`. |
+
+The `list_*` tools already return each entity whole (id and name).
+`list_tasks` rows carry no entity references.
 
 ## What the agent sees
 

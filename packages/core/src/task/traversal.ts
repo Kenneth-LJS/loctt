@@ -72,7 +72,7 @@ export function relationshipFindings(
         } else if (unresolved?.reason === "ambiguous") {
           message =
             `target "${rel.target}" is a key more than one task has had, so it `
-            + `can't be matched to one task. Replace it with the right task's id.`;
+            + `can't be matched to one task. Remove this link, then link the right task.`;
         } else if (unresolved?.reason === "self") {
           message =
             `target "${rel.target}" is this task's own key. A task can't link `

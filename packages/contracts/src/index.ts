@@ -36,6 +36,7 @@ export {
   isEmojiPresentation,
   isSingleGrapheme,
 } from "./icon.js";
+export { ID_SHAPE, ID_SHAPED_NAME_MESSAGE, isIdShaped } from "./id-shape.js";
 export type { LabelDef, LabelsConfig } from "./labels.js";
 export {
   LabelDefSchema,

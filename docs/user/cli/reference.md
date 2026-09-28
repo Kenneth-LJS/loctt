@@ -34,6 +34,18 @@ repeats these tables.
   on-disk schema is older than this `loctt` and point you to
   `loctt migrate`. `init`, `migrate`, `doctor`, `info`, `mcp`, `ui`,
   `help` and `--version` are exempt.
+- **Names and IDs.** Wherever a command takes a label, user, milestone,
+  sprint or project, it takes its name or its ID, and so does
+  `--query` (`labels = urgent`). A value shaped like an ID
+  (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`) is an ID; anything else is a name (a
+  project's slug counts as a name, and a user may also be named by a
+  unique prefix). A name several entities share is refused, listing each
+  with its ID (`'urgent' matches 2 labels: urgent (01…), urgent (01…).
+  Use the ID.`); a name that matches nothing is refused (`No label named
+  'nope'.`). Creating or renaming a label, user, milestone, sprint,
+  project or saved view with an ID-shaped name is refused: `That looks
+  like an ID; choose a different name.` Output names entities rather
+  than printing their IDs (`show`, `log`, `sprint burndown`).
 - **Machine-readable output.** `loctt init` accepts `--json` and
   `--quiet`. Elsewhere, use `loctt export --format json` and
   `loctt sprint burndown --format json`.
@@ -188,6 +200,24 @@ Set one field on a task. `<task>` may be a comma-separated list
 (`WEB-1,WEB-2`) to set the same field on several tasks at once. Enum
 fields (status, priority, type) are validated.
 
+The value is text on the command line and is converted to the field's
+type:
+
+- **`labels`** takes a comma-separated list of label names or IDs and
+  replaces the task's labels: `loctt set WEB-3 labels frontend,urgent`.
+  Use `loctt unset WEB-3 labels` to clear them.
+- **Custom fields** are named by key (`risk`) or as `fields.risk`. A
+  `number` field takes a number (`5`, `2.5`), a `boolean` field takes
+  `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`), and any `multi`
+  field (such as a multi-value enum) takes a comma-separated list
+  (`ios,android`). A value that isn't of the field's type is refused and
+  nothing is written: `risk takes a number, not "high".`
+- **`assignee`, `reporter`, `milestone`, `sprint`** take a name or an ID
+  (see [Names and IDs](#conventions)).
+
+A label or list item containing a comma can't be written this way; use
+the MCP `update_task` tool or the web app.
+
 ```bash
 loctt set WEB-3 status done
 ```
@@ -230,7 +260,9 @@ must carry `--expect`.
 
 ### `loctt log <task>`
 
-Show a task's history, newest first.
+Show a task's history, newest first. Statuses, priorities and types
+print by label, and users, labels, milestones, sprints and projects by
+name; a value the tracker can no longer name prints as stored.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -276,6 +308,10 @@ Permanently delete one or more tasks. `<task>` may be a comma-separated
 list (`WEB-9,WEB-10`) to delete several at once, as a single operation.
 Destructive; it prompts for confirmation once for the whole set. To hide
 a task reversibly instead, use [`loctt archive`](#loctt-archive-tasktask--loctt-unarchive-tasktask).
+
+Every task a deleted task was linked to loses its side of the link in the
+same operation, and its history (`loctt log`) records the removal, so no
+link is left pointing at a task that no longer exists.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -328,8 +364,11 @@ both sides. The relationship type is validated against the workflow.
 `<task>` may be a comma-separated list of sources — each is linked to the
 one `<target>` with the same relationship type, as a single operation
 (reported per source; a bad source is reported without aborting the
-rest). `unlink` still works when the target has been deleted, and takes a
-single source.
+rest). `unlink` takes a single source, and still works when the target
+has been deleted out of band (pass the id the link stores). A link stored
+as a task key rather than an id (for example a key more than one task has
+held, which `loctt doctor` reports) is removed by passing that key:
+`loctt unlink WEB-3 relates_to WEB-9`.
 
 ```bash
 loctt link WEB-3 is_blocked_by WEB-5

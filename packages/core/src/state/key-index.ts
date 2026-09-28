@@ -111,6 +111,47 @@ export function addToKeyIndex(index: KeyIndex, key: string, id: string): KeyInde
 }
 
 /**
+ * Records a task's keys in the on-disk index, when one exists.
+ *
+ * The single owner of incremental index writes for LocTT's own write
+ * paths: `createTask` records a new key (G6) and `moveTask` records the
+ * new key beside the retired one. Skipped when there is no index on
+ * disk: it is built lazily by the first lookup, and creating one here
+ * would change when that happens. Paths that rewrite many keys at once
+ * (reconcile, restore, a prefix change) rebuild the whole index instead.
+ */
+export async function recordTaskKeys(
+  locttDir: string,
+  id: string,
+  keys: readonly string[],
+): Promise<void> {
+  const index = await loadKeyIndex(locttDir);
+  if (!index) return;
+  if (keys.every(k => index.entries[k] === id)) return;
+  let next = index;
+  for (const key of keys) next = addToKeyIndex(next, key, id);
+  await saveKeyIndex(locttDir, next);
+}
+
+/**
+ * Drops every index entry that points at one of `ids` (current and
+ * former keys alike), when an index exists on disk. Called by
+ * `deleteTask` and `bulkDelete` after the directories are gone (G5), so
+ * doctor does not find stale entries after an ordinary delete.
+ */
+export async function forgetTasks(locttDir: string, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const index = await loadKeyIndex(locttDir);
+  if (!index) return;
+  const gone = new Set(ids);
+  const keys = Object.keys(index.entries).filter(k => gone.has(index.entries[k] as string));
+  if (keys.length === 0) return;
+  let next = index;
+  for (const key of keys) next = removeFromKeyIndex(next, key);
+  await saveKeyIndex(locttDir, next);
+}
+
+/**
  * Removes a key entry from the index. Used when a lookup discovers
  * the target task.md is gone (concurrent delete by another process).
  * Pure: returns a new KeyIndex.

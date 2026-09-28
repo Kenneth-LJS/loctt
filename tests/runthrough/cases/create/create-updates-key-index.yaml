@@ -3,11 +3,8 @@ name: A create keeps the on-disk key index complete
 description: >
   Once a lookup has written `.loctt/local/key-index.yaml`, a create must
   add its new key to it; otherwise doctor reports "task dir(s) not in
-  index" after an ordinary create. Today the new key is missing.
+  index" after an ordinary create (G6).
 tags: [create, doctor]
-known_bug:
-  cli: "create does not add the new key to an existing on-disk key index; doctor then warns"
-  mcp: "create does not add the new key to an existing on-disk key index; doctor then warns"
 cli:
   - show ${task.epic_checkout.key}
   - create "Gift cards"

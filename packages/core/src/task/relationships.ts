@@ -7,6 +7,7 @@ import { withStateLock } from "../state/lock.js";
 import { CorruptFieldError } from "./health.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
+import { loadAllTasks } from "./load-all.js";
 import { lookupById, lookupTask, TaskNotFoundError } from "./lookup.js";
 import { toFrontmatter, toMutable } from "./mutable.js";
 
@@ -61,7 +62,16 @@ export interface UnlinkTaskOptions {
   readonly locttDir: string;
   readonly taskId: string;
   readonly type: string;
+  /** The target's id (callers resolve a key first), or the ref as given when it resolves to nothing. */
   readonly target: string;
+  /**
+   * The target exactly as the user gave it (G1). When no edge to
+   * `target` exists on either side, an edge whose **stored** target is
+   * this string is removed instead. That
+   * is how a link stored as a key more than one task has held (which
+   * resolves to some other task's id, or to none) is removed.
+   */
+  readonly storedTarget?: string;
   readonly workflowConfig?: WorkflowConfig;
 }
 
@@ -391,6 +401,61 @@ export async function persistRelationships(
 }
 
 /**
+ * The other side of a delete's links (K147, G4).
+ *
+ * Deleting a task used to remove only its directory, so every partner
+ * kept an edge pointing at nothing and doctor reported it. For each
+ * task in `deleted`, every task it links to loses **every** edge that
+ * targets it (the inverse and any stray edge of another type), each
+ * with a `link_removed` entry in the partner's history, the same entry
+ * `unlink` writes there. Partners that are themselves being deleted are
+ * skipped, and so is a partner that is gone or whose file or
+ * `relationships` cannot be read: nothing can be written to it, and
+ * doctor reports what is left.
+ *
+ * Lock-free: `deleteTask` and `bulkDelete` call it inside their own
+ * state lock, after the directories are removed. That order means a
+ * crash part-way leaves dangling edges (which `unlink` and doctor
+ * handle), never a one-sided link the relationship repair would
+ * complete back onto a deleted task.
+ */
+export async function detachDeletedTasks(
+  locttDir: string,
+  deleted: readonly Task[],
+  now: string,
+  bulkOpId?: string,
+): Promise<void> {
+  const deletedIds = new Set(deleted.map(t => t.frontmatter.id));
+  const partners = new Set<string>();
+  for (const t of deleted) {
+    for (const r of t.frontmatter.relationships ?? []) {
+      if (!deletedIds.has(r.target)) partners.add(r.target);
+    }
+  }
+  for (const partnerId of partners) {
+    let partner: Task;
+    try {
+      partner = await readTask(locttDir, partnerId);
+    } catch {
+      // Gone, never a task (a key-stored or dangling target), or will
+      // not parse: nothing to write to.
+      continue;
+    }
+    if ((partner.health ?? []).some(h => h.field === "relationships")) continue;
+    const existing = partner.frontmatter.relationships ?? [];
+    const kept = existing.filter(r => !deletedIds.has(r.target));
+    if (kept.length === existing.length) continue;
+    const removed = existing.filter(r => deletedIds.has(r.target));
+    await persistRelationships(locttDir, partner, kept, now, removed.map(r => ({
+      timestamp: now,
+      kind: "link_removed" as const,
+      meta: { type: r.type, target: r.target },
+      ...(bulkOpId !== undefined ? { bulk_op_id: bulkOpId } : {}),
+    })));
+  }
+}
+
+/**
  * The link half of `createTask`'s `parent` option (K140).
  *
  * `prepareParentLink` resolves the parent (key, former key or id) and
@@ -613,6 +678,19 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
       }
     }
 
+    // G1: no edge to the resolved id on this task, but one stored as the
+    // ref the user gave. Checked before the inverse-only case below, so
+    // the holder's inverse is not removed while this task keeps its side.
+    const stored = opts.storedTarget;
+    if (forwardUpdatedRels === null && stored !== undefined && stored !== target) {
+      const byStored = removeEdge(forwardExisting, type, stored);
+      if (byStored !== null) {
+        return removeStoredEdge({
+          locttDir, task, type, stored, remaining: byStored, inverseType, now,
+        });
+      }
+    }
+
     if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
       throw new RelationshipError(
         `Relationship "${type}" to ${target} does not exist on task ${taskId}.`,
@@ -652,4 +730,52 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
 
     return result;
   });
+}
+
+/**
+ * G1: removes an edge by the exact target it stores, when that target is
+ * not an id: a key more than one task has held (the relationship repair
+ * reports it and keeps it, A357 7), a task's own key, or a key no task
+ * holds any more. Resolving such a key finds some other task's id, or
+ * none, so the id-based removal never matched it and no surface could
+ * remove the link.
+ *
+ * The other side is removed from whichever task that key could have
+ * meant (any task holding it, as its key or a former key) when that task
+ * has the inverse edge back to this one and this task has no link to it
+ * by id that the inverse would belong to. Lock-free: `unlinkTask` holds
+ * the state lock.
+ */
+async function removeStoredEdge(args: {
+  readonly locttDir: string;
+  readonly task: Task;
+  readonly type: string;
+  readonly stored: string;
+  readonly remaining: TaskRelationship[];
+  readonly inverseType: string | undefined;
+  readonly now: string;
+}): Promise<Task> {
+  const { locttDir, task, type, stored, remaining, inverseType, now } = args;
+  const taskId = task.frontmatter.id;
+  const result = await persistRelationships(locttDir, task, remaining, now, [{
+    timestamp: now,
+    kind: "link_removed",
+    meta: { type, target: stored },
+  }]);
+  if (inverseType === undefined) return result;
+  const holders = (await loadAllTasks(locttDir)).filter(t =>
+    t.frontmatter.id !== taskId
+    && (t.frontmatter.key === stored || (t.frontmatter.key_history ?? []).includes(stored)));
+  for (const holder of holders) {
+    if ((holder.health ?? []).some(h => h.field === "relationships")) continue;
+    if (remaining.some(r => r.type === type && r.target === holder.frontmatter.id)) continue;
+    const updated = removeEdge(holder.frontmatter.relationships ?? [], inverseType, taskId);
+    if (updated === null) continue;
+    await persistRelationships(locttDir, holder, updated, now, [{
+      timestamp: now,
+      kind: "link_removed",
+      meta: { type: inverseType, target: taskId },
+    }]);
+  }
+  return result;
 }

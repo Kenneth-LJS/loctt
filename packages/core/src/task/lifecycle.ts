@@ -3,10 +3,12 @@ import { rm } from "node:fs/promises";
 import type { Task, TaskFrontmatter } from "@loctt/contracts";
 
 import { getTaskDir } from "../paths/index.js";
+import { forgetTasks } from "../state/key-index.js";
 import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
+import { detachDeletedTasks } from "./relationships.js";
 
 export class TaskLifecycleError extends Error {
   constructor(message: string) {
@@ -126,7 +128,9 @@ export async function unarchiveTask(locttDir: string, taskId: string): Promise<T
 }
 
 /**
- * Hard-deletes a task by removing its entire directory. Requires
+ * Hard-deletes a task by removing its entire directory, then removes
+ * the other side of each of its links from the partners (K147) and its
+ * keys from the on-disk key index (G5). Requires
  * force=true as a safety check. Wrapped in withStateLock so a
  * concurrent setField that's mid-write doesn't see the directory
  * disappear from under it (its writeTask would then create an
@@ -142,11 +146,15 @@ export async function deleteTask(
   }
 
   await withStateLock(locttDir, async () => {
-    // Verify task exists first.
-    await readTask(locttDir, taskId);
+    // Verify task exists first; its edges name the partners to detach.
+    const task = await readTask(locttDir, taskId);
 
     const taskDir = getTaskDir(locttDir, taskId);
     await rm(taskDir, { recursive: true, force: true });
+    // The partners' side of every link (K147), then the task's keys in
+    // the on-disk index (G5).
+    await detachDeletedTasks(locttDir, [task], new Date().toISOString());
+    await forgetTasks(locttDir, [taskId]);
     // Drop any cached "key not found" verdicts — the just-deleted
     // task's keys still resolved a moment ago and any rebuild after
     // this point should reflect the new (smaller) population.

@@ -194,6 +194,7 @@ import {
   repairRelationships,
   requireSupportedSchema,
   resolveCommentMentionsContext,
+  resolveEntityNamesContext,
   resolveLocttDir,
   resolveProjectIdForUser,
   resolveUserRef,
@@ -241,7 +242,6 @@ import {
   validateQuery,
   validHistory,
   ViewError,
-  ViewNameTakenError,
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
@@ -1925,7 +1925,7 @@ export function createWebApp(options: WebAppOptions) {
       // duplicate name), so it is the headline verbatim per ERR-6.
       if (err instanceof ViewError) {
         // B21: a taken name points at the name field, not the filters.
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err.field ?? "filters" });
         return;
       }
       throw err;
@@ -1960,7 +1960,7 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       if (err instanceof ViewError) {
         // B21: a taken name points at the name field, not the filters.
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err.field ?? "filters" });
         return;
       }
       throw err;
@@ -4244,9 +4244,10 @@ export function createWebApp(options: WebAppOptions) {
     const listViewQuery = view !== undefined && queriesConfig !== undefined
       ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
       : [];
-    const listCtx = await resolveCommentMentionsContext(
+    // K148: names in a typed query resolve to the IDs the tasks store.
+    const listCtx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
       locttDir, tasks, buildListContext(tasks), [effectiveQuery, ...listViewQuery],
-    );
+    ), [effectiveQuery, ...listViewQuery]);
 
     let result;
     try {
@@ -5385,7 +5386,9 @@ export function createWebApp(options: WebAppOptions) {
     // `RelationshipError`, which is a `LocttError`, and the route
     // wrapper turns those into a 400 carrying core's own sentence
     // ("relationship blocks -> <id> does not exist on task <id>").
-    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: targetId, workflowConfig: wfConfig });
+    // G1: `storedTarget` lets core remove an edge stored as a key more
+    // than one task has held, which resolves to some other task's id.
+    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: targetId, storedTarget: request.target, workflowConfig: wfConfig });
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -68,3 +68,29 @@ export async function withTmpLoctt<T>(
  */
 export const WORKSPACE_PREFIX = path.join(workspaceRoot, "loctt-");
 export const WORKSPACE_ROOT = workspaceRoot;
+
+/**
+ * Removes a task's directory directly, as a hand delete or a `git pull`
+ * would, leaving every edge that points at it dangling.
+ *
+ * `loctt delete` no longer leaves dangling edges (K147: it removes the
+ * partners' side of every link), so a test that needs a dangling edge
+ * has to make one out of band. Returns the removed task's id.
+ */
+export async function removeTaskOutOfBand(root: string, key: string): Promise<string> {
+  const dir = path.join(root, ".loctt/tasks");
+  for (const id of await readdir(dir)) {
+    const file = path.join(dir, id, "task.md");
+    let raw: string;
+    try {
+      raw = await readFile(file, "utf-8");
+    } catch {
+      continue;
+    }
+    if (raw.includes(`\nkey: ${key}\n`)) {
+      await rm(path.join(dir, id), { recursive: true, force: true });
+      return id;
+    }
+  }
+  throw new Error(`no task file for ${key}`);
+}

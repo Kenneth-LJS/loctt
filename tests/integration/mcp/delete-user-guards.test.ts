@@ -177,7 +177,8 @@ describe("MCP delete_user guards (stdio)", () => {
         });
         expect(clash.isError).toBe(true);
         const text = clash.content[0]?.text ?? "";
-        expect(text).toMatch(/ambiguous/i);
+        // K148 wording: each match listed with its ID.
+        expect(text).toMatch(/'Shared' matches 2 projects: /);
         // Both ids, so the agent can retry unambiguously — a message
         // that only says "ambiguous" leaves it with no next move.
         expect(text.match(/[0-9A-HJKMNP-TV-Z]{26}/g) ?? []).toHaveLength(2);
@@ -209,7 +210,7 @@ describe("MCP delete_user guards (stdio)", () => {
         });
         expect(bogus.isError).toBe(true);
         const text = bogus.content[0]?.text ?? "";
-        expect(text).toMatch(/unknown project/i);
+        expect(text).toMatch(/No project named 'NoSuchProject'/); // K148 wording
         // An allocator internal is not an answer an agent can act on,
         // and it was identical for a real project and a bogus one.
         expect(text).not.toMatch(/key allocation state/);

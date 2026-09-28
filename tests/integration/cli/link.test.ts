@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
-import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
+import { removeTaskOutOfBand, withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
 describe("CLI link (spawned binary)", () => {
   it("creates a relationship between two tasks", async () => {
@@ -34,8 +34,8 @@ describe("CLI link (spawned binary)", () => {
       await runCli(["create", "first"], { cwd: root });
       await runCli(["create", "second"], { cwd: root });
       await runCli(["link", "T-1", "blocks", "T-2"], { cwd: root });
-      const del = await runCli(["delete", "T-2", "--yes"], { cwd: root });
-      expect(del.exitCode).toBe(0);
+      // Out of band: `loctt delete` removes T-1's side too (K147).
+      await removeTaskOutOfBand(root, "T-2");
 
       const show = await runCli(["show", "T-1"], { cwd: root });
       expect(show.stdout).toContain("(deleted)");

@@ -19,6 +19,7 @@ import {
 } from "../state/index.js";
 import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
+import { assertNameNotIdShaped, resolveEntityRefOrThrow } from "../utils/entity-ref.js";
 
 /**
  * Entity errors carry `validation_failed` and `not_saved`: every throw
@@ -78,18 +79,8 @@ export function resolveLabelIdFromInput(
   input: string,
   options: { includeArchived?: boolean } = {},
 ): string {
-  const byId = config.labels.find(l => l.id === input
-    && (options.includeArchived === true || l.archived !== true));
-  if (byId) return byId.id;
-  const byName = resolveLabelByName(config, input, options);
-  if (byName.kind === "match") return byName.label.id;
-  if (byName.kind === "ambiguous") {
-    const ids = byName.matches.map(l => l.id).join(", ");
-    throw new LabelError(
-      `Label name '${input}' is ambiguous. Matches ${byName.matches.length} labels (${ids}). Pass the id instead.`,
-    );
-  }
-  throw new LabelError(`Unknown label: ${input}`);
+  // K148: one resolver for every entity, IDs recognised by shape.
+  return resolveEntityRefOrThrow("label", config.labels, input, options, m => new LabelError(m)).id;
 }
 
 /**
@@ -131,6 +122,7 @@ export async function createLabel(
   locttDir: string,
   input: CreateLabelInput,
 ): Promise<LabelDef> {
+  assertNameNotIdShaped(input.name, m => new LabelError(m, { field: "name" }));
   return withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);
     const id = ulid();
@@ -151,6 +143,7 @@ export async function editLabel(
   id: string,
   changes: { name?: string; color?: EntityColor | null },
 ): Promise<void> {
+  assertNameNotIdShaped(changes.name, m => new LabelError(m, { field: "name" }));
   await withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);
     const idx = config.labels.findIndex(l => l.id === id);
