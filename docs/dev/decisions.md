@@ -22685,6 +22685,33 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K144 · Runthrough tests for CLI and MCP over a seed tracker
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Ken's design: *"we have a test "database" that's pinned to the newest
+version; whenever we run an MCP/CLI test, we copy this test store into a
+temp folder; then we run the tests"*. Each test is *"a slug identifier +
+name + description + precondition/postcondition test … + the CLI/MCP
+instruction to test. for CLI, its just a command line prompt (or
+multiple…). for MCP, its the text instruction to give to the agent"*, with
+*"a pre-amble of instructions"* and *"a script that the agent can call to
+get the test one by one, and to run pre/post condition checks"*. On error
+cases the post-check proves *"nothing changed, or we got the right error
+state"*. Asked the open calls, he chose:
+- **Both MCP modes from the same tests:** each test carries the exact MCP
+  call (scripted, runs in every gate) and a plain-English instruction for
+  an agent-driven run started on demand, served one test at a time by a
+  helper script that runs the pre/post checks.
+- **Checks read the tracker files directly** (plain YAML, no core import)
+  so a core bug cannot vouch for itself; `loctt doctor` runs after every
+  test; error cases assert that no file changed.
+- **One file per test, independent** (each starts from a fresh copy of the
+  seed, so order does not matter), plus a few multi-step scenario tests.
+- **Its own script, `npm run test:runthrough`, part of every gate run.**
+- The seed must match the code's format version, and the runner refuses
+  otherwise, pointing at `npm run seed:upgrade`.
+
 ### K143 · Ordering scope, automatic upgrades, full versioning tests
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
