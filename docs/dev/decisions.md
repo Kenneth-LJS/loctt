@@ -22685,6 +22685,15 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K147 · Deleting a task removes the other side of its links (G4)
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+The runthrough found that `deleteTask`/`bulkDelete` leave every partner's
+inverse edge pointing at nothing, which doctor then reports. Offered (a)
+delete removes the partners' edges in the same operation, recorded in
+their history, or (b) keep them and silence doctor, Ken chose **(a)**.
+
 ### K146 · Full integration runs before merge, not per change
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
