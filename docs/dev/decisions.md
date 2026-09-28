@@ -22685,6 +22685,21 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K155 · A smoke tier before every commit; the full set before every merge
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Measured on an idle machine (2026-09-28): lint 53 s (5 s with a cache
+after a one-file change), unit 2.1 min, runthrough ~2.3 min, full
+Playwright ~25 min, Playwright blocker-case tests only 7.6 min; the full
+gate set ~45 min. Ken chose a smoke tier and **(a)** for integration:
+`npm run test:smoke` = build, typecheck, cached lint, all unit tests, the
+full runthrough, packaging, and the Playwright tests that `@verifies` a
+blocker case (~13-14 min). Integration is not in smoke (only 8 of 586
+integration tests tie to a blocker case; the runthrough covers CLI and
+MCP end to end); it runs on touched files while working and in full
+before merge, with the full Playwright suite.
+
 ### K154 · Format upgrades are intentional on every surface (reverses K143's automatic upgrade)
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
