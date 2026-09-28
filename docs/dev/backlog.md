@@ -9,17 +9,7 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B48 · Intentional upgrades everywhere (K154) — **todo** (after the review fixes)
-
-Remove the automatic upgrade (`upgradeIfSafe`) from CLI, MCP and web
-entry points; every surface refuses an older tracker with K154's message;
-doctor/info read-only everywhere; `loctt migrate` preview + confirm; web
-Upgrade banner (UI design pass); MCP instructions and `migrate_schema`
-description tell agents to ask the user first. Amend ONB-C11–C19 and the
-K143-era cases; update docs (upgrading.md, CLI/MCP references, UI guide);
-tests red-proven.
-
-## B50 · Smoke tier and lint cache (K155) — **todo** (after B48)
+## B50 · Smoke tier and lint cache (K155) — **in progress**
 
 `npm run test:smoke` as K155 defines it; select the Playwright blocker
 tests precisely (a generated list from `@verifies` tags joined with
