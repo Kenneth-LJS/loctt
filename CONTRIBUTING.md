@@ -32,20 +32,41 @@ it outside the repo with only its declared dependencies, and runs it.
 
 ```bash
 npm run typecheck         # type-check all workspaces
-npm run lint               # eslint across all workspaces
+npm run lint               # eslint across all workspaces (--cache; see below)
 npm run test                # unit tests (vitest) — fast, no integration
+npm run test:smoke          # build, typecheck, lint, unit, runthrough, packaging,
+                             #   + Playwright's blocker-case tests — before every commit (K155)
 npm run test:integration    # how each surface behaves: flags, output, exit codes, errors (+ doctor after every write)
 npm run test:runthrough     # data behaviour and the user journeys, CLI then MCP, over the seed tracker
 npm run test:packaging      # pack + install `loctt` outside the repo and run it
+npm run test:ui              # the full Playwright UI suite (not just smoke's blocker-case slice)
 ```
 
-Run `npm run lint:fix` for auto-fixable lint issues. A PR should pass
-`typecheck`, `lint` (no new warnings), and `test` at minimum;
-`test:integration` and `test:runthrough` are expected for anything
-touching the CLI, MCP, or web UI end to end. (The old `test:e2e` journeys
-are runthrough scenarios now, under `tests/runthrough/cases/journeys/`;
-see [`tests/README.md`](tests/README.md#which-suite) for which suite a
-new test belongs in.)
+Run `npm run lint:fix` for auto-fixable lint issues. `lint`/`lint:fix`
+cache eslint's results to `.eslintcache` (git-ignored; delete it if a
+run looks wrong after a config change) — cold is ~50s, warm after a
+one-file change is a few seconds.
+
+**Before every commit, run `npm run test:smoke`** (K155): it builds,
+typechecks, lints, runs every unit test, the full runthrough and
+packaging suite, and the Playwright tests that `@verifies` a
+blocker-severity case — about 13-14 minutes, versus ~45 for the full
+gate set. The blocker-case selection is generated, not hand-picked or a
+fixed line window: `npm run cases:index` resolves every `@verifies` tag
+naming a blocker case to the exact test it annotates and writes
+`tests/ui/smoke.list`; `cases:check` fails if that list goes stale.
+
+**Before every merge, run the full set**: `npm run test:integration`
+and the full `npm run test:ui`, on top of everything smoke covers.
+Integration is deliberately not part of smoke — only a handful of
+integration tests tie to a blocker case, and the runthrough already
+covers CLI and MCP end to end — so it runs on touched files while
+working and in full before merge. See
+[`docs/dev/process/build-loop.md`](docs/dev/process/build-loop.md) for
+the full rationale and measurements, and
+[`tests/README.md`](tests/README.md#which-suite) for which suite a new
+test belongs in. (The old `test:e2e` journeys are runthrough scenarios
+now, under `tests/runthrough/cases/journeys/`.)
 See [`tests/runthrough/README.md`](tests/runthrough/README.md) for the
 runthrough cases and the seed tracker they run against.
 

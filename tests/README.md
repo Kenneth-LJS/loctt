@@ -49,13 +49,45 @@ Test workspaces are created via `mkdtemp(repoRoot/tests/workspace/loctt-)`. They
 
 ```bash
 npm run test                 # unit + thin integration (existing) + tools
+npm run test:smoke           # build, typecheck, lint, unit, runthrough, packaging,
+                              #   + Playwright's blocker-case tests — before every commit (K155)
 npm run test:integration     # builds CLI/MCP, runs tests/integration
 npm run test:ui              # builds, runs the Playwright specs in tests/ui
 npm run test:runthrough      # builds, runs the runthrough cases (tests/runthrough/README.md)
+npm run test:packaging       # builds, packs + installs `loctt` outside the repo and runs it
 npm run test:perf            # opt-in, runs tests/perf — does NOT rebuild
 ```
 
-`pretest:integration`, `pretest:ui` and `pretest:runthrough` run `npm run build` so the spawned CLI/MCP binaries are current.
+`pretest:integration`, `pretest:ui`, `pretest:runthrough` and
+`pretest:packaging` run `npm run build` so the spawned CLI/MCP binaries
+are current. `test:smoke` (`tools/smoke/run.ts`) builds once up front
+and calls the underlying `vitest`/`playwright` commands directly rather
+than through their `npm run test:x` wrappers, so it doesn't rebuild
+three times over.
+
+### `test:smoke` vs. the full set (K155)
+
+`npm run test:smoke` is the gate to run before every commit: build,
+typecheck, cached lint, all unit tests, the full runthrough, packaging,
+and — instead of the full Playwright suite — only the tests that
+`@verifies` a **blocker**-severity case. Measured on an idle machine
+(2026-09-28): the full Playwright suite is ~25 min; the blocker-case
+slice alone is ~7.6 min; the whole smoke tier is ~13-14 min against a
+~45 min full gate set.
+
+That slice is generated, not a fixed line window or a hand-maintained
+list: `npm run cases:index` (`tools/case-index/smoke.ts`) resolves every
+`@verifies` tag naming a blocker case to the exact Playwright test it
+annotates and writes `tests/ui/smoke.list` (`file:line` per line,
+alongside the regenerated `case-index.json`); `npm run cases:check`
+fails if either file is stale. See
+[`docs/dev/process/build-loop.md`](../docs/dev/process/build-loop.md)
+for why integration is not part of smoke.
+
+`test:smoke` is unrelated to
+[`tests/scripts/smoke.sh`](./scripts/smoke.sh) below, an older,
+differently-scoped interactive sanity check that predates K155 and
+keeps its name for now.
 
 **Never run two of these suites concurrently.** Each `pretest` hook runs
 `tsc --build`, which empties and rewrites `dist/` — and `integration`,

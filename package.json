@@ -12,6 +12,7 @@
     "dev:host": "npm run dev:host --workspace apps/web",
     "test": "npm run test --workspaces --if-present && npm run test:tools",
     "test:tools": "vitest run --config tools/vitest.config.ts",
+    "test:smoke": "tsx tools/smoke/run.ts",
     "cases:index": "tsx tools/case-index/main.ts",
     "cases:check": "tsx tools/case-index/main.ts --check",
     "cases:coverage": "tsx tools/coverage/main.ts",
@@ -29,8 +30,8 @@
     "llm:verify": "tsx tests/llm/lib/runner.ts",
     "clean": "npm run clean --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p tools && tsc --noEmit -p tests && tsc --noEmit -p tests/ui",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint": "eslint . --cache --cache-location .eslintcache",
+    "lint:fix": "eslint . --fix --cache --cache-location .eslintcache"
   },
   "engines": {
     "node": ">=20"

@@ -304,6 +304,16 @@ test("ONB-C17: a 0.1.0 tracker shows only the Upgrade screen until the user upgr
     await expect(steps).toContainText("What changes (1 step)");
     await steps.locator("summary").click();
     await expect(steps).toContainText("Save the order of every task's links");
+    // A screenshot once showed this caret still pointing right while the
+    // disclosure was open. `Disclosure`'s `className` prop is additive
+    // (`cn("loctt-disclosure", className)`), so UpgradeRequired's own
+    // `[&>summary]:min-h-6` override cannot drop the marker-kill hook the
+    // `[open]` rotation selector keys off — checked here against the
+    // real compiled stylesheet, which jsdom never loads.
+    await expect(steps.locator(".loctt-disclosure-caret")).toHaveCSS(
+      "transform",
+      "matrix(0, 1, -1, 0, 0, 0)",
+    );
     // Nothing was written by opening the app.
     expect((await readFile(path.join(root, ".loctt", ".schema-version"), "utf8")).trim()).toBe("0.1.0");
 

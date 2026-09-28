@@ -23227,6 +23227,133 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A368 · Smoke tier and lint cache (B50, K155)
+
+#### A368 · Smoke tier, lint cache, Upgrade-screen caret check (B50, K155)
+
+**Ticket:** B50 · **Date:** 2026-09-29 · **Agent-made** (under K155).
+
+**The situation.** K155 chose a two-tier gate: `npm run test:smoke`
+before every commit (build, typecheck, cached lint, all unit tests, the
+full runthrough, packaging, and only the Playwright tests that
+`@verifies` a blocker-severity case), the full set (integration + full
+Playwright) before every merge. B50 asked for the script, a *precise*
+Playwright selection generated from the case index (not a line-window
+scan or a hand list), a cached `lint`, and the docs updated.
+
+**What had to be decided.** How to resolve a `@verifies` tag to the
+exact Playwright test it names, since the tag can sit in two different
+places relative to the `test(...)` call it covers, and how to fail
+safely when a tag can't be pinned to one.
+
+**Decided.** `tools/case-index/smoke.ts` resolves each `@verifies` tag
+naming a blocker case to a test line by searching backward up to 8 lines
+(the tag-immediately-before-`test(`) shape), then forward up to 60 lines
+(the tag-as-first-statement-inside-the-test-body shape, which also
+covers a `test.describe(...)` docblock with the tag inside the nested
+`test`). A tag matching neither (one observed case: a file-header
+docblock listing several IDs for the whole file, no single test to bind
+to) expands to every `test(...)` in that file rather than being dropped.
+A tag that still resolves to nothing is a **hard failure**, not a
+silent drop — `npm run cases:index` (which now also writes
+`tests/ui/smoke.list`) exits non-zero and names the tag, and
+`tools/smoke/run.ts` (the `test:smoke` script) refuses to run an empty
+Playwright step. `cases:check` fails if `smoke.list` is stale, same as
+the case index. Alternative considered: a Playwright `tag`/`@smoke`
+title marker instead of a generated file list — rejected because it
+would require writing the marker onto every blocker-case test by hand
+(880 `@verifies` tags exist; retagging by severity whenever a case's
+severity changes is exactly the drift B50 asked to avoid), where the
+file-list approach reads `case-index.json`'s severity directly and
+regenerates on every `cases:index` run with no per-test edit.
+
+Current count: 274 resolved smoke tests (276 Playwright cases once
+`test.describe` nesting is counted), 0 unresolved, against 353 blocker
+cases total (many blocker cases are CLI/MCP-surface, not UI, so have no
+Playwright test to resolve to at all — only cases with a UI `@verifies`
+tag are counted).
+
+`lint`/`lint:fix` now pass `--cache --cache-location .eslintcache`
+(`.eslintcache` added to `.gitignore`). Measured: cold 54.0s, warm
+(no changes) 2.3s, warm after touching one file ~4s — matches K155's
+53s/5s measurement.
+
+**Side check (ticket item 5): the Upgrade screen's disclosure caret.**
+Verified live in a real browser (a 0.1.0 seed tracker, `loctt ui`) that
+opening "What changes" DOES rotate the caret — `getComputedStyle`
+reported `matrix(0, 1, -1, 0, 0, 0)` (90°) after the click, and a
+screenshot confirmed the chevron visually points down when open.
+`Disclosure`'s `className` prop is additive (`cn("loctt-disclosure",
+className)` in `apps/web/src/client/ui/Disclosure.tsx`), so
+`UpgradeRequired.tsx`'s own `className="mb-5 ml-11 [&>summary]:min-h-6"`
+cannot drop the `.loctt-disclosure` hook the `[open]` rotation selector
+in `styles/index.css` keys off. The reported screenshot was mid-transition
+or captured before the click's re-render — not a real defect. A prior
+session's own scratchpad screenshot (`upgrade-light-steps-open.png`,
+this same scratchpad dir) shows the identical stuck-right-chevron
+artifact, corroborating "screenshot timing", not "selector broken".
+Added a red-proven assertion to the existing `ONB-C17` Playwright test
+(`tests/ui/flow-schema-mismatch.spec.ts`) asserting the caret's computed
+`transform` after opening the disclosure, so a real regression here
+would be caught going forward. No product code changed for this item.
+
+**Files touched.**
+- `package.json` — added `test:smoke`; `lint`/`lint:fix` now use
+  `--cache --cache-location .eslintcache`.
+- `.gitignore` — `.eslintcache`.
+- `tools/case-index/smoke.ts` (new) + `smoke.test.ts` (new, 8 unit
+  tests, each red-proven against a matching mutation).
+- `tools/case-index/main.ts` — `cases:index`/`cases:check` now also
+  write/verify `tests/ui/smoke.list`.
+- `tools/smoke/run.ts` (new) — the `test:smoke` orchestrator: build once,
+  then typecheck, lint, cases:check, unit, runthrough, packaging,
+  Playwright (blocker selection), printing each step's duration and the
+  total, stopping at the first failure.
+- `tests/ui/smoke.list` (new, generated) — 274 entries.
+- `tests/ui/flow-schema-mismatch.spec.ts` — added the caret-rotation
+  assertion to `ONB-C17`.
+- Docs: `docs/dev/process/build-loop.md` (new "Smoke before every
+  commit, the full set before every merge (K155)" section),
+  `CONTRIBUTING.md`, `tests/README.md`, `tools/README.md`, and
+  `CLAUDE.md`'s Commands block only (per this session's constraint).
+
+**Gates run this session:** `npm run cases:check` (pass, 1095 cases,
+274 smoke tests); `npx tsc --noEmit -p tools` (clean); `npx eslint .`
+(clean, cache warm and cold both measured); `npx vitest run --config
+tools/vitest.config.ts` (20/20, includes the new smoke.test.ts, each
+new test red-proven by a matching mutation and restored); `npm run
+typecheck` (clean, all workspaces).
+
+**Full, real `npm run test:smoke` run, end to end, exit 0. Per-step
+timings:**
+
+| step | time |
+|---|---|
+| build | 6.2s |
+| typecheck | 11.9s |
+| lint (warm cache) | 2.1s |
+| cases:check | 0.8s |
+| unit | 2.2m |
+| runthrough | 1.3m |
+| packaging | 9.3s |
+| playwright (blocker cases, 276 tests) | 8.3m |
+| **total** | **12.4m** |
+
+All 276 Playwright tests passed. Total time lands inside K155's
+"~13-14 min" estimate for the smoke tier.
+
+**To revert.** Delete `tools/case-index/smoke.ts`,
+`tools/case-index/smoke.test.ts`, `tools/smoke/run.ts`,
+`tests/ui/smoke.list`; revert `tools/case-index/main.ts` to its
+prior version (case-index only, no smoke.list); revert `package.json`'s
+`lint`/`lint:fix` cache flags and remove `test:smoke`; remove
+`.eslintcache` from `.gitignore`; revert the caret-rotation assertion
+in `tests/ui/flow-schema-mismatch.spec.ts` (the rest of that test is
+untouched); revert the four doc files' additions. No schema, API,
+on-disk tracker format, or product runtime code is touched by this
+ticket — it is tooling, tests and docs only, plus the one Playwright
+assertion.
+
 ### A367 · Intentional upgrades everywhere; the Upgrade screen (B48, K154)
 
 #### A367 · Intentional upgrades everywhere (B48, K154)

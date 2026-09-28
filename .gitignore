@@ -19,3 +19,6 @@ playwright-report/
 # Agent worktrees (transient, created by the Agent tool)
 .claude/worktrees/
 tools/screenshots/.demo-tracker
+
+# eslint --cache (K155/B50): local, machine-specific, safe to delete
+.eslintcache

@@ -78,12 +78,14 @@ Key points:
 ```bash
 npm run build        # Build all workspaces (tsc + tsup for CLI/MCP)
 npm run test         # Workspace unit tests only (vitest) — does NOT cover e2e/integration
+npm run test:smoke   # Before every commit (K155): build, typecheck, lint, unit, runthrough,
+                      #   packaging, + Playwright's blocker-case tests (~13-14 min)
 npm run test:integration  # CLI binary + MCP stdio against a real tracker
 npm run test:runthrough  # CLI then scripted MCP over a realistic seed tracker (data behaviour)
 npm run test:packaging   # Pack `loctt`, install it outside the repo, run CLI/UI/MCP
-npm run test:ui      # Playwright browser suite (~24 min at 2 workers)
+npm run test:ui      # Playwright browser suite (~24 min at 2 workers) — full set, before merge
 npm run typecheck    # Type-check all workspaces
-npm run lint         # Lint all workspaces (eslint)
+npm run lint         # Lint all workspaces (eslint, --cache)
 npm run lint:fix     # Lint and auto-fix
 npm run clean        # Remove dist/ from all workspaces
 npx tsc --build      # Build via project references
