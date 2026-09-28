@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { CustomFieldDef } from "./workflow.js";
 import {
+  allowsNewValues,
   BoardsConfigSchema,
   CustomFieldDefSchema,
   customFieldInScope,
   customFieldsForType,
   defaultStatus,
+  deriveValueKey,
   EstimationConfigSchema,
   IconStringSchema,
   PriorityDefSchema,
@@ -573,5 +575,32 @@ describe("WorkflowConfig integration", () => {
     expect(parsed.boards?.columns).toHaveLength(2);
     expect(parsed.timeline?.dependency_relationship).toBe("blocks");
     expect(parsed.estimation?.weights?.M).toBe(3);
+  });
+});
+
+// K150: keys for values created on the fly, and which fields may grow.
+describe("deriveValueKey / allowsNewValues (K150)", () => {
+  it("derives a charset-valid key from any label", () => {
+    expect(deriveValueKey("Windows Phone", [])).toBe("windows_phone");
+    expect(deriveValueKey("Café au lait!", [])).toBe("cafe_au_lait");
+    expect(deriveValueKey("2FA", [])).toBe("v_2fa");
+    expect(deriveValueKey("日本", [])).toBe("value");
+  });
+
+  it("appends _2, _3 … to avoid a key already taken", () => {
+    expect(deriveValueKey("iOS", ["ios"])).toBe("ios_2");
+    expect(deriveValueKey("iOS", ["ios", "ios_2"])).toBe("ios_3");
+  });
+
+  it("only an enum field with allow_new_values: true may grow", () => {
+    expect(allowsNewValues({ type: "enum", allow_new_values: true })).toBe(true);
+    expect(allowsNewValues({ type: "enum" })).toBe(false);
+    expect(allowsNewValues({ type: "string", allow_new_values: true })).toBe(false);
+  });
+
+  it("parses allow_new_values on a custom field and leaves it absent by default", () => {
+    const base = { key: "a", label: "A", type: "enum", multi: false, searchable: false, values: [{ key: "x", label: "X" }] };
+    expect(CustomFieldDefSchema.parse(base).allow_new_values).toBeUndefined();
+    expect(CustomFieldDefSchema.parse({ ...base, allow_new_values: true }).allow_new_values).toBe(true);
   });
 });

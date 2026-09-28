@@ -190,3 +190,153 @@ labels, milestone, sprint, and estimate despite promising "full details".
 
 **Given** an agent reading the Tasks section, **when** it looks for a way to
 reorder, **then** it finds the tool without scanning the Labels section.
+
+---
+
+## E. Setting values from the command line (B44)
+
+### TSK-C10 · major · P1 P10 · CLI
+**`loctt set` converts its value to the field's type.** (G2)
+The command line has only text, and a number, boolean or multi-value
+custom field refused it (`expected finite number, got string`), so the
+CLI could not write what MCP and the web could.
+
+- A `number` custom field stores a number, a `boolean` one a boolean
+  (`true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`), and any `multi`
+  field a list from a comma-separated value (`ios,android`).
+- `fields.<key>` names the same field as `<key>`.
+- A value that isn't of the field's type is refused, naming the field
+  and the value (`risk takes a number, not "high".`), exit 1, and no
+  task file changes.
+- A bulk `set` (`WEB-1,WEB-2`) converts the same way.
+- MCP `update_task` and the web still take typed JSON unchanged.
+
+**Given** a `number` field `risk`, **when** `loctt set WEB-16 risk 5`
+runs, **then** the task stores `risk: 5`, a number.
+
+### TSK-C11 · major · P1 P10 · CLI
+**`loctt set <task> labels` changes a task's labels.** (G3)
+Labels could be set on create (`--label`) and never changed afterwards
+from the CLI.
+
+- The value is a comma-separated list of label names or IDs, and it
+  replaces the task's labels; the task stores the labels' IDs.
+- `loctt unset <task> labels` clears them.
+- An unknown or ambiguous label name is refused (PRU-C15) and nothing
+  is written.
+
+**Given** labels `frontend` and `infra`, **when** `loctt set WEB-20
+labels frontend,infra` runs, **then** the task stores both labels' IDs,
+in that order.
+
+### TSK-C12 · minor · P4 P10 · CLI
+**`loctt show` prints assignee and reporter by name.** (G7)
+Milestone, sprint and labels printed by name; the two user fields
+printed raw IDs, unlike the reference's example.
+
+- `Assignee:` and `Reporter:` show the user's name.
+- A user whose profile can't be read shows the stored ID, and `show`
+  still succeeds.
+
+**Given** WEB-13 assigned to Bea and reported by Ada, **when** `loctt
+show WEB-13` runs, **then** it prints `Assignee: Bea` and `Reporter:
+Ada`.
+
+### TSK-C13 · major · P1 P7 · CLI MCP UI
+**Create and delete keep the on-disk key index complete.** (G5, G6)
+`doctor` warned after ordinary use: `N stale entries` after any delete,
+and `task dir(s) not in index` after a create once any lookup had
+written `.loctt/local/key-index.yaml`.
+
+- A create adds the new key to the index when the index exists; with no
+  index on disk, none is written.
+- A delete (single or bulk) removes every entry for the deleted tasks,
+  current and former keys alike.
+- After either, `loctt doctor` reports the key index in sync.
+
+**Given** a tracker whose key index exists, **when** a task is created
+and another deleted, **then** `loctt doctor` reports no key-index
+finding.
+
+## F. Adding and removing values; creating them on the fly (B45)
+
+### TSK-C14 · major · P1 P10 · CLI MCP
+**Values can be added to and removed from a list field.** (K150)
+Changing one label meant resending the whole list, and a second writer
+in between lost its change.
+
+- `loctt set <task> labels|<multi field> --add <v>… --remove <v>…`
+  (words up to the next flag; commas split too; `fields.<key>` names the
+  same field) and MCP `update_task` `add` / `remove` maps (field → list)
+  edit labels and any `multi` custom field.
+- Core applies them to the list as stored, under the tracker lock:
+  concurrent adds both land.
+- Labels are named by name or ID, choice values by key or label (K148
+  resolver). A stored member given literally is removable even when it
+  no longer resolves.
+- Adding a value already there, or removing one that isn't, is a no-op:
+  nothing is written, no history, and the surface says "No change".
+- Refused, writing nothing: a name matching nothing (K148 message), an
+  ambiguous name, a value both added and removed, a field both replaced
+  and edited, add/remove on a single-value field, a list the file holds
+  as something else, and (CLI) a value together with `--add`/`--remove`
+  (usage, exit 2). Several tasks at once is TSK-C16 (K152).
+- The replace form (`loctt set <task> labels a,b`, `update_task`
+  `field`/`value`) still works as before.
+
+**Given** WEB-1 labelled `bug`, **when** `loctt set WEB-1 labels --add
+infra --remove bug` runs, **then** WEB-1 stores only `infra`'s ID and its
+history has one `label_added` and one `label_removed` entry.
+
+### TSK-C15 · major · P10 · CLI MCP UI
+**Unknown values are created only when asked, one model everywhere.** (K150)
+Labels could be created on the fly in the web picker but not from the
+CLI or MCP, and no choice field could grow at all.
+
+- An unknown label, or an unknown value of a choice field, is refused
+  with the K148 message; the CLI adds "Pass --create to create it.", MCP
+  "Pass create_missing: true to create it." when that would work.
+- With `--create` (CLI), `create_missing: true` (MCP) or the picker's
+  "Create “x”" row (web), an unknown label is created as `label create`
+  would, and an unknown value of a field that allows new values
+  (CFG-C6) is appended to its `values` with a key derived from the label
+  (lower case, `_` for anything else, `_2`, `_3`… on a clash).
+- A closed field refuses a new value even when asked ("<field> does not
+  allow new values; choose one of: …"). An ID-shaped name is never
+  created.
+- The web picker offers "Create “x”" for labels and open fields only,
+  when the typed text names no existing value (by label or key) and no
+  value already on the task.
+- Nothing is created when the rest of the change is refused: labels.yaml,
+  workflow.yaml and the task are all left as they were.
+
+**Given** `platforms` allows new values, **when** `loctt set MOB-1
+platforms --add Windows --create` runs, **then** `platforms` gains the
+value `windows: Windows` and MOB-1 stores `windows`.
+
+### TSK-C16 · major · P1 P10 · CLI MCP
+**Add/remove over many tasks is one operation, reported like bulk set.** (K152, K153)
+B45 refused `--add`/`--remove` on several tasks, so labelling a
+selection meant one command per task.
+
+- `loctt set <k1,k2,…> <field> --add <v>… --remove <v>… [--create]` and
+  MCP `bulk_update_tasks` `add` / `remove` maps (with `create_missing`)
+  apply the edit to each task's own list, under one lock.
+- A task that would fail (not found, unreadable, a list it can't read, a
+  value the field refuses) is listed with its reason, in the same shape
+  bulk set uses (DEG-C8), and every other task still changes; the CLI
+  then exits 1. (K153 replaced K152's all-or-nothing.)
+- An unknown value without `--create` / `create_missing` is refused once,
+  about the command, with the same hint as TSK-C15.
+- The changed tasks land together, each history entry carries one
+  `bulk_op_id`, and a task that already had the values is reported as
+  unchanged, apart from both the changed and the failed.
+- The web bulk bar sets single values only (status, priority, assignee,
+  milestone, sprint), so it has no list edit to offer.
+
+**Given** WEB-1 labelled `bug` and WEB-2 unlabelled, **when** `loctt set
+WEB-1,WEB-2 labels --add infra` runs, **then** both store `infra`'s ID and
+both `label_added` entries share one `bulk_op_id`; **given** WEB-2 does
+not exist, **then** WEB-1 still gains `infra` and the output lists WEB-2
+as not found.
+

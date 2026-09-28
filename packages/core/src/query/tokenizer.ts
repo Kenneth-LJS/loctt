@@ -1,3 +1,5 @@
+import { isIdShaped } from "@loctt/contracts";
+
 import { LocttError } from "../errors.js";
 export type TokenType =
   | "FIELD"
@@ -145,6 +147,21 @@ export function tokenize(input: string): Token[] {
       tokens.push({ type: oneCharType, value: ch, position: i });
       i++;
       continue;
+    }
+
+    // K148: an unquoted ID is a value, not a number. A ULID starts with
+    // a digit, so it used to be read as a number followed by a word and
+    // refused ("expected RPAREN"), which made `labels in (urgent, <id>)`
+    // need quotes around the ID but not the name.
+    if (/[0-7]/.test(ch)) {
+      let end = i;
+      while (end < input.length && isWordChar(input.charAt(end))) end++;
+      const word = input.slice(i, end);
+      if (isIdShaped(word)) {
+        tokens.push({ type: "FIELD", value: word, position: i });
+        i = end;
+        continue;
+      }
     }
 
     // Numbers and dates (both start with digits)

@@ -196,13 +196,13 @@ describe("initLoctt", () => {
   it("over an empty .loctt, overwrites a stale .schema-version and lists only what it wrote", async () => {
     const dir = join(root, ".loctt");
     await mkdir(dir);
-    await writeFile(join(dir, ".schema-version"), `${String(CURRENT_SCHEMA_VERSION + 6)}\n`, "utf-8");
+    await writeFile(join(dir, ".schema-version"), "9.9.9\n", "utf-8");
     await writeFile(join(dir, ".gitignore"), "# the user's own\n", "utf-8");
 
     const result = await initLoctt(root);
 
     expect((await readFile(join(dir, ".schema-version"), "utf-8")).trim())
-      .toBe(String(CURRENT_SCHEMA_VERSION));
+      .toBe(CURRENT_SCHEMA_VERSION);
     expect(result.created).toContain(join(dir, ".schema-version"));
     // The user's .gitignore is kept, so it is not reported as created.
     expect(await readFile(join(dir, ".gitignore"), "utf-8")).toBe("# the user's own\n");
@@ -217,14 +217,14 @@ describe("initLoctt", () => {
     expect(result.created.some(f => f.includes("state.yaml"))).toBe(true);
   });
 
+  // @verifies ONB-C11
   it("stamps the schema version at .loctt/.schema-version", async () => {
     const result = await initLoctt(root);
     const versionPath = join(result.locttDir, ".schema-version");
     const raw = (await readFile(versionPath, "utf-8")).trim();
-    // Should be a positive integer matching CURRENT_SCHEMA_VERSION (≥ 1).
-    const n = Number(raw);
-    expect(Number.isInteger(n)).toBe(true);
-    expect(n).toBeGreaterThanOrEqual(1);
+    // K142: the format version, the release that introduced the format.
+    expect(raw).toBe(CURRENT_SCHEMA_VERSION);
+    expect(raw).toBe("0.3.0");
     expect(result.created.some(f => f.endsWith(".schema-version"))).toBe(true);
   });
 });
@@ -295,6 +295,135 @@ describe("loadCalendarConfig — absent file", () => {
       await rm(join(locttDir, "config", "calendar.yaml"), { force: true });
       const cfg = await loadCalendarConfig(locttDir);
       expect(cfg.timezone).toBe("UTC");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// A365: `init --repair` over a tracker that lost config/ minted a fresh
+// project id, so every surviving task pointed at a project that no longer
+// existed and the next create had no counter for the new id.
+describe("initLoctt repair — projects.yaml lost", () => {
+  const P1 = "01J0000000000000000000000A";
+  const P2 = "01J0000000000000000000000B";
+  const P3 = "01J0000000000000000000000C";
+
+  it("keeps the surviving project id when there was one project", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-repair-one-"));
+    try {
+      await initLoctt(root, { docs: false, timezone: "UTC" });
+      const locttDir = resolveLocttDir(root);
+      const { loadProjectsConfig } = await import("../config/projects.js");
+      const before = (await loadProjectsConfig(locttDir)).projects[0];
+      await rm(join(locttDir, "config"), { recursive: true, force: true });
+
+      await initLoctt(root, { repair: true, timezone: "UTC" });
+      const after = await loadProjectsConfig(locttDir);
+      expect(after.projects.map(p => [p.id, p.name, p.prefix])).toEqual([[before?.id, "Tasks", "T"]]);
+      expect(after.default).toBe(before?.id);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("recreates every project state.yaml and the tasks name", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-repair-many-"));
+    try {
+      await initLoctt(root, { docs: false, timezone: "UTC" });
+      const locttDir = resolveLocttDir(root);
+      await writeFile(join(locttDir, "state.yaml"),
+        `keys:\n  ${P1}:\n    prefix: T\n    next_number: 3\n  ${P2}:\n    prefix: WEB\n    next_number: 2\n`, "utf-8");
+      const { writeTask } = await import("../task/io.js");
+      await writeTask(locttDir, "01J0000000000000000000000T", {
+        frontmatter: {
+          id: "01J0000000000000000000000T", key: "OPS-4", title: "ops", project: P3,
+          created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        },
+        body: "",
+      });
+      await rm(join(locttDir, "config"), { recursive: true, force: true });
+
+      await initLoctt(root, { repair: true, timezone: "UTC" });
+      const { loadProjectsConfig } = await import("../config/projects.js");
+      const after = await loadProjectsConfig(locttDir);
+      expect(after.projects.map(p => [p.id, p.prefix])).toEqual([[P1, "T"], [P2, "WEB"], [P3, "OPS"]]);
+      expect(after.default).toBe(P1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// A366 (M2): a repair that has to write `.schema-version` stamps the
+// current format only when the data provably is current. Otherwise it
+// stamps 0.1.0, so the automatic upgrade ranks the links a pre-0.3.0
+// tracker stored without ranks.
+describe("initLoctt repair — .schema-version lost", () => {
+  const A = "01J0000000000000000000000A";
+  const B = "01J0000000000000000000000B";
+  const task = (id: string, key: string, rels: { type: string; target: string; rank?: string }[]) => ({
+    frontmatter: {
+      id, key, title: key, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      relationships: rels,
+    },
+    body: "",
+  });
+
+  async function repairedStamp(rels: [{ type: string; target: string; rank?: string }[], { type: string; target: string; rank?: string }[]], workflowExtra?: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "loctt-repair-ver-"));
+    try {
+      await initLoctt(root, { docs: false, timezone: "UTC" });
+      const locttDir = resolveLocttDir(root);
+      const { writeTask } = await import("../task/io.js");
+      await writeTask(locttDir, A, task(A, "T-1", rels[0]));
+      await writeTask(locttDir, B, task(B, "T-2", rels[1]));
+      if (workflowExtra !== undefined) {
+        const wf = join(locttDir, "config", "workflow.yaml");
+        const raw = await readFile(wf, "utf-8");
+        await writeFile(wf, raw.replace(/(\n {2}- key: blocks\n)/, `$1${workflowExtra}`), "utf-8");
+      }
+      await rm(join(locttDir, ".schema-version"));
+      await rm(join(locttDir, "state.yaml"));
+      await initLoctt(root, { repair: true, timezone: "UTC" });
+      return (await readFile(join(locttDir, ".schema-version"), "utf-8")).trim();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  it("stamps the current format when every link is ranked and no `ranked` setting is left", async () => {
+    expect(await repairedStamp([
+      [{ type: "blocks", target: B, rank: "u" }],
+      [{ type: "is_blocked_by", target: A, rank: "u" }],
+    ])).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  it("stamps 0.1.0 when a link has no rank", async () => {
+    expect(await repairedStamp([
+      [{ type: "blocks", target: B, rank: "u" }],
+      [{ type: "is_blocked_by", target: A }],
+    ])).toBe("0.1.0");
+  });
+
+  it("stamps 0.1.0 when workflow.yaml still sets the retired `ranked`", async () => {
+    expect(await repairedStamp([
+      [{ type: "blocks", target: B, rank: "u" }],
+      [{ type: "is_blocked_by", target: A, rank: "u" }],
+    ], "    ranked: true\n")).toBe("0.1.0");
+  });
+});
+
+// K148: the starting project's name may not look like an ID either.
+describe("initLoctt — project name", () => {
+  it("refuses an ID-shaped project name with K148's message, and creates nothing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-init-idname-"));
+    try {
+      const err = await initLoctt(root, { projectName: "01ARZ3NDEKTSV4RRFFQ69G5FAV", docs: false, timezone: "UTC" })
+        .then(() => undefined, (e: unknown) => e) as { message: string; field?: string } | undefined;
+      expect(err?.message).toBe("That looks like an ID; choose a different name.");
+      expect(err?.field).toBe("projectLabel");
+      await expect(access(join(root, ".loctt"))).rejects.toThrow();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -68,7 +68,7 @@ describe("RelationshipDefSchema — directional", () => {
     })).toThrow(/declare it as symmetric/);
   });
 
-  it("preserves graph + ranked on a directional rel", () => {
+  it("keeps graph, and drops a retired `ranked` setting instead of failing the strict parse (K143)", () => {
     const parsed = RelationshipDefSchema.parse({
       key: "parent",
       label: "Parent",
@@ -79,7 +79,13 @@ describe("RelationshipDefSchema — directional", () => {
       ranked: true,
     });
     expect(parsed.graph).toBe("tree");
-    expect(parsed.ranked).toBe(true);
+    expect("ranked" in parsed).toBe(false);
+  });
+
+  it("still refuses a key it does not know (the strict parse is intact)", () => {
+    expect(() => RelationshipDefSchema.parse({
+      key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", rankd: true,
+    })).toThrow();
   });
 });
 
@@ -155,7 +161,7 @@ describe("RelationshipDefSchema — symmetric", () => {
     })).toThrow(/must omit 'inverse_label'/);
   });
 
-  it("preserves graph and ranked flags on symmetric rels", () => {
+  it("keeps graph and drops a retired `ranked` on symmetric rels (K143)", () => {
     const parsed = RelationshipDefSchema.parse({
       key: "siblings",
       label: "Siblings",
@@ -164,6 +170,6 @@ describe("RelationshipDefSchema — symmetric", () => {
       ranked: true,
     });
     expect(parsed.graph).toBe("none");
-    expect(parsed.ranked).toBe(true);
+    expect("ranked" in parsed).toBe(false);
   });
 });

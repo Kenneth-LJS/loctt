@@ -1,0 +1,13 @@
+id: list-create-refused
+name: An unknown label is refused unless asked to create it
+description: >
+  K150 with K148: a label name that matches nothing is refused with the
+  resolver's message plus this surface's way to create it, and nothing
+  is written.
+tags: [lists, labels, b45, error]
+cli: set ${task.search_index.key} labels --add brand-new
+mcp:
+  call: { tool: update_task, args: { ref: "${task.search_index.key}", add: { labels: [brand-new] } } }
+expect_error:
+  cli: { message: "No label named 'brand-new'. Pass --create to create it." }
+  mcp: { message: "No label named 'brand-new'. Pass create_missing: true to create it." }

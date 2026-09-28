@@ -12,23 +12,26 @@
     "dev:host": "npm run dev:host --workspace apps/web",
     "test": "npm run test --workspaces --if-present && npm run test:tools",
     "test:tools": "vitest run --config tools/vitest.config.ts",
+    "test:smoke": "tsx tools/smoke/run.ts",
     "cases:index": "tsx tools/case-index/main.ts",
     "cases:check": "tsx tools/case-index/main.ts --check",
     "cases:coverage": "tsx tools/coverage/main.ts",
     "pretest:integration": "npm run build",
     "test:integration": "vitest run --config tests/vitest.integration.config.ts",
-    "pretest:e2e": "npm run build",
-    "test:e2e": "vitest run --config tests/vitest.e2e.config.ts",
     "test:perf": "vitest run --config tests/vitest.perf.config.ts",
     "pretest:packaging": "npm run build",
     "test:packaging": "vitest run --config tests/vitest.packaging.config.ts",
     "pretest:ui": "npm run build",
     "test:ui": "playwright test --config tests/ui/playwright.config.ts",
+    "pretest:runthrough": "npm run build",
+    "test:runthrough": "vitest run --config tests/vitest.runthrough.config.ts",
+    "seed:build": "tsx tests/runthrough/seed/build-seed.ts",
+    "seed:upgrade": "tsx tests/runthrough/seed/upgrade-seed.ts",
     "llm:verify": "tsx tests/llm/lib/runner.ts",
     "clean": "npm run clean --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p tools && tsc --noEmit -p tests && tsc --noEmit -p tests/ui",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint": "eslint . --cache --cache-location .eslintcache",
+    "lint:fix": "eslint . --fix --cache --cache-location .eslintcache"
   },
   "engines": {
     "node": ">=20"
@@ -50,7 +53,7 @@
     "vitest": "^4.1.4"
   },
   "license": "AGPL-3.0-or-later",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "overrides": {
     "fast-uri": "^3.1.8"
   }

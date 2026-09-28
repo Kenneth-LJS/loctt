@@ -1,0 +1,21 @@
+id: name-ambiguous-refused
+name: A name two labels share is refused, listing both IDs
+description: >
+  K148: once two labels are both named "urgent", `urgent` no longer says
+  which one is meant; the write is refused and the message lists each
+  label with its ID so the user can pass the right one.
+tags: [labels, edit, k148]
+steps:
+  - name: a second label named urgent
+    cli: label create urgent
+    mcp:
+      call: { tool: create_label, args: { name: urgent } }
+    capture:
+      twin: { output: "(0[0-9A-HJKMNP-TV-Z]{25})" }
+  - name: labelling by that name is refused
+    expect_error:
+      cli: { message: "'urgent' matches 2 labels: urgent (${label.urgent.id}), urgent (${var.twin}). Use the ID." }
+      mcp: { message: "'urgent' matches 2 labels: urgent (${label.urgent.id}), urgent (${var.twin}). Use the ID." }
+    cli: set ${task.perf_budget.key} labels urgent
+    mcp:
+      call: { tool: update_task, args: { ref: "${task.perf_budget.key}", field: labels, value: [urgent] } }

@@ -27,7 +27,20 @@ const config: WorkflowConfig = {
   custom_fields: [],
 };
 
-function makeTask(id: string, key: string, rels?: Task["frontmatter"]["relationships"]): Task {
+/**
+ * A task as LocTT writes it. Every link carries a rank since K143, so a
+ * link given here without one gets "u"; pass `{ unranked: true }` for a
+ * hand-edited link that has none.
+ */
+function makeTask(
+  id: string,
+  key: string,
+  rels?: Task["frontmatter"]["relationships"],
+  opts: { unranked?: boolean } = {},
+): Task {
+  const stored = rels === undefined || opts.unranked === true
+    ? rels
+    : rels.map(r => ({ ...r, rank: r.rank ?? "u" }));
   return {
     frontmatter: {
       id,
@@ -35,7 +48,7 @@ function makeTask(id: string, key: string, rels?: Task["frontmatter"]["relations
       title: `Task ${key}`,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
-      ...(rels ? { relationships: rels } : {}),
+      ...(stored ? { relationships: stored } : {}),
     },
     body: "",
   };
@@ -65,6 +78,24 @@ describe("validateRelationships", () => {
 
     const errors = await validateRelationships(locttDir, config);
     expect(errors).toEqual([]);
+  });
+
+  // K143: every link carries a rank. One without is listed after the
+  // ranked ones, so doctor reports it and the repair ranks it.
+  // @verifies REL-C10
+  it("reports a link that has no rank, and says the relationship repair ranks it", async () => {
+    const t1 = makeTask("aaa", "T-1", [{ type: "parent", target: "bbb" }], { unranked: true });
+    const t2 = makeTask("bbb", "T-2", [{ type: "child", target: "aaa" }]);
+    await writeTask(locttDir, "aaa", t1);
+    await writeTask(locttDir, "bbb", t2);
+
+    const errors = await validateRelationships(locttDir, config);
+    expect(errors).toEqual([{
+      taskId: "aaa",
+      field: "relationships[0].rank",
+      message: `"parent" link from T-1 to T-2 has no rank, so its place in the list isn't stored. `
+        + `The relationship repair ranks it at the end of its group.`,
+    }]);
   });
 
   it("reports a relationship whose inverse is missing on the target (P-12)", async () => {

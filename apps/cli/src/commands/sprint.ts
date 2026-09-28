@@ -244,7 +244,9 @@ export async function run(args: string[], root: string): Promise<void> {
           return;
         }
         const unitDisplay = series.unitLabel ?? series.unit;
-        console.log(`Sprint:        ${series.sprintId}`);
+        // K148: the CLI prints names. The id stays in `--format json`.
+        const sprintName = cfg.sprints.find(s => s.id === series.sprintId)?.name ?? series.sprintId;
+        console.log(`Sprint:        ${sprintName}`);
         console.log(`Window:        ${series.start} .. ${series.end}`);
         console.log(`Unit:          ${unitDisplay}`);
         console.log(`Initial total: ${series.initialTotal}`);

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
 import { startMcpClient } from "../adapters/mcp-stdio.js";
-import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
+import { removeTaskOutOfBand, withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
 /**
  * The CLI/MCP relationship display distinguishes the four target states
@@ -62,7 +62,9 @@ describe("CLI/MCP relationship display mirrors the four target states", () => {
     // links exist first.
     await fieldCorrupt(root, "T-3");
     await objectFatal(root, "T-4");
-    await runCli(["delete", "T-5", "--yes"], { cwd: root });
+    // Out of band: `loctt delete` removes the other side of its links
+    // (K147), so it no longer leaves the dangling edge this case needs.
+    await removeTaskOutOfBand(root, "T-5");
   };
 
   it("loctt show T-1 marks corrupt-present, corrupt-unreadable and deleted apart", async () => {

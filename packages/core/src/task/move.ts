@@ -3,10 +3,8 @@ import { ulid } from "ulid";
 
 import { loadProjectsConfig } from "../config/projects.js";
 import {
-  addToKeyIndex,
-  loadKeyIndex,
   loadState,
-  saveKeyIndex,
+  recordTaskKeys,
   saveState,
   withStateLock,
 } from "../state/index.js";
@@ -83,12 +81,8 @@ async function reindexKey(
   oldKey: string,
   newKey: string,
 ): Promise<void> {
-  const index = await loadKeyIndex(locttDir);
-  if (!index) return;
   // The old key is kept: `key_history` makes it resolvable (P-7).
-  let next = addToKeyIndex(index, newKey, id);
-  next = addToKeyIndex(next, oldKey, id);
-  if (next !== index) await saveKeyIndex(locttDir, next);
+  await recordTaskKeys(locttDir, id, [newKey, oldKey]);
 }
 
 function performMove(args: {

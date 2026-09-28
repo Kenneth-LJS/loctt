@@ -1,0 +1,50 @@
+id: plan-an-epic
+name: Plan an epic
+description: >
+  Create an epic, give it three children by key, reorder them, then move
+  one child to another project. The links survive the move because they
+  are stored by id.
+tags: [scenario, create, links, move, b39]
+steps:
+  - name: create the epic
+    cli: create "Loyalty programme" --type feature --priority high --milestone GA
+    mcp:
+      call: { tool: create_task, args: { title: Loyalty programme, task_type: feature, priority: high, milestone: GA } }
+    capture:
+      epic: { new_task: { title: Loyalty programme } }
+    post:
+      - field: { task: "${var.epic.id}", field: milestone, equals: "${milestone.ga.id}" }
+  - name: add three children
+    cli:
+      - create "Points ledger" --parent ${var.epic.key}
+      - create "Reward catalogue" --parent ${var.epic.key}
+      - create "Member tiers" --parent ${var.epic.key}
+    mcp:
+      call:
+        - { tool: create_task, args: { title: Points ledger, parent: "${var.epic.key}" } }
+        - { tool: create_task, args: { title: Reward catalogue, parent: "${var.epic.key}" } }
+        - { tool: create_task, args: { title: Member tiers, parent: "${var.epic.key}" } }
+    capture:
+      ledger: { new_task: { title: Points ledger } }
+      rewards: { new_task: { title: Reward catalogue } }
+      tiers: { new_task: { title: Member tiers } }
+    post:
+      - relationship_order: { task: "${var.epic.key}", type: child, targets: ["${var.ledger.id}", "${var.rewards.id}", "${var.tiers.id}"] }
+      - relationship: { task: "${var.ledger.id}", type: parent, target: "${var.epic.id}" }
+      - relationship: { task: "${var.tiers.id}", type: parent, target: "${var.epic.id}" }
+  - name: put tiers first
+    cli: rerank ${var.epic.key} child ${var.tiers.key} --before ${var.ledger.key}
+    mcp:
+      call: { tool: reorder_relationship, args: { source: "${var.epic.key}", type: child, target: "${var.tiers.key}", before: "${var.ledger.key}" } }
+    post:
+      - relationship_order: { task: "${var.epic.key}", type: child, targets: ["${var.tiers.id}", "${var.ledger.id}", "${var.rewards.id}"] }
+  - name: move the catalogue to Mobile
+    cli: move ${var.rewards.key} Mobile
+    mcp:
+      call: { tool: move_task, args: { refs: ["${var.rewards.key}"], project: Mobile } }
+    post:
+      - field: { task: "${var.rewards.id}", field: key, equals: MOB-10 }
+      - field: { task: "${var.rewards.id}", field: key_history, equals: ["${var.rewards.key}"] }
+      - relationship: { task: "${var.epic.key}", type: child, target: "${var.rewards.id}" }
+      - relationship: { task: "${var.rewards.id}", type: parent, target: "${var.epic.id}" }
+      - relationship_order: { task: "${var.epic.key}", type: child, targets: ["${var.tiers.id}", "${var.ledger.id}", "${var.rewards.id}"] }

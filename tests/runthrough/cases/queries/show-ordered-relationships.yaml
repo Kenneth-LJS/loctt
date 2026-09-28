@@ -1,0 +1,19 @@
+id: show-ordered-relationships
+name: show and get_task list links in rank order
+description: >
+  B39: `loctt show` and MCP `get_task` list a task's relationships in
+  rank order. The seed reranked ${task.search_typo.key} under
+  ${task.epic_search.key}, so it comes first; every link carries a rank
+  since the 0.1.0 → 0.3.0 upgrade (K143), which kept that order.
+tags: [queries, links, b39]
+pre:
+  - relationship_order:
+      task: "${task.epic_search.key}"
+      type: child
+      targets: ["${task.search_typo.key}", "${task.search_index.key}", "${task.search_ui.key}"]
+cli: show ${task.epic_search.key}
+mcp:
+  call: { tool: get_task, args: { ref: "${task.epic_search.key}" } }
+post:
+  - output: { in_order: ["${task.search_typo.title}", "${task.search_index.title}", "${task.search_ui.title}"] }
+  - tracker_unchanged: true

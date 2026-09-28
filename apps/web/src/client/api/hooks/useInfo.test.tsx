@@ -29,7 +29,7 @@ beforeEach(() => {
       taskCount: 12,
       keyPrefix: "T-",
       nextKey: "T-13",
-      schemaStatus: { kind: "current", version: 3 },
+      schemaStatus: { kind: "current", version: "0.3.0" },
     }),
   );
 });

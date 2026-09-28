@@ -130,12 +130,13 @@ describe("GET /api/tasks?project=", () => {
     )).json() as { items: { title: string }[] };
     expect(byId.items.map(t => t.title)).toEqual(bySlug.items.map(t => t.title));
 
-    // An unknown value must still filter to nothing rather than
-    // becoming a pass-through that returns everything.
-    const unknown = await (await fetch(
-      `${base}/api/tasks?project=no-such-slug`,
-      { headers },
-    )).json() as { items: unknown[] };
-    expect(unknown.items).toHaveLength(0);
+    // An unknown value must not become a pass-through that returns
+    // everything. Under K148 a name (or slug) that matches no project is
+    // refused, naming it; this used to assert an empty list, which the
+    // ruling replaced ("a name matching nothing says so instead of
+    // returning nothing").
+    const unknown = await fetch(`${base}/api/tasks?project=no-such-slug`, { headers });
+    expect(unknown.status).toBe(400);
+    expect(await unknown.text()).toContain("No project named 'no-such-slug'");
   });
 });

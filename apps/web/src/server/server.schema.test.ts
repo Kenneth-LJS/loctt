@@ -28,11 +28,11 @@ describe("web server schema guard", () => {
   });
 
   it("returns 409 for /api/* when the schema is too new", async () => {
-    await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
+    await writeFile(join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf-8");
     const res = await fetch(`${base}/api/info`);
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toMatch(/newer version/i);
+    expect(body.error).toBe("This tracker needs loctt 9.9.9 or newer.");
   });
 
   it("returns 409 for /api/* when the schema is missing", async () => {
@@ -42,7 +42,7 @@ describe("web server schema guard", () => {
   });
 
   it("static asset paths are not gated by the schema guard", async () => {
-    await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
+    await writeFile(join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf-8");
     // Non-/api path with no clientDir set: server returns 404, not 409.
     const res = await fetch(`${base}/some/static/asset.css`);
     expect(res.status).toBe(404);

@@ -18,6 +18,7 @@ import {
 } from "../state/index.js";
 import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
+import { assertNameNotIdShaped, resolveEntityRefOrThrow } from "../utils/entity-ref.js";
 
 /**
  * Entity errors carry `validation_failed` and `not_saved`: every throw
@@ -64,18 +65,8 @@ export function resolveMilestoneIdFromInput(
   input: string,
   options: { includeArchived?: boolean } = {},
 ): string {
-  const byId = config.milestones.find(m => m.id === input
-    && (options.includeArchived === true || m.archived !== true));
-  if (byId) return byId.id;
-  const byName = resolveMilestoneByName(config, input, options);
-  if (byName.kind === "match") return byName.milestone.id;
-  if (byName.kind === "ambiguous") {
-    const ids = byName.matches.map(m => m.id).join(", ");
-    throw new MilestoneError(
-      `Milestone name '${input}' is ambiguous. Matches ${byName.matches.length} milestones (${ids}). Pass the id instead.`,
-    );
-  }
-  throw new MilestoneError(`Unknown milestone: ${input}`);
+  // K148: one resolver for every entity, IDs recognised by shape.
+  return resolveEntityRefOrThrow("milestone", config.milestones, input, options, m => new MilestoneError(m)).id;
 }
 
 export interface CreateMilestoneInput {
@@ -88,6 +79,7 @@ export async function createMilestone(
   locttDir: string,
   input: CreateMilestoneInput,
 ): Promise<MilestoneDef> {
+  assertNameNotIdShaped(input.name, m => new MilestoneError(m, { field: "name" }));
   return withStateLock(locttDir, async () => {
     const config = await loadMilestonesConfig(locttDir);
     const id = ulid();
@@ -110,6 +102,7 @@ export async function editMilestone(
   id: string,
   changes: { name?: string; target_date?: string | null; archived?: boolean },
 ): Promise<void> {
+  assertNameNotIdShaped(changes.name, m => new MilestoneError(m, { field: "name" }));
   await withStateLock(locttDir, async () => {
     const config = await loadMilestonesConfig(locttDir);
     const idx = config.milestones.findIndex(m => m.id === id);

@@ -33,6 +33,6 @@ Each also has a short quick start: [CLI](cli/quickstart.md),
   hand-editing, and `loctt doctor`.
 - [Data portability](common/data-portability.md) — reading and exporting
   your data.
-- [Upgrading & migrations](common/upgrading.md) — updating LocTT and
+- [Upgrading & format versions](common/upgrading.md) — updating LocTT and
   running schema migrations safely.
 - [Uninstall](common/uninstall.md) — removing LocTT and its data.

@@ -1,0 +1,15 @@
+id: create-parent-by-id
+name: Create a task under a parent given by id
+description: >
+  K141 (1a): CLI and MCP accept the parent as a key or an ID; every
+  surface stores the ID.
+tags: [create, b39]
+cli: create "Search analytics" --parent ${task.epic_search.id}
+mcp:
+  call: { tool: create_task, args: { title: Search analytics, parent: "${task.epic_search.id}" } }
+capture:
+  t: { new_task: { title: Search analytics } }
+post:
+  - relationship: { task: "${var.t.id}", type: parent, target: "${task.epic_search.id}" }
+  - relationship: { task: "${task.epic_search.key}", type: child, target: "${var.t.id}" }
+  - bilateral: "${var.t.id}"

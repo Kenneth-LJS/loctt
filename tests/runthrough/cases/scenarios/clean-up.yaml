@@ -1,0 +1,29 @@
+id: clean-up
+name: Clean up stale work
+description: >
+  Archive three stale tasks in one go, bring one back, then permanently
+  delete the other two.
+tags: [scenario, bulk, archive, delete]
+steps:
+  - name: archive three
+    cli: archive ${task.theme_tokens.key},${task.perf_budget.key},${task.mob_tablet.key}
+    mcp:
+      call: { tool: archive_task, args: { refs: ["${task.theme_tokens.key}", "${task.perf_budget.key}", "${task.mob_tablet.key}"] } }
+    post:
+      - count: { where: {}, archived: only, equals: 5 }
+  - name: bring one back
+    cli: unarchive ${task.perf_budget.key}
+    mcp:
+      call: { tool: unarchive_task, args: { refs: ["${task.perf_budget.key}"] } }
+    post:
+      - field: { task: "${task.perf_budget.key}", field: archived, absent: true }
+      - count: { where: {}, archived: only, equals: 4 }
+  - name: delete the rest
+    cli: delete ${task.theme_tokens.key},${task.mob_tablet.key} --yes
+    mcp:
+      call: { tool: delete_task, args: { refs: ["${task.theme_tokens.key}", "${task.mob_tablet.key}"], confirm: true } }
+    post:
+      - task_absent: "${task.theme_tokens.id}"
+      - task_absent: "${task.mob_tablet.id}"
+      - count: { where: {}, archived: only, equals: 2 }
+      - count: { where: {}, archived: include, equals: 38 }

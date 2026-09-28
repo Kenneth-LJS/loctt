@@ -452,13 +452,17 @@ describe("resolveUserRef", () => {
   });
 
   it("throws on ambiguous name", async () => {
-    await createUser(locttDir, { name: "Same" });
-    await createUser(locttDir, { name: "Same" });
-    await expect(resolveUserRef(locttDir, "Same")).rejects.toThrow(/multiple users/i);
+    const a = await createUser(locttDir, { name: "Same" });
+    const b = await createUser(locttDir, { name: "Same" });
+    // K148: refused, listing each match with its ID (order as loaded).
+    const err = await resolveUserRef(locttDir, "Same").catch((e: unknown) => e as Error);
+    expect((err as Error).message).toMatch(/^'Same' matches 2 users: .*\. Use the ID\.$/);
+    expect((err as Error).message).toContain(`Same (${a.id})`);
+    expect((err as Error).message).toContain(`Same (${b.id})`);
   });
 
   it("throws on unknown name", async () => {
-    await expect(resolveUserRef(locttDir, "NotHere")).rejects.toThrow("Unknown user: NotHere");
+    await expect(resolveUserRef(locttDir, "NotHere")).rejects.toThrow("No user named 'NotHere'.");
   });
 });
 

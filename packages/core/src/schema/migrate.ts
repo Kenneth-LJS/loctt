@@ -1,26 +1,70 @@
 import { rm } from "node:fs/promises";
 
+import { missingCoreFiles } from "../init/core-files.js";
 import { getSchemaMigrationInProgressPath } from "../paths/index.js";
 import { withStateLockForMigration } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
-import { withMigrationLock } from "./lock.js";
-import { findMigrationPath, type Migration } from "./migrations.js";
+import { isMigrationLocked, withMigrationLock } from "./lock.js";
+import { findMigrationPath, type Migration, readRecordedFormat, type RecordedFormat } from "./migrations.js";
 import {
   backupLocttDir,
+  compareFormatVersions,
   CURRENT_SCHEMA_VERSION,
-  readSchemaVersion,
-  SchemaTooNewError,
   SchemaUnmigratableError,
+  SchemaUpgradeRequiredError,
   SchemaVersionError,
   writeSchemaVersion,
 } from "./version.js";
 
+/**
+ * The refusal for a tracker with no `.schema-version`, with the remedy
+ * that actually helps. `loctt init --repair` writes the file only when a
+ * core file (config or state) is missing too: with those all present it
+ * refuses the tracker as already existing. So it is named only then, and
+ * otherwise the remedy is to write the file.
+ */
+async function missingVersionError(locttDir: string): Promise<SchemaUnmigratableError> {
+  const missingCore = await missingCoreFiles(locttDir).catch(() => []);
+  return new SchemaUnmigratableError(
+    `No .schema-version file found in ${locttDir}. This tracker has no recorded format version.`,
+    missingCore.length > 0
+      ? `Run 'loctt init --repair' to restore the missing files, .schema-version included. `
+        + `'loctt migrate' cannot help: there is no recorded version to migrate from.`
+      : `Create .schema-version holding the tracker's format version: 0.1.0 for a tracker made by `
+        + `loctt 0.2.x or earlier, or if you don't know it. Then run 'loctt migrate' to upgrade the tracker from there. `
+        + `'loctt migrate' cannot help: there is no recorded version to migrate from.`,
+  );
+}
+
+/** A path from `format` that `findMigrationPath` cannot find: this build has no upgrade for it. */
+function noUpgradePathError(recorded: string): SchemaUnmigratableError {
+  return new SchemaUnmigratableError(
+    `This build has no upgrade from format ${recorded} to ${CURRENT_SCHEMA_VERSION}.`,
+    `Upgrade the tracker with the loctt release that follows ${recorded}, then open it with this one.`,
+  );
+}
+
+/** Another process holds the migration lock: its upgrade is running now. */
+function upgradeRunningError(): SchemaUnmigratableError {
+  return new SchemaUnmigratableError(
+    `This tracker is being upgraded by another loctt process.`,
+    `Wait for the upgrade to finish, then try again.`,
+  );
+}
+
+/** Reads the recorded version and the known format it stands for; refuses a missing file. */
+async function requireRecordedFormat(locttDir: string): Promise<RecordedFormat> {
+  const rf = await readRecordedFormat(locttDir);
+  if (rf === null) throw await missingVersionError(locttDir);
+  return rf;
+}
+
 export interface MigrationResult {
-  /** Version the tracker was at before migration. */
-  readonly from: number;
-  /** Version the tracker is at after migration. */
-  readonly to: number;
+  /** Format version the tracker was at before migration. */
+  readonly from: string;
+  /** Format version the tracker is at after migration. */
+  readonly to: string;
   /** Path to the pre-migration backup. Always set when steps run. */
   readonly backupPath?: string;
   /** Migrations that were applied, in order. Empty if no work was needed. */
@@ -28,10 +72,10 @@ export interface MigrationResult {
 }
 
 export interface MigrationPlan {
-  /** Current recorded version. */
-  readonly from: number;
-  /** Target version (`CURRENT_SCHEMA_VERSION`). */
-  readonly to: number;
+  /** Current recorded format version. */
+  readonly from: string;
+  /** Target format version (`CURRENT_SCHEMA_VERSION`). */
+  readonly to: string;
   /** Migrations the framework would apply, in order. */
   readonly steps: readonly Migration[];
 }
@@ -51,6 +95,9 @@ export async function planMigration(locttDir: string): Promise<MigrationPlan> {
   // early on an empty plan, so without the check here the sentinel was
   // reachable but never consulted on the one path that matters.
   const sentinel = getSchemaMigrationInProgressPath(locttDir);
+  // Another process's upgrade holds the lock: its sentinel is live, and
+  // the plan would describe a tracker that is changing under it.
+  if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
   if (await fileExists(sentinel)) {
     throw new SchemaUnmigratableError(
       `A schema migration was interrupted mid-run and cannot be resumed. `
@@ -59,28 +106,13 @@ export async function planMigration(locttDir: string): Promise<MigrationPlan> {
       + `sentinel, then run 'loctt migrate' again.`,
     );
   }
-  const recorded = await readSchemaVersion(locttDir);
-  if (recorded === null) {
-    throw new SchemaUnmigratableError(
-      `No .schema-version file found in ${locttDir}. ` +
-      `This tracker predates schema versioning and must be re-initialized.`,
-      `Re-initialize the tracker with 'loctt init --repair'. 'loctt migrate' cannot help: `
-      + `there is no recorded version to migrate from.`,
-    );
-  }
-  if (recorded > CURRENT_SCHEMA_VERSION) {
-    throw new SchemaTooNewError(recorded, CURRENT_SCHEMA_VERSION);
-  }
-  if (recorded === CURRENT_SCHEMA_VERSION) {
-    return { from: recorded, to: recorded, steps: [] };
+  const { recorded, format } = await requireRecordedFormat(locttDir);
+  if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) === 0) {
+    return { from: recorded, to: CURRENT_SCHEMA_VERSION, steps: [] };
   }
 
-  const path = findMigrationPath(recorded, CURRENT_SCHEMA_VERSION);
-  if (path === null) {
-    throw new SchemaVersionError(
-      `No migration path found from schema v${recorded} to v${CURRENT_SCHEMA_VERSION}.`,
-    );
-  }
+  const path = findMigrationPath(format, CURRENT_SCHEMA_VERSION);
+  if (path === null) throw noUpgradePathError(recorded);
   return { from: recorded, to: CURRENT_SCHEMA_VERSION, steps: path };
 }
 
@@ -121,6 +153,8 @@ export async function migrateToCurrent(
   // backup named in the sentinel is the recovery.
   const sentinel = getSchemaMigrationInProgressPath(locttDir);
   if (await fileExists(sentinel)) {
+    // A live sentinel (its lock held) is another process's upgrade.
+    if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
     throw new SchemaUnmigratableError(
       `A schema migration was interrupted mid-run and cannot be resumed. `
       + `See ${sentinel} for the backup it recorded.`,
@@ -131,20 +165,12 @@ export async function migrateToCurrent(
   }
 
   // Pre-check before taking the lock so the no-op fast path is cheap.
-  const recorded = await readSchemaVersion(locttDir);
-  if (recorded === null) {
-    throw new SchemaUnmigratableError(
-      `No .schema-version file found in ${locttDir}. ` +
-      `This tracker predates schema versioning and must be re-initialized.`,
-      `Re-initialize the tracker with 'loctt init --repair'. 'loctt migrate' cannot help: `
-      + `there is no recorded version to migrate from.`,
-    );
-  }
-  if (recorded > CURRENT_SCHEMA_VERSION) {
-    throw new SchemaTooNewError(recorded, CURRENT_SCHEMA_VERSION);
-  }
-  if (recorded === CURRENT_SCHEMA_VERSION) {
-    return { from: recorded, to: recorded, steps: [] };
+  // The recorded version stands for the highest known format at or
+  // below it (K142); a version with no known format below it, or above
+  // this build's, is refused here.
+  const first = await requireRecordedFormat(locttDir);
+  if (first.recorded === CURRENT_SCHEMA_VERSION) {
+    return { from: first.recorded, to: first.recorded, steps: [] };
   }
 
   // Hand-off protocol to plug the migration TOCTOU:
@@ -165,33 +191,30 @@ export async function migrateToCurrent(
 
       // Re-read inside the lock in case another process migrated us
       // while we were waiting to acquire the lock.
-      const after = await readSchemaVersion(locttDir);
-      if (after === null) {
-        throw new SchemaVersionError(
-          `.schema-version disappeared while waiting for migration lock`,
-        );
-      }
-      if (after > CURRENT_SCHEMA_VERSION) {
-        throw new SchemaTooNewError(after, CURRENT_SCHEMA_VERSION);
-      }
+      const { recorded: after, format } = await requireRecordedFormat(locttDir);
       if (after === CURRENT_SCHEMA_VERSION) {
         return { from: after, to: after, steps: [] };
       }
-
-      const path = findMigrationPath(after, CURRENT_SCHEMA_VERSION);
-      if (path === null || path.length === 0) {
-        throw new SchemaVersionError(
-          `No migration path found from schema v${after} to v${CURRENT_SCHEMA_VERSION}.`,
-        );
+      if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) === 0) {
+        // A version that stands for the current format but is not
+        // written as it: stamp the canonical one. Nothing else changes,
+        // so no backup.
+        await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION);
+        return { from: after, to: CURRENT_SCHEMA_VERSION, steps: [] };
       }
+
+      const path = findMigrationPath(format, CURRENT_SCHEMA_VERSION);
+      if (path === null || path.length === 0) throw noUpgradePathError(after);
 
       const backupPath = await backupLocttDir(locttDir, after);
       const applied: Migration[] = [];
-      let current = after;
+      // Steps run from the known format; the last one's stamp rewrites
+      // the file to the canonical version (0.2.1 becomes 0.3.0).
+      let current = format;
       const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
 
       for (const migration of path) {
-        if (migration.from !== current) {
+        if (compareFormatVersions(migration.from, current) !== 0) {
           // Unreachable through `findMigrationPath`, which BFS-walks
           // the edge graph and can only return steps that already
           // chain. Kept anyway, and deliberately: it costs one
@@ -205,8 +228,8 @@ export async function migrateToCurrent(
           // would remove the guard exactly when someone edits the
           // table by hand — the case it exists for.
           throw new SchemaVersionError(
-            `migration ordering invariant violated: at v${current}, ` +
-            `next migration starts at v${migration.from}`,
+            `migration ordering invariant violated: at ${current}, ` +
+            `next migration starts at ${migration.from}`,
           );
         }
         // Drop a sentinel before applying so a mid-step crash leaves a
@@ -238,16 +261,21 @@ export async function migrateToCurrent(
 }
 
 /**
- * Boot guard. Throws if the tracker's recorded schema version is
- * not exactly `CURRENT_SCHEMA_VERSION`. Use this at the top of
- * CLI/MCP/HTTP entry points to refuse all operations against a
- * tracker that needs migration.
+ * Boot guard. Every CLI command, MCP tool and web API route that opens
+ * a tracker calls this first, and refuses to run unless the tracker is
+ * at `CURRENT_SCHEMA_VERSION`. It never writes.
+ *
+ * Upgrades are intentional (K154): an older tracker is refused with
+ * "This tracker needs upgrading from X to Y. Run `loctt migrate` (a
+ * backup is made first)." whether or not its steps are risky, and is
+ * upgraded only by `loctt migrate`, MCP `migrate_schema` or the web
+ * Upgrade button (all `migrateToCurrent`).
  *
  * Errors:
- *  - Missing `.schema-version` → `SchemaVersionError` (tracker
- *    predates versioning; must be re-initialized).
- *  - Older than current → `SchemaVersionError` with guidance to
- *    run `loctt migrate`.
+ *  - Missing, empty or unreadable `.schema-version`, a version below
+ *    every format, or an interrupted migration →
+ *    `SchemaUnmigratableError` with the remedy that helps.
+ *  - Older than current → `SchemaUpgradeRequiredError`.
  *  - Newer than current → `SchemaTooNewError`.
  */
 export async function requireSupportedSchema(locttDir: string): Promise<void> {
@@ -256,6 +284,10 @@ export async function requireSupportedSchema(locttDir: string): Promise<void> {
   // (typically by restoring from the backup recorded in the sentinel).
   const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
   if (await fileExists(sentinelPath)) {
+    // A sentinel whose migration lock is held is another process's live
+    // upgrade (`loctt migrate`, `migrate_schema`, the web button), not a
+    // crash: say so instead of sending the user to restore a backup.
+    if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
     throw new SchemaUnmigratableError(
       `A schema migration was interrupted mid-run. ` +
       `See ${sentinelPath} for the recovery instructions and ` +
@@ -263,22 +295,11 @@ export async function requireSupportedSchema(locttDir: string): Promise<void> {
       `Restore from the backup named in ${sentinelPath}, then remove the sentinel.`,
     );
   }
-  const recorded = await readSchemaVersion(locttDir);
-  if (recorded === null) {
-    throw new SchemaUnmigratableError(
-      `No .schema-version file found in ${locttDir}. ` +
-      `This tracker predates schema versioning and must be re-initialized.`,
-      `Re-initialize the tracker with 'loctt init --repair'. 'loctt migrate' cannot help: `
-      + `there is no recorded version to migrate from.`,
-    );
-  }
-  if (recorded > CURRENT_SCHEMA_VERSION) {
-    throw new SchemaTooNewError(recorded, CURRENT_SCHEMA_VERSION);
-  }
-  if (recorded < CURRENT_SCHEMA_VERSION) {
-    throw new SchemaVersionError(
-      `Tracker schema is v${recorded}; expected v${CURRENT_SCHEMA_VERSION}. ` +
-      `Run \`loctt migrate\` to upgrade.`,
-    );
+  const { recorded, format } = await requireRecordedFormat(locttDir);
+  if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) < 0) {
+    // Between the lock and the first step's sentinel an upgrade is
+    // already under way; the version still reads old until it finishes.
+    if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
+    throw new SchemaUpgradeRequiredError(recorded, CURRENT_SCHEMA_VERSION);
   }
 }

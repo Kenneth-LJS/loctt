@@ -239,7 +239,7 @@ describe("web backup/restore surface (F3/K30)", () => {
     // header must parse (so restore starts), then the traversing config
     // path trips assertContainedPath -> RestoreRefusedError.
     const header = JSON.stringify({
-      kind: "loctt-backup", format: 1, schema_version: 1,
+      kind: "loctt-backup", format: 1, schema_version: "0.3.0",
       created_at: new Date().toISOString(), backup_id: "01",
       includes_history: true, excluded: [], part: 1, parts: 1,
     });

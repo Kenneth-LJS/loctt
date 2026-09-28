@@ -117,7 +117,9 @@ export async function run(args: string[], root: string): Promise<void> {
         const cfg = await loadProjectsConfig(locttDir);
         const id = resolveProjectIdFromInput(cfg, ref);
         await editProject(locttDir, id, { name });
-        console.log(`Updated project ${id} (now "${name}")`);
+        // K148: the CLI prints names.
+        const before = cfg.projects.find(p => p.id === id)?.name ?? ref;
+        console.log(`Updated project "${before}" (now "${name}")`);
       });
       break;
     }

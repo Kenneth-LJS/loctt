@@ -1,0 +1,9 @@
+id: label-create
+name: Create a label
+description: The label is stored with its colour.
+tags: [labels]
+cli: label create security --color "#7A1F5C"
+mcp:
+  call: { tool: create_label, args: { name: security, color: "#7A1F5C" } }
+post:
+  - entity: { kind: label, name: security, fields: { color: "#7A1F5C" } }

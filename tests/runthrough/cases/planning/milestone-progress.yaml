@@ -1,0 +1,16 @@
+id: milestone-progress
+name: Finishing a task moves milestone progress
+description: A milestone's progress counts its done tasks against its total.
+tags: [planning, milestones]
+cli:
+  - set ${task.public_docs.key} status done
+  - milestone list --progress
+mcp:
+  call:
+    - { tool: update_task, args: { ref: "${task.public_docs.key}", field: status, value: done } }
+    - { tool: list_milestones, args: { progress: true } }
+post:
+  - field: { task: "${task.public_docs.key}", field: status, equals: done }
+  - count: { where: { milestone: "${milestone.ga.id}", status: done }, equals: 1 }
+  - output: { surface: cli, contains: ["GA  due 2027-01-18  1/6"] }
+  - output: { surface: mcp, contains: ["\"done\": 1"] }

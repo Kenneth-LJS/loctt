@@ -16,7 +16,7 @@
  * this tracker answers 409 by design.
  */
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,7 +75,7 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
   await cli(["init"]);
   // Claim a schema far newer than this build supports, so every `/api/`
   // route refuses with a 409 carrying `schema_status`.
-  await writeFile(path.join(root, ".loctt", ".schema-version"), "9\n", "utf8");
+  await writeFile(path.join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf8");
 
   const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
     cwd: root,
@@ -97,8 +97,9 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
     // 1. The banner is reachable at all, and names both versions.
     const banner = page.locator('[data-kind="future"]');
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText("9");
-    await expect(banner).toContainText("1");
+    // K142: the release to install, and the format this build reads.
+    await expect(banner).toContainText("needs loctt 9.9.9 or newer");
+    await expect(banner).toContainText("0.3.0");
 
     // 2. It is inside the shell, not instead of it.
     await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
@@ -194,7 +195,7 @@ test("A11Y-32: the schema banner is a page-level alert, read before the main con
   };
 
   await cli(["init"]);
-  await writeFile(path.join(root, ".loctt", ".schema-version"), "9\n", "utf8");
+  await writeFile(path.join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf8");
 
   const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
     cwd: root,
@@ -231,8 +232,8 @@ test("A11Y-32: the schema banner is a page-level alert, read before the main con
     // command is real text, not an image". `innerText` is what a
     // reader traverses; an <img> would contribute nothing to it.
     const text = await banner.innerText();
-    expect(text).toContain("9");
-    expect(text).toContain("1");
+    expect(text).toContain("9.9.9");
+    expect(text).toContain("0.3.0");
     await expect(banner.locator("img")).toHaveCount(0);
 
     // Fourth bullet: the four kinds read as four different messages.
@@ -243,6 +244,93 @@ test("A11Y-32: the schema banner is a page-level alert, read before the main con
     // bullet is about, at the granularity this harness can reach.
     expect(text).toMatch(/update LocTT/i);
     expect(text).not.toMatch(/loctt migrate/i);
+  } finally {
+    child.kill("SIGTERM");
+    await Promise.race([
+      child.catch(() => undefined),
+      new Promise(r => setTimeout(r, 2_000)),
+    ]);
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+/**
+ * @verifies ONB-C17
+ *
+ * K154 (rewritten: this asserted K143's automatic upgrade on the first
+ * request and a dismissable notice, the superseded rule). A 0.1.0
+ * tracker opened in the web gets the Upgrade screen and nothing else:
+ * every route refuses it, so there is no shell to browse. Clicking
+ * Upgrade backs up, upgrades and reloads into the app, and the links
+ * list in the order 0.1.0 showed them. Starts from the frozen 0.1.0
+ * seed, whose WEB-9 lists its reranked child (WEB-12) first.
+ */
+test("ONB-C17: a 0.1.0 tracker shows only the Upgrade screen until the user upgrades it", async ({ page }) => {
+  const root = await mkdtemp(path.join(workspaceRoot, "loctt-schema-upgrade-"));
+  const port = await freePort();
+  const baseURL = `http://127.0.0.1:${String(port)}`;
+  const frozen = path.join(repoRoot, "tests/fixtures/trackers/seed-0.1.0");
+  const index = JSON.parse(await readFile(path.join(frozen, "seed-index.json"), "utf8")) as {
+    current_user: string;
+    task: Record<string, { id: string; key: string }>;
+  };
+  await cp(path.join(frozen, ".loctt"), path.join(root, ".loctt"), { recursive: true });
+  await writeFile(path.join(root, ".loctt", ".current-user"), `${index.current_user}\n`, "utf8");
+  const id = (name: string): string => index.task[name]?.id ?? "";
+
+  const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
+    cwd: root,
+    reject: false,
+  });
+
+  try {
+    await waitForSchemaGuard(baseURL, 15_000);
+    await page.goto(`${baseURL}/tasks/WEB-9`);
+
+    // Only the Upgrade screen: no sidebar, no main pane, no task.
+    const upgrade = page.getByTestId("upgrade-required");
+    await expect(upgrade).toBeVisible();
+    await expect(upgrade).toHaveRole("alert");
+    await expect(upgrade).toContainText("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+    await expect(upgrade).toContainText("A backup is made first.");
+    await expect(page.getByRole("main")).toHaveCount(0);
+    await expect(page.getByLabel("Toggle sidebar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Upgrade" })).toBeFocused();
+    const box = await page.getByRole("button", { name: "Upgrade" }).boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(24);
+
+    // The steps, collapsed until asked for.
+    const steps = page.getByTestId("upgrade-required-steps");
+    await expect(steps).toContainText("What changes (1 step)");
+    await steps.locator("summary").click();
+    await expect(steps).toContainText("Save the order of every task's links");
+    // A screenshot once showed this caret still pointing right while the
+    // disclosure was open. `Disclosure`'s `className` prop is additive
+    // (`cn("loctt-disclosure", className)`), so UpgradeRequired's own
+    // `[&>summary]:min-h-6` override cannot drop the marker-kill hook the
+    // `[open]` rotation selector keys off — checked here against the
+    // real compiled stylesheet, which jsdom never loads.
+    await expect(steps.locator(".loctt-disclosure-caret")).toHaveCSS(
+      "transform",
+      "matrix(0, 1, -1, 0, 0, 0)",
+    );
+    // Nothing was written by opening the app.
+    expect((await readFile(path.join(root, ".loctt", ".schema-version"), "utf8")).trim()).toBe("0.1.0");
+
+    await page.getByRole("button", { name: "Upgrade" }).click();
+
+    // Reloaded into the app, on the task that was asked for.
+    await expect(page.getByTestId("relationships-panel")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("upgrade-required")).toHaveCount(0);
+    await expect(page.getByLabel("New task")).toBeEnabled();
+    expect((await readFile(path.join(root, ".loctt", ".schema-version"), "utf8")).trim()).toBe("0.3.0");
+    expect((await readdir(root)).filter(n => n.startsWith(".loctt.backup-v0.1.0-"))).toHaveLength(1);
+
+    // The children list as 0.1.0 showed them: the reranked one first.
+    const children = await page
+      .locator('[data-group="child"] [data-testid="tree-node"][data-depth="0"]')
+      .evaluateAll(els => els.map(e => (e as HTMLElement).dataset["target"]));
+    expect(children).toEqual([id("search_typo"), id("search_index"), id("search_ui")]);
   } finally {
     child.kill("SIGTERM");
     await Promise.race([

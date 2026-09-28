@@ -22,6 +22,35 @@ export interface HistoryDisplayContext {
   readonly workflow?: WorkflowConfig;
   /** user id → display name. */
   readonly users?: ReadonlyMap<string, string>;
+  /**
+   * K148: entity id → name for the other references a task holds, so
+   * the log prints names as `show` does. A missing entry (a deleted
+   * entity, or a config that did not load) prints the stored id.
+   */
+  readonly labels?: ReadonlyMap<string, string>;
+  readonly milestones?: ReadonlyMap<string, string>;
+  readonly sprints?: ReadonlyMap<string, string>;
+  readonly projects?: ReadonlyMap<string, string>;
+}
+
+/** Which name map resolves a field holding an entity id. */
+function entityNames(field: string, ctx: HistoryDisplayContext): ReadonlyMap<string, string> | undefined {
+  switch (field) {
+    case "assignee":
+    case "reporter": return ctx.users;
+    case "milestone": return ctx.milestones;
+    case "sprint": return ctx.sprints;
+    case "project": return ctx.projects;
+    case "labels": return ctx.labels;
+    default: return undefined;
+  }
+}
+
+/** A stored entity id (or list of them) as names, the id where unknown. */
+function nameEntityValue(raw: unknown, names: ReadonlyMap<string, string>): unknown {
+  if (typeof raw === "string") return names.get(raw) ?? raw;
+  if (Array.isArray(raw)) return (raw as unknown[]).map(v => (typeof v === "string" ? names.get(v) ?? v : v));
+  return raw;
 }
 
 /**
@@ -69,6 +98,8 @@ function formatFieldValue(
   raw: unknown,
   ctx: HistoryDisplayContext,
 ): string {
+  const names = entityNames(field, ctx);
+  if (names !== undefined) return formatValue(nameEntityValue(raw, names));
   return labelForEnum(field, raw, ctx) ?? formatValue(raw);
 }
 
@@ -132,6 +163,10 @@ function formatOriginalAuthor(entry: HistoryEntry): string {
   return ` (author: ${author})`;
 }
 
+function labelName(raw: unknown, ctx: HistoryDisplayContext): string {
+  return typeof raw === "string" ? ctx.labels?.get(raw) ?? raw : String(raw);
+}
+
 export function formatHistoryEntry(
   entry: HistoryEntry,
   ctx: HistoryDisplayContext = {},
@@ -156,9 +191,9 @@ function formatHistoryBody(entry: HistoryEntry, ctx: HistoryDisplayContext): str
       return `${ts}  ${customFieldLabel(field, ctx)}: ${formatValue(entry.before)} → ${formatValue(entry.after)}`;
     }
     case "label_added":
-      return `${ts}  label added: ${String(entry.after)}`;
+      return `${ts}  label added: ${labelName(entry.after, ctx)}`;
     case "label_removed":
-      return `${ts}  label removed: ${String(entry.before)}`;
+      return `${ts}  label removed: ${labelName(entry.before, ctx)}`;
     case "archived":
       return `${ts}  archived`;
     case "unarchived":

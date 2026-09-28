@@ -1,3 +1,4 @@
+import { lookupTask, resolveLocttDir } from "@loctt/core";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
@@ -68,21 +69,34 @@ describe("create accepts the same initial fields on CLI and MCP", () => {
     });
   });
 
-  it("pre-links a parent under the tree axis on the CLI (--parent)", async () => {
+  // K140: these two tests used to assert `show` printed /parent → T-1/.
+  // That regex also matched the bug's output, `parent → T-1… (deleted)`
+  // (the child stored the key "T-1" and the parent had no child edge),
+  // so both stayed green while the feature was broken. They now check
+  // what is stored on both tasks.
+  const expectLinkedBothWays = async (root: string, childKey: string, parentKey: string): Promise<void> => {
+    const locttDir = resolveLocttDir(root);
+    const child = await lookupTask(locttDir, childKey);
+    const parent = await lookupTask(locttDir, parentKey);
+    // K143: both sides ranked, the first of their group.
+    expect(child.frontmatter.relationships).toEqual([{ type: "parent", target: parent.frontmatter.id, rank: "u" }]);
+    expect(parent.frontmatter.relationships).toEqual([{ type: "child", target: child.frontmatter.id, rank: "u" }]);
+  };
+
+  it("links a parent under the tree axis on the CLI (--parent)", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "the parent"], { cwd: root });
       const res = await runCli(["create", "the child", "--parent", "T-1"], { cwd: root });
       expect(res.exitCode, `${res.stdout}${res.stderr}`).toBe(0);
+      await expectLinkedBothWays(root, "T-2", "T-1");
 
-      // The default tree axis is `parent`, so the child carries a
-      // `parent → T-1` edge — created by the create, not a follow-up link.
       const show = await runCli(["show", "T-2"], { cwd: root });
-      expect(show.stdout).toContain("Relationships:");
-      expect(show.stdout).toMatch(/parent → T-1/);
+      expect(show.stdout).toMatch(/ {2}parent → T-1 {2}the parent/);
+      expect(show.stdout).not.toMatch(/deleted/);
     });
   });
 
-  it("pre-links a parent under the tree axis on MCP (parent)", async () => {
+  it("links a parent under the tree axis on MCP (parent)", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "the parent"], { cwd: root });
       const client = await startMcpClient(root);
@@ -95,8 +109,7 @@ describe("create accepts the same initial fields on CLI and MCP", () => {
       } finally {
         await client.close();
       }
-      const show = await runCli(["show", "T-2"], { cwd: root });
-      expect(show.stdout).toMatch(/parent → T-1/);
+      await expectLinkedBothWays(root, "T-2", "T-1");
     });
   });
 

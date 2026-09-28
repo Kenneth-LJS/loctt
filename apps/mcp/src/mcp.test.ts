@@ -84,10 +84,97 @@ describe("MCP executeTool", () => {
 
   it("returns a schema-guard error for tools other than init when schema is newer", async () => {
     const { writeFile } = await import("node:fs/promises");
-    await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
+    await writeFile(join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf-8");
     const result = await executeTool(root, "list_tasks", {});
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/newer version/i);
+    expect(result.content[0]?.text).toBe("Error: This tracker needs loctt 9.9.9 or newer.");
+  });
+
+  // @verifies ONB-C13, ONB-C20, ONB-C22
+  // K154 (rewritten: this asserted K143's automatic upgrade on the first
+  // tool call, the superseded rule). An older tracker is refused by every
+  // guarded tool with the upgrade message, and nothing is written.
+  describe("on a 0.1.0 tracker (K154)", () => {
+    const REFUSAL =
+      "Error: This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).";
+
+    /** Every file under the temp root, path → content: "nothing changed". */
+    async function fingerprint(): Promise<Map<string, string>> {
+      const { readdir, readFile } = await import("node:fs/promises");
+      const out = new Map<string, string>();
+      const walk = async (d: string): Promise<void> => {
+        for (const e of await readdir(d, { withFileTypes: true })) {
+          const p = join(d, e.name);
+          if (e.isDirectory()) await walk(p);
+          else out.set(p.slice(root.length), await readFile(p, "utf-8"));
+        }
+      };
+      await walk(root);
+      return out;
+    }
+
+    beforeEach(async () => {
+      await writeFile(join(root, ".loctt", ".schema-version"), "0.1.0\n", "utf-8");
+    });
+
+    it("every guarded tool returns the upgrade message and writes nothing", async () => {
+      const before = await fingerprint();
+      const guarded = getTools().filter(t => !["init", "migrate_schema", "info", "doctor"].includes(t.name));
+      expect(guarded.length).toBeGreaterThan(90);
+      for (const tool of guarded) {
+        const result = await executeTool(root, tool.name, {});
+        expect(result.isError, tool.name).toBe(true);
+        expect(result.content.map(c => c.text), tool.name).toEqual([REFUSAL]);
+      }
+      expect(await fingerprint()).toEqual(before);
+    });
+
+    it("info and doctor report the upgrade and write nothing, every repair included", async () => {
+      const before = await fingerprint();
+      const info = await executeTool(root, "info", {});
+      expect(info.isError).toBeUndefined();
+      expect(info.content[0]?.text).toContain(
+        "Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)",
+      );
+      const doctor = await executeTool(root, "doctor", {
+        fix: true, rebuild_index: true, repair_relationships: true, restore_missing: true,
+      });
+      const report = JSON.parse(doctor.content[0]?.text ?? "{}") as {
+        healthy: boolean; checks: { name: string; status: string; message: string }[];
+      };
+      expect(report.healthy).toBe(false);
+      const byName = new Map(report.checks.map(c => [c.name, c.message]));
+      expect(byName.get("schema version")).toBe(
+        "needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a backup is made first)",
+      );
+      expect(byName.get("repairs")).toMatch(/^skipped\. This tracker needs upgrading first\./);
+      expect(byName.get("restore missing files")).toMatch(/^skipped\. This tracker needs upgrading first\./);
+      expect(await fingerprint()).toEqual(before);
+    });
+
+    it("migrate_schema previews without writing, then upgrades on confirm", async () => {
+      const before = await fingerprint();
+      const plan = await executeTool(root, "migrate_schema", {});
+      const text = plan.content[0]?.text ?? "";
+      expect(text).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0 (1 step(s)).");
+      expect(text).toContain("Each task's links keep the order they are shown in today");
+      expect(text).toContain(`${join(root, ".loctt")}.backup-v0.1.0-<date and time>`);
+      expect(await fingerprint()).toEqual(before);
+      const done = await executeTool(root, "migrate_schema", { confirm: true });
+      expect(done.content[0]?.text).toMatch(/^Upgraded this tracker from 0\.1\.0 to 0\.3\.0\.\nBackup: /);
+      const after = await executeTool(root, "list_tasks", {});
+      expect(after.isError).toBeUndefined();
+    });
+  });
+
+  // @verifies ONB-C22
+  it("tells agents to ask the user before upgrading, in the tool and the server instructions", async () => {
+    const { MCP_INSTRUCTIONS } = await import("./index.js");
+    const rule = "Don't call migrate_schema unless the user asked you to upgrade the tracker. "
+      + "Tell the user it needs upgrading and ask.";
+    const migrate = getTools().find(t => t.name === "migrate_schema");
+    expect(migrate?.description).toContain(rule);
+    expect(MCP_INSTRUCTIONS.replace("If a tool says the tracker needs upgrading, don't", "Don't")).toContain(rule);
   });
 
   it("init bypasses the schema guard so a fresh tracker can be created", async () => {
@@ -216,11 +303,10 @@ describe("MCP executeTool", () => {
       await executeTool(root, "create_task", { title: "x" });
       const result = await executeTool(root, "update_task", { ref: "T-1", value: "x" });
       expect(result.isError).toBe(true);
-      // Caught at the outer parseToolArgs layer now (chunk 8); the
-      // message names the field path and the expected type rather
-      // than the older inner-validator wording.
-      expect(result.content[0]?.text ?? "").toMatch(/field/);
-      expect(result.content[0]?.text ?? "").toMatch(/expected string/i);
+      // `field` became optional with K150 (`add`/`remove` may stand
+      // alone), so the refusal now comes from the handler, naming both
+      // ways to call the tool, rather than from the schema layer.
+      expect(result.content[0]?.text ?? "").toMatch(/Pass `field` and `value`/);
     });
 
     it("accepts a valid labels array", async () => {
@@ -506,7 +592,9 @@ describe("MCP executeTool", () => {
     it("returns the series for a known sprint", async () => {
       const { resolveLocttDir, saveSprintsConfig } = await import("@loctt/core");
       const locttDir = resolveLocttDir(root);
-      const sprintId = "01HXSPRINT0000000000000001";
+      // ID-shaped (K148): with no exact-ID fallback for other shapes
+      // (K149), a fake id containing I would be read as a sprint name.
+      const sprintId = "01HXSPRNT00000000000000001";
       await saveSprintsConfig(locttDir, {
         sprints: [{
           id: sprintId,
@@ -530,7 +618,8 @@ describe("MCP executeTool", () => {
     it("returns a clean error for an unknown sprint", async () => {
       const result = await executeTool(root, "get_sprint_burndown", { sprint: "01HXNOSUCH" });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? "").toBe("Error: Unknown sprint: 01HXNOSUCH");
+      // K148 wording: not ID-shaped, so a name that matches nothing.
+      expect(result.content[0]?.text ?? "").toBe("Error: No sprint named '01HXNOSUCH'.");
     });
   });
 

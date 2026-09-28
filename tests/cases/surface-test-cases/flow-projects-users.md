@@ -143,7 +143,8 @@ of the documented project-resolution chain has no writer.
   `.loctt/users/<current>/settings.yaml`, and a subsequent `create_task`
   with no `project` lands in that project.
 - A schema-contract test (extending
-  `tests/e2e/11-mcp-schema-contract.test.ts`) asserts every tool named in
+  `tests/integration/mcp/tool-contract.test.ts`, moved there from
+  `tests/e2e/` by B43) asserts every tool named in
   the reference is registered — preventing the two from diverging again.
 
 **Given** the reference documents the tool, **when** an agent enumerates
@@ -256,3 +257,33 @@ The MCP half of PRU-C13.
 `cycle-theme` off, **then** it reads back inactive and every other
 shortcut stays active.
 
+
+### PRU-C15 · blocker · P1 P4 P10 · CLI MCP UI
+**Names and IDs are told apart by shape, everywhere.** (K148)
+
+- Wherever a surface takes a label, user, milestone, sprint or project,
+  a value matching `^[0-7][0-9A-HJKMNP-TV-Z]{25}$` is an ID and matches
+  only by ID; anything else is a name (a project's slug counts as one; a
+  user may also be named by a unique prefix).
+- A name several entities share is refused, listing each match with its
+  ID. A name matching nothing is refused with `No <entity> named '<x>'.`
+- Creating or renaming a label, user, milestone, sprint, project or
+  saved view with an ID-shaped name is refused with `That looks like an
+  ID; choose a different name.`, and nothing is written.
+
+**Given** two labels named "urgent", **when** `loctt set WEB-20 labels
+urgent` runs, **then** it is refused, listing both labels' IDs.
+
+### PRU-C16 · major · P4 P10 · CLI MCP
+**The CLI prints names; MCP returns names beside IDs.** (K148)
+
+- `loctt show`, `loctt log` and `loctt sprint burndown` name users,
+  labels, milestones, sprints and projects; an entity that can't be
+  named prints as stored.
+- MCP `get_task` adds `*_name` siblings (`assignee_name`,
+  `label_names`, …), `get_task_history` adds `actor_name` and
+  `before_name`/`after_name`, and the entity tools' results name the
+  entity beside its ID. Every existing field keeps its shape.
+
+**Given** a task assigned to Bea, **when** MCP `get_task` reads it,
+**then** it returns `assignee` (the ID) and `assignee_name: "Bea"`.

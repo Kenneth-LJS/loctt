@@ -72,6 +72,7 @@ export function MetaPanel({
   identityUnknown,
   onSet,
   onUnset,
+  onCreateValue,
   onCreateLabel,
   searchLabels,
   searchMilestones,
@@ -120,6 +121,11 @@ export function MetaPanel({
   readonly identityUnknown?: boolean | undefined;
   readonly onSet: (field: string, value: unknown) => void;
   readonly onUnset: (field: string) => void;
+  /**
+   * K150: set a value an open choice field does not list yet; the server
+   * creates it. Omitted, no create row is offered.
+   */
+  readonly onCreateValue?: ((field: string, value: unknown) => void) | undefined;
   readonly onCreateLabel: (name: string) => Promise<string | undefined>;
   /** K90: server-side label search for the picker (see LabelsField). */
   readonly searchLabels: (q: string) => Promise<readonly LabelDef[]>;
@@ -481,6 +487,7 @@ export function MetaPanel({
           values: fm.fields ?? {},
           onSet,
           onUnset,
+          ...(onCreateValue !== undefined ? { onCreate: onCreateValue } : {}),
           colorMode,
         }).map(row => (
           <Row

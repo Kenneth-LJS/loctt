@@ -10,7 +10,7 @@ npx playwright test --config tests/ui/playwright.config.ts -g LST-2
 ```
 
 `npm run test:ui` rebuilds first. Do not run it alongside
-`test:integration`, `test:e2e` or `test:perf` — see the race described in
+`test:integration`, `test:runthrough` or `test:perf` — see the race described in
 [../README.md](../README.md#how-to-run).
 
 ## The specs run against a real tracker

@@ -1,0 +1,12 @@
+id: list-by-label-name
+name: Query a label by its name
+description: >
+  K148: storage holds label IDs, and a query may name a label instead:
+  `labels = urgent` matches the tasks labelled "urgent". Before K148 the
+  query compared the name with the stored IDs and returned nothing.
+tags: [queries, labels, k148]
+cli: list --query "labels = urgent"
+mcp:
+  call: { tool: list_tasks, args: { query: labels = urgent } }
+post:
+  - output: { keys: ["${task.login_crash.key}", "${task.mob_ios_crash.key}", "${task.ops_certs.key}"] }

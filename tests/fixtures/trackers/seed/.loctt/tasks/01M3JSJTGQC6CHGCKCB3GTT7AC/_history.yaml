@@ -1,0 +1,29 @@
+- timestamp: 2026-09-28T01:20:31.768Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJTGQC6CHGCKCB3GTT7AC
+      key: MOB-2
+      project: 01M3JSJ6ZTZ3MMREPGX5GRGCS2
+      title: Sync queue
+      created_at: 2026-09-28T01:20:31.768Z
+      updated_at: 2026-09-28T01:20:31.768Z
+      status: backlog
+      task_type: story
+      priority: high
+      assignee: 01M3JSJ6CXR6KBVE6HJQ1BDAN5
+      estimate: "8"
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:46.215Z
+  kind: link_added
+  meta:
+    type: parent
+    target: 01M3JSJSTFFH6XW1HHTBCR1XRG
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:46.872Z
+  kind: link_added
+  meta:
+    type: child
+    target: 01M3JSJTV94HEZW0V7H9EZ1HVD
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

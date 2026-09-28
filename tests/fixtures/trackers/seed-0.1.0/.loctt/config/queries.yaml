@@ -1,0 +1,43 @@
+queries:
+  - id: 01M3JSJ5RT26R3NG7G9TXP3F56
+    name: recent-open
+    filters:
+      - kind: simple
+        field: status
+        op: "!="
+        values:
+          - done
+    sort:
+      - field: updated_at
+        direction: desc
+  - id: 01M3JSKF7FX68V26D9GDQ768F9
+    name: Open bugs
+    filters:
+      - kind: simple
+        field: task_type
+        op: =
+        values:
+          - bug
+      - kind: simple
+        field: status
+        op: "!="
+        values:
+          - done
+    sort:
+      - field: priority
+        direction: desc
+  - id: 01M3JSKFGY2KVS3DFF1TVEKWWY
+    name: Hot list
+    filters:
+      - kind: simple
+        field: priority
+        op: =
+        values:
+          - critical
+          - high
+      - kind: simple
+        field: status
+        op: =
+        values:
+          - backlog
+          - in_progress

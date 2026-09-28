@@ -73,27 +73,24 @@ describe("getTrackerInfo", () => {
 
   it("reports schema status: outdated when on-disk < current", async () => {
     await initLoctt(root);
-    // Force an older on-disk version (only meaningful when CURRENT > 1).
-    if (CURRENT_SCHEMA_VERSION > 1) {
-      const locttDir = `${root}/.loctt`;
-      await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION - 1);
-      const info = await getTrackerInfo(root);
-      expect(info.schemaStatus.kind).toBe("outdated");
-      if (info.schemaStatus.kind === "outdated") {
-        expect(info.schemaStatus.on_disk).toBe(CURRENT_SCHEMA_VERSION - 1);
-        expect(info.schemaStatus.current).toBe(CURRENT_SCHEMA_VERSION);
-      }
+    const locttDir = `${root}/.loctt`;
+    await writeSchemaVersion(locttDir, "0.1.0");
+    const info = await getTrackerInfo(root);
+    expect(info.schemaStatus.kind).toBe("outdated");
+    if (info.schemaStatus.kind === "outdated") {
+      expect(info.schemaStatus.on_disk).toBe("0.1.0");
+      expect(info.schemaStatus.current).toBe(CURRENT_SCHEMA_VERSION);
     }
   });
 
   it("reports schema status: future when on-disk > current", async () => {
     await initLoctt(root);
     const locttDir = `${root}/.loctt`;
-    await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION + 1);
+    await writeSchemaVersion(locttDir, "0.10.0");
     const info = await getTrackerInfo(root);
     expect(info.schemaStatus.kind).toBe("future");
     if (info.schemaStatus.kind === "future") {
-      expect(info.schemaStatus.on_disk).toBe(CURRENT_SCHEMA_VERSION + 1);
+      expect(info.schemaStatus.on_disk).toBe("0.10.0");
     }
   });
 });
@@ -164,7 +161,7 @@ describe("runDoctor", () => {
     const check = checks.find(c => c.message.includes("is empty"));
     expect(check?.status).toBe("error");
     expect(check?.message).toBe(
-      `.schema-version is empty. Expected ${String(CURRENT_SCHEMA_VERSION)}`,
+      `.schema-version is empty. It must hold a format version such as ${CURRENT_SCHEMA_VERSION}. Expected ${CURRENT_SCHEMA_VERSION}`,
     );
   });
 
@@ -329,6 +326,36 @@ describe("runDoctor", () => {
     const idx = await loadKeyIndex(locttDir);
     expect(idx?.entries["T-RENAMED"]).toBe("01XYZ");
     expect(idx?.entries["T-1"]).toBeUndefined();
+  });
+
+  // A365: an unparseable task.md cannot be indexed (its key is in the
+  // part that failed), so "not in index" for it outlived the
+  // `--rebuild-index` it prescribed. data integrity owns that file; the
+  // key index names only directories a rebuild would actually add.
+  it("does not count an unparseable task dir as missing from the index; a readable one still is", async () => {
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { writeTask } = await import("../task/io.js");
+    const { rebuildKeyIndex } = await import("../state/key-index.js");
+    const { mkdir } = await import("node:fs/promises");
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    const fm = (id: string, key: string) => ({
+      frontmatter: { id, key, title: key, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      body: "",
+    });
+    await writeTask(locttDir, "01AAA", fm("01AAA", "T-1"));
+    await mkdir(join(locttDir, "tasks", "01BAD"), { recursive: true });
+    await writeFile(join(locttDir, "tasks", "01BAD", "task.md"), "---\nid: 01BAD\nkey: T-2\ntitle: \"open\n---\n", "utf-8");
+    await rebuildKeyIndex(locttDir);
+
+    const clean = (await runDoctor(root)).find(c => c.name === "key index");
+    expect(clean?.status).toBe("ok");
+
+    // A readable task the index lacks is still a finding.
+    await writeTask(locttDir, "01CCC", fm("01CCC", "T-3"));
+    const stale = (await runDoctor(root)).find(c => c.name === "key index");
+    expect(stale?.status).toBe("warn");
+    expect(stale?.message).toContain("1 task dir(s) not in index");
   });
 
   // @verifies PRU-C12

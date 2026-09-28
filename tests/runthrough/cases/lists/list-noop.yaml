@@ -1,0 +1,12 @@
+id: list-noop
+name: Adding a present value and removing an absent one changes nothing
+description: >
+  K150: the edit is a no-op, so nothing is written at all (no history
+  entry, no updated_at bump) and the surface says so.
+tags: [lists, labels, b45]
+cli: set ${task.search_index.key} labels --add backend --remove docs
+mcp:
+  call: { tool: update_task, args: { ref: "${task.search_index.key}", add: { labels: [backend] }, remove: { labels: [docs] } } }
+post:
+  - tracker_unchanged: true
+  - output: { contains: ["No change"] }

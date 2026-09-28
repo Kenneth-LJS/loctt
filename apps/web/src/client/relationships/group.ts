@@ -9,6 +9,7 @@ import {
   effectiveInverseLabel,
   isSymmetricRelationship,
 } from "@loctt/contracts";
+import { compareRankedEdges } from "@loctt/core/task/relationship-order.js";
 
 /**
  * Turning a task's flat relationship array into the grouped, ordered
@@ -41,10 +42,11 @@ import {
  * the configured ones would imply `workflow.yaml` has an opinion about
  * where a type it does not declare belongs.
  *
- * ## Row order inside a ranked group
+ * ## Row order inside a group
  *
- * REL-6's third bullet and REL-34. Ranked edges sort by `rank`
- * ascending; unranked edges sort **below** all ranked ones, matching
+ * REL-6's third bullet and REL-34. Every group is ordered (K143): edges
+ * sort by `rank` ascending; an edge without a rank (a hand-edit, a
+ * merge from an old branch) sorts **below** the ranked ones, matching
  * core's ordering. Among unranked edges the tiebreak is the edge's
  * index in the task's own `relationships` array — REL-34's "documented
  * fallback (creation order in the array)".
@@ -57,9 +59,11 @@ import {
  * the comparator has an observable effect on an input that is *not*
  * already in output order — which is what a test can drive it with.
  *
- * An unranked group is not sorted at all: array order is what the file
- * says, and inventing an order for a kind the user never asked to rank
- * would be the UI having an opinion the data does not.
+ * Before K143 a kind could be `ranked: false`, and its group was left in
+ * array order. The setting is gone: every configured group is ordered
+ * and reorderable. A group of a type workflow.yaml does not declare is
+ * listed by rank too (as core lists it) but offers no handles: core
+ * refuses to reorder a kind it has no definition for.
  */
 
 /** One rendered relationship row. */
@@ -107,7 +111,10 @@ export interface RelationshipGroup {
   readonly label: string;
   /** True when no `workflow.yaml` definition claims this type. */
   readonly unknown: boolean;
-  /** True when the kind is `ranked: true` — drives drag handles (REL-6). */
+  /**
+   * True when the group can be reordered — drives drag handles (REL-6).
+   * Every configured kind since K143; false only for an unknown type.
+   */
   readonly ranked: boolean;
   /** True when the kind's `graph` is `tree` — drives the nested render (REL-5). */
   readonly tree: boolean;
@@ -156,7 +163,8 @@ interface Side {
  * should appear.
  */
 function sidesOf(def: RelationshipDef): readonly Side[] {
-  const ranked = def.ranked === true;
+  // K143: every kind is ordered.
+  const ranked = true;
   const tree = def.graph === "tree";
 
   const forward: Side = { key: def.key, label: def.label, ranked, tree };
@@ -233,20 +241,12 @@ function collapseDuplicates(
  */
 export function orderRows(
   rows: readonly RelationshipRow[],
-  ranked: boolean,
 ): readonly RelationshipRow[] {
-  if (!ranked) return rows;
-  return [...rows].sort((a, b) => {
-    const aHas = a.rank !== undefined;
-    const bHas = b.rank !== undefined;
-    if (aHas !== bHas) return aHas ? -1 : 1;
-    if (a.rank !== undefined && b.rank !== undefined && a.rank !== b.rank) {
-      return a.rank < b.rank ? -1 : 1;
-    }
-    // REL-34. Explicit, not `sort`'s stability: see the module
-    // docstring for why the difference is the whole point.
-    return a.index - b.index;
-  });
+  // K141 6a: the comparator is core's, shared with `loctt show` and MCP
+  // `get_task` (`orderRelationships`), so the three cannot list a task's
+  // links in different orders. REL-34's explicit index tiebreak lives
+  // there.
+  return [...rows].sort(compareRankedEdges);
 }
 
 /**
@@ -308,7 +308,7 @@ export function groupRelationships(
         unknown: false,
         ranked: side.ranked,
         tree: side.tree,
-        rows: orderRows(bucket, side.ranked),
+        rows: orderRows(bucket),
       });
     }
   }
@@ -326,7 +326,7 @@ export function groupRelationships(
       unknown: true,
       ranked: false,
       tree: false,
-      rows: byType.get(row.type) ?? [],
+      rows: orderRows(byType.get(row.type) ?? []),
     });
   }
 

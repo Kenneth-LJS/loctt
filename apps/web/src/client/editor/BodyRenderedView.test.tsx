@@ -2,8 +2,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BodyRenderedView } from "./BodyRenderedView.tsx";
 import { CHROME_ATTR } from "../ui/Modal.tsx";
+import { BodyRenderedView } from "./BodyRenderedView.tsx";
 
 /**
  * The K33 read state (TSK-68/69/70). This surface is deterministic —
@@ -242,6 +242,7 @@ describe("BodyRenderedView — K33 read state", () => {
   // focused. The fix focuses the trigger on click, before the lightbox
   // (and the chrome's `inert`) exist.
   it("A11Y-62: focus returns to the trigger button on close, for a click that never focused it", async () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- saved to be re-applied with an explicit `this` below
     const restoreFocus = HTMLElement.prototype.focus;
     HTMLElement.prototype.focus = function (this: HTMLElement, ...args) {
       if (this.closest("[inert]") !== null) return;

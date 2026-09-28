@@ -1,0 +1,11 @@
+id: list-by-user-name
+name: Query users, milestones and labels by name together
+description: >
+  K148: every entity a query can hold resolves by name, including inside
+  `in (…)` lists, and an ID still works beside a name.
+tags: [queries, users, k148]
+cli: list --query "assignee = Bea and labels in (urgent, ${label.frontend.id})"
+mcp:
+  call: { tool: list_tasks, args: { query: "assignee = Bea and labels in (urgent, ${label.frontend.id})" } }
+post:
+  - output: { keys: ["${task.checkout_cart.key}", "${task.cart_totals.key}", "${task.login_crash.key}"] }

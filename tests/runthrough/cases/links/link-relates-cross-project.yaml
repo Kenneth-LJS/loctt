@@ -1,0 +1,10 @@
+id: link-relates-cross-project
+name: Relate two tasks in different projects
+description: A symmetric link carries the same type on both sides, across projects.
+tags: [links]
+cli: link ${task.mob_tablet.key} relates_to ${task.search_ui.key}
+mcp:
+  call: { tool: link_tasks, args: { refs: ["${task.mob_tablet.key}"], type: relates_to, target: "${task.search_ui.key}" } }
+post:
+  - relationship: { task: "${task.mob_tablet.key}", type: relates_to, target: "${task.search_ui.key}" }
+  - relationship: { task: "${task.search_ui.key}", type: relates_to, target: "${task.mob_tablet.key}" }

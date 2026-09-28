@@ -1,0 +1,11 @@
+id: edit-custom-boolean
+name: Edit a boolean custom field
+description: A boolean custom field is stored as a YAML boolean; the CLI converts the text by the field's type (G2).
+tags: [edit, custom-fields]
+pre:
+  - field: { task: "${task.login_crash.key}", field: fields.signed_off, equals: false }
+cli: set ${task.login_crash.key} signed_off true
+mcp:
+  call: { tool: update_task, args: { ref: "${task.login_crash.key}", field: signed_off, value: true } }
+post:
+  - field: { task: "${task.login_crash.key}", field: fields.signed_off, equals: true }

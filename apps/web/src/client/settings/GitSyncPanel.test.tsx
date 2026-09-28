@@ -1,9 +1,11 @@
+// @vitest-environment jsdom
 import type { ErrorResponse } from "@loctt/contracts";
+import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "../api/client.ts";
 import type { GitRemoteFailure } from "../api/hooks/useGit.ts";
-import { branchAdoptNeeded, historyRewritten, publishFailureLine, schemaRemoteNewer, worktreeMissing } from "./GitSyncPanel.tsx";
+import { branchAdoptNeeded, historyRewritten, publishFailureLine, schemaRemoteNewer, SchemaRemoteNewerRefusal, worktreeMissing } from "./GitSyncPanel.tsx";
 
 /**
  * @verifies GIT-29
@@ -133,21 +135,37 @@ describe("historyRewritten detector (GIT-21)", () => {
 describe("schemaRemoteNewer detector (GIT-35)", () => {
   it("returns the typed payload for a schema_remote_newer envelope", () => {
     const info = schemaRemoteNewer(apiError("schema_remote_newer", {
-      schema_remote_newer: { remote_version: 2, local_version: 1, branch: "loctt" },
+      schema_remote_newer: { remote_version: "0.4.0", local_version: "0.3.0", branch: "loctt" },
     }));
     expect(info).toBeDefined();
-    expect(info?.remote_version).toBe(2);
-    expect(info?.local_version).toBe(1);
+    expect(info?.remote_version).toBe("0.4.0");
+    expect(info?.local_version).toBe("0.3.0");
     expect(info?.branch).toBe("loctt");
   });
 
   it("carries a null remote_version for a malformed remote schema", () => {
     const info = schemaRemoteNewer(apiError("schema_remote_newer", {
-      schema_remote_newer: { remote_version: null, local_version: 1, branch: "loctt" },
+      schema_remote_newer: { remote_version: null, local_version: "0.3.0", branch: "loctt" },
     }));
     expect(info).toBeDefined();
     expect(info?.remote_version).toBeNull();
-    expect(info?.local_version).toBe(1);
+    expect(info?.local_version).toBe("0.3.0");
+  });
+
+  // A366: a branch holding 0.2.x's `1` is older, not newer. Updating
+  // LocTT cannot help and publish never writes that file, so the banner
+  // names the file to change on the branch.
+  it("renders the branch-file remedy for the old integer 1, not 'update LocTT'", () => {
+    const { container } = render(<SchemaRemoteNewerRefusal
+      info={{ remote_version: null, local_version: "0.3.0", branch: "loctt", remote_raw: "1" }}
+      testId="t"
+    />);
+    const text = container.textContent ?? "";
+    expect(text).toBe(
+      "The loctt branch's .schema-version holds 1, the old version number LocTT 0.2.x and earlier wrote. "
+      + "Nothing was changed. On the loctt branch, change .schema-version to 0.1.0 and commit it, then sync again.",
+    );
+    expect(text).not.toMatch(/Update LocTT/);
   });
 
   it("returns undefined for any other code (so it uses the right banner / ErrorState)", () => {
@@ -181,6 +199,22 @@ describe("worktreeMissing detector (GIT-36)", () => {
     expect(info).toBeDefined();
     expect(info?.operation).toBe("publish");
     expect(info?.worktree).toContain(".worktree-publish");
+  });
+
+  // A366: a branch holding 0.2.x's `1` is older, not newer. Updating
+  // LocTT cannot help and publish never writes that file, so the banner
+  // names the file to change on the branch.
+  it("renders the branch-file remedy for the old integer 1, not 'update LocTT'", () => {
+    const { container } = render(<SchemaRemoteNewerRefusal
+      info={{ remote_version: null, local_version: "0.3.0", branch: "loctt", remote_raw: "1" }}
+      testId="t"
+    />);
+    const text = container.textContent ?? "";
+    expect(text).toBe(
+      "The loctt branch's .schema-version holds 1, the old version number LocTT 0.2.x and earlier wrote. "
+      + "Nothing was changed. On the loctt branch, change .schema-version to 0.1.0 and commit it, then sync again.",
+    );
+    expect(text).not.toMatch(/Update LocTT/);
   });
 
   it("returns undefined for any other code (so it uses the right banner / ErrorState)", () => {

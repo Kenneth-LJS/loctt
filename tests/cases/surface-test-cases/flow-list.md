@@ -111,3 +111,22 @@ called, **then** the response states 100 matched and paging retrieves all
 
 **Given** `queries.yaml` with two views named `overdue`, **when**
 `list_views` is called, **then** both appear with distinct `id`s.
+
+### QRY-C7 · blocker · P1 P4 P10 · CLI MCP UI
+**A query may name a label, user, milestone, sprint or project.** (K148)
+Queries compared names with the stored IDs, so `labels = urgent`
+returned nothing.
+
+- `labels = urgent` returns the tasks labelled "urgent"; the same holds
+  for `assignee`, `reporter`, `comment_mentions`, `milestone`, `sprint`
+  and `project`, with `=`, `!=`, `in` and `not in`.
+- An ID-shaped value is an ID and may be written unquoted; an ID no
+  entity holds any more is not refused.
+- A name matching nothing is an error naming it (`No label named
+  'nope'`), not an empty result; a name several entities share is an
+  error listing each with its ID.
+- A saved view naming something since renamed or deleted still runs,
+  with a warning.
+
+**Given** WEB-13, MOB-6 and OPS-4 labelled "urgent", **when** `loctt list
+--query "labels = urgent"` runs, **then** exactly those three are listed.

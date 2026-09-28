@@ -1,0 +1,18 @@
+id: rerank-after
+name: Move a child to just after its first sibling
+description: >
+  Reranking the last child after the first gives first, moved, middle.
+  Before B41 the siblings had no rank, the moved child was the only one
+  given one, and ranked links sort first, so it landed first instead.
+  Every link carries a rank now (K143), so it lands where asked.
+tags: [links, rerank, b41]
+cli: rerank ${task.epic_checkout.key} child ${task.checkout_confirm.key} --after ${task.checkout_cart.key}
+mcp:
+  call:
+    tool: reorder_relationship
+    args: { source: "${task.epic_checkout.key}", type: child, target: "${task.checkout_confirm.key}", after: "${task.checkout_cart.key}" }
+post:
+  - relationship_order:
+      task: "${task.epic_checkout.key}"
+      type: child
+      targets: ["${task.checkout_cart.key}", "${task.checkout_confirm.key}", "${task.checkout_payment.key}"]

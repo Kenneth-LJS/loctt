@@ -180,13 +180,28 @@ another keyed-record config, follow that pattern, not the flat one.
 
 `loctt doctor` is **read-only by default** (it only reads and reports).
 There is no separate preview command and no `--dry-run` flag because the
-base command mutates nothing. Its **only** write is opt-in:
+base command mutates nothing. Its writes are opt-in flags:
 `--rebuild-index`, which repairs the key-index cache after out-of-band
-`key`/`key_history` edits. So: *preview is the default; acting is the
-flag.* Exit code is 1 if any check is `error`; warnings exit 0.
+`key`/`key_history` edits; `--repair-relationships` (K141), which
+rewrites key-valued link targets to ids, adds the missing side of
+one-sided links (refusing a loop), merges identical links and ranks
+links that have no rank (K143), never deleting one; and `--fix`, which runs every repair in core's
+`SAFE_FIXES` (those two). `restore-missing` (`init --repair`) is not
+"safe": it writes default config in place of the user's. So: *preview
+is the default; acting is the flag.* A new repair is a `DiagnosticFix`
+value, a doctor check carrying it as `fix`, a CLI flag, an MCP `doctor`
+option and a Diagnostics button (`POST /api/doctor/repair`), and runs
+**before** the checks so the report shows what is left. Exit code is 1 if any check is `error`; warnings exit 0.
 
-Doctor is exempt from the schema boot-guard, so it can report a version
-mismatch when every other command refuses to run.
+Doctor is exempt from the schema boot-guard (CLI and MCP), so it can
+report a version mismatch when every other command refuses to run. It
+never writes to a tracker whose schema is not current (K154): for an
+older tracker it says it needs upgrading and to run `loctt migrate`, and
+every requested repair is skipped, saying why. `.schema-version` itself is object-fatal for the
+whole tracker, never guessed at: a value that is not a format version
+(including 0.2.x's `1`) or an empty file is refused with what the file
+must hold (`readSchemaVersion`), newer is refused naming the release, and
+the crash sentinel is fatal until the backup is restored.
 
 **It covers** (`diagnostics/doctor.ts` + `integrity.ts`):
 - config **parse errors** (object-fatal) on every config file → error
@@ -196,7 +211,19 @@ mismatch when every other command refuses to run.
 - **label hex-color** drop (read raw, since the loader drops it)
 - **workflow drift** (a task holding a value workflow.yaml no longer
   defines), **dangling task references**, **relationship cycles**,
-  **cross-file inverse disagreement** (principle 1 / P-12 consistency)
+  **cross-file inverse disagreement** (principle 1 / P-12 consistency),
+  **key-valued link targets**, **duplicate links** and **links with no
+  rank** (K143) — all repaired by `--repair-relationships` (K141; planner
+  in `task/relationship-repair.ts`, findings in `task/traversal.ts`
+  `relationshipFindings`, so doctor reports exactly what the repair does).
+  A missing `rank` is field-local: the edge still loads and lists after
+  the ranked ones (P-7); it is reported, never a refusal.
+- **retired config keys** — a `ranked:` line on a relationship (K143) is
+  dropped on read by the schema's preprocess (it never fails the strict
+  parse, so the kind is not reported `broken`), and doctor warns
+  (`workflow.yaml retired settings`, `config/retired-keys.ts`) so it can
+  be removed. A future retired key goes in `RETIRED_RELATIONSHIP_KEYS`
+  (contracts) and is reported and stripped by the same code.
 - **config per-entry `broken` markers** — the A138/K28 degrade for
   projects, labels, milestones, sprints, saved views, list-view chips,
   calendar holidays, and workflow sub-lists. `checkDataIntegrity` runs
@@ -247,6 +274,9 @@ This month's additions, walked against the checklists above:
 | `keyboard_shortcuts` (K133) | field-local | yes — `salvageKeyboardShortcuts`, fails open (all on) | yes — `collectKeyboardShortcutsDrops` → `checkDataIntegrity` | had zero test at the doctor/integrity layer (only unit-level `shortcuts.test.ts`); added two `integrity.test.ts` cases |
 | `sidebar_groups` incl. `filters` group id (K125) | field-local | yes — `salvageSidebarGroups`, degrades to "no customization" | yes — `collectSidebarGroupsDrops` → `checkDataIntegrity`, tested | none — the `filters` group id is just one more entry in the closed `SIDEBAR_ITEM_IDS` set the existing salvage already walks; no separate code path to miss |
 | Body draft (`sessionStorage`, A338) | field-local (per-tab, ephemeral) | yes — `readBodyDraft` drops an unparseable/wrong-shaped entry and a blocked/throwing `Storage` degrades to "no draft" everywhere it's touched | n/a — not on-disk tracker state, so outside doctor's scope by design | none — `bodyDraft.test.ts` already covers the malformed-JSON, wrong-type, and blocked-storage cases |
+| Link `rank` (K143, B41) | field-local (an edge without one) | yes — sorts after the ranked edges; reorder ranks its siblings first | yes — `relationshipFindings` "has no rank", repaired by `--repair-relationships` | none; tested in `task/traversal.test.ts` and `relationship-repair.test.ts` |
+| Retired `ranked` on a relationship (K143) | field-local (a key that no longer means anything) | yes — dropped on read, the kind loads | yes — `workflow.yaml retired settings` warn | none; `config/retired-keys.test.ts` |
+| `.schema-version` as semver (K142) | object-fatal (for the tracker) | n/a — refused with what it must hold, by design | yes — the `schema version` check names the problem | none; `schema/version.test.ts`, `upgrade-0.3.0.test.ts` |
 | Unique view names (B21/K129) | write-time refusal (not stored corruption) | n/a — a duplicate name already on disk (pre-K129, or hand-edited) keeps loading and running by id; only a *new write* to a taken name is refused | n/a — nothing to salvage on read | none — this is a write guard, not a degrade-on-load case; `views/manage.test.ts` covers the refusal |
 
 Everything else in `known-gaps.md`'s roster and the guide's own list

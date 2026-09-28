@@ -119,3 +119,33 @@ describe("formatHistoryEntry", () => {
     expect(line).not.toContain("(?)");
   });
 });
+
+/**
+ * @verifies PRU-C16
+ *
+ * K148: the CLI prints names. `log` printed the stored IDs for an
+ * assignee, milestone, sprint or label change; it now names them as
+ * `show` does, and falls back to the ID for an entity it can't name.
+ */
+describe("formatHistoryEntry names entity references (K148)", () => {
+  const LABEL = "01M3JSJ8DMF2F12MVBFA3R09Q1";
+  const MILESTONE = "01M3JSJ9XTVVQT0EBTXQNVH4T8";
+  const GONE = "01M3JSJ9ADABA1DAAX7Z2PCXME";
+  const named: HistoryDisplayContext = {
+    ...ctx,
+    labels: new Map([[LABEL, "urgent"]]),
+    milestones: new Map([[MILESTONE, "GA"]]),
+  };
+
+  it("names the assignee, the milestone and a label", () => {
+    expect(formatHistoryEntry(entry({ field: "assignee", before: undefined, after: KEN }), named))
+      .toMatch(/assignee: .* → Ken/);
+    expect(formatHistoryEntry(entry({ field: "milestone", before: GONE, after: MILESTONE }), named))
+      .toContain(`milestone: ${GONE} → GA`);
+    expect(formatHistoryEntry(entry({ kind: "label_added", after: LABEL }), named))
+      .toContain("label added: urgent");
+    expect(formatHistoryEntry(entry({ kind: "label_removed", before: GONE }), named))
+      .toContain(`label removed: ${GONE}`);
+  });
+});
+

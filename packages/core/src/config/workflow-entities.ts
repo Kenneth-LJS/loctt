@@ -553,7 +553,6 @@ export interface CreateRelationshipInput extends IconColorInput {
   readonly inverse?: string;
   readonly inverse_label?: string;
   readonly graph?: RelationshipGraph;
-  readonly ranked?: boolean;
 }
 
 /** Appends a relationship definition. `key` is fixed at creation. */
@@ -577,7 +576,6 @@ export async function createRelationship(
       ...(input.inverse !== undefined ? { inverse: input.inverse } : {}),
       ...(input.inverse_label !== undefined ? { inverse_label: input.inverse_label } : {}),
       ...(input.graph !== undefined ? { graph: input.graph } : {}),
-      ...(input.ranked !== undefined ? { ranked: input.ranked } : {}),
       ...iconColorFields(input),
     };
     return { ...prev, relationships: [...prev.relationships, created] };
@@ -590,7 +588,6 @@ export interface EditRelationshipChanges {
   readonly inverse?: string;
   readonly inverse_label?: string;
   readonly graph?: RelationshipGraph;
-  readonly ranked?: boolean;
   readonly icon?: IconString | null;
   readonly color?: EntityColor | null;
 }
@@ -617,7 +614,6 @@ export async function editRelationship(
         ? { inverse_label: pick(changes.inverse_label, existing.inverse_label) }
         : {}),
       ...(pick(changes.graph, existing.graph) !== undefined ? { graph: pick(changes.graph, existing.graph) } : {}),
-      ...(pick(changes.ranked, existing.ranked) !== undefined ? { ranked: pick(changes.ranked, existing.ranked) } : {}),
       ...mergeIconColor(existing, changes),
     };
     return { ...prev, relationships: prev.relationships.map(r => (r.key === key ? updated : r)) };
@@ -669,6 +665,22 @@ export interface CreateCustomFieldInput {
   readonly searchable: boolean;
   readonly values?: readonly CustomFieldValueDef[];
   readonly task_types?: readonly string[];
+  /** K150: an enum field whose values may be created on the fly. */
+  readonly allow_new_values?: boolean;
+}
+
+/**
+ * Refuses `allow_new_values: true` on a non-enum field (K150): only an
+ * enum has a value list to grow. `false` is accepted anywhere, since it
+ * is the default and says nothing.
+ */
+function assertAllowNewValuesFits(type: CustomFieldDef["type"], allow: boolean | undefined): void {
+  if (allow === true && type !== "enum") {
+    throw new WorkflowEntityError(
+      `Only a choice (enum) field can allow new values. This field is ${type}.`,
+      { field: "allow_new_values" },
+    );
+  }
 }
 
 /**
@@ -682,6 +694,7 @@ export async function createCustomField(
 ): Promise<void> {
   await mutateWorkflow(locttDir, prev => {
     assertKeyFree(prev.custom_fields, input.key, "custom_field");
+    assertAllowNewValuesFits(input.type, input.allow_new_values);
     const created: CustomFieldDef = {
       key: input.key,
       label: input.label,
@@ -690,6 +703,7 @@ export async function createCustomField(
       searchable: input.searchable,
       ...(input.values !== undefined ? { values: input.values.map(v => ({ ...v })) } : {}),
       ...(input.task_types !== undefined ? { task_types: [...input.task_types] } : {}),
+      ...(input.allow_new_values === true ? { allow_new_values: true } : {}),
     };
     return { ...prev, custom_fields: [...prev.custom_fields, created] };
   });
@@ -700,10 +714,13 @@ export interface EditCustomFieldChanges {
   readonly searchable?: boolean;
   /** Type-scope allowlist. `null` clears it (field becomes global). */
   readonly task_types?: readonly string[] | null;
+  /** K150: open or close the field's value list (enum fields only). */
+  readonly allow_new_values?: boolean;
 }
 
 /**
- * Edits a custom field's `label`/`searchable`/`task_types` scope. `type`
+ * Edits a custom field's `label`/`searchable`/`task_types` scope and its
+ * `allow_new_values` switch (K150). `type`
  * and `multi` are immutable (SET-16) and there is no path to change them
  * here; `key` is immutable too. Enum `values` are edited via the
  * field-value functions, not here.
@@ -715,6 +732,8 @@ export async function editCustomField(
 ): Promise<void> {
   await mutateWorkflow(locttDir, prev => {
     const existing = requireByKey(prev.custom_fields, key, "custom_field");
+    assertAllowNewValuesFits(existing.type, changes.allow_new_values);
+    const allowNew = changes.allow_new_values ?? existing.allow_new_values;
     const nextScope =
       changes.task_types === null ? undefined
       : changes.task_types !== undefined ? [...changes.task_types]
@@ -727,6 +746,7 @@ export async function editCustomField(
       searchable: changes.searchable ?? existing.searchable,
       ...(existing.values !== undefined ? { values: existing.values.map(v => ({ ...v })) } : {}),
       ...(nextScope !== undefined ? { task_types: nextScope } : {}),
+      ...(allowNew === true ? { allow_new_values: true } : {}),
     };
     return { ...prev, custom_fields: prev.custom_fields.map(f => (f.key === key ? updated : f)) };
   });

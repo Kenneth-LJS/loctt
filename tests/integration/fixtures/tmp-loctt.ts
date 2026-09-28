@@ -1,8 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { initLoctt } from "@loctt/core";
+
+import { abandonDoctorGate, beginDoctorGate, finishDoctorGate } from "./doctor-gate.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const workspaceRoot = path.join(repoRoot, "tests/workspace");
@@ -18,10 +20,25 @@ export interface TmpLocttOptions {
    * Set false when the test wants to verify init behavior itself.
    */
   readonly init?: boolean;
+  /**
+   * K145: doctor findings this test's surface writes are expected to
+   * cause (a test of a refusal that deliberately leaves such a state).
+   * Each must be justified at the call site. Default: none.
+   */
+  readonly allowDoctorFindings?: readonly RegExp[];
+  /**
+   * Turns the doctor gate off for this test. Only for a test whose
+   * subject is doctor's own findings over a state the surfaces produce.
+   */
+  readonly doctorGate?: boolean;
 }
 
 /**
  * Run `fn` against a freshly created tmpdir under tests/workspace/.
+ *
+ * Doctor gate (K145): every CLI run and MCP call the test makes through
+ * the shared adapters is watched, and once `fn` returns, `loctt doctor`
+ * must report nothing those writes introduced (`doctor-gate.ts`).
  *
  * Cleanup contract:
  *  - The workspace is removed in a `finally` block, even if `fn` throws.
@@ -43,7 +60,18 @@ export async function withTmpLoctt<T>(
     if (opts.init !== false) {
       await initLoctt(root);
     }
-    return await fn({ root });
+    // K145: after a test that wrote through the CLI or MCP, `loctt
+    // doctor` must report nothing new (see doctor-gate.ts).
+    if (opts.doctorGate !== false) beginDoctorGate(root, opts.allowDoctorFindings);
+    let result: T;
+    try {
+      result = await fn({ root });
+    } catch (err) {
+      abandonDoctorGate(root);
+      throw err;
+    }
+    finishDoctorGate(root);
+    return result;
   } finally {
     process.chdir(cwdBefore);
     // Restore env: remove keys that didn't exist before, reset values that changed.
@@ -68,3 +96,29 @@ export async function withTmpLoctt<T>(
  */
 export const WORKSPACE_PREFIX = path.join(workspaceRoot, "loctt-");
 export const WORKSPACE_ROOT = workspaceRoot;
+
+/**
+ * Removes a task's directory directly, as a hand delete or a `git pull`
+ * would, leaving every edge that points at it dangling.
+ *
+ * `loctt delete` no longer leaves dangling edges (K147: it removes the
+ * partners' side of every link), so a test that needs a dangling edge
+ * has to make one out of band. Returns the removed task's id.
+ */
+export async function removeTaskOutOfBand(root: string, key: string): Promise<string> {
+  const dir = path.join(root, ".loctt/tasks");
+  for (const id of await readdir(dir)) {
+    const file = path.join(dir, id, "task.md");
+    let raw: string;
+    try {
+      raw = await readFile(file, "utf-8");
+    } catch {
+      continue;
+    }
+    if (raw.includes(`\nkey: ${key}\n`)) {
+      await rm(path.join(dir, id), { recursive: true, force: true });
+      return id;
+    }
+  }
+  throw new Error(`no task file for ${key}`);
+}

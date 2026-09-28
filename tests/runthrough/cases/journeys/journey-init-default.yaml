@@ -1,0 +1,10 @@
+id: journey-init-default
+name: "Journey: default init writes the standard config files"
+description: Folded in from tests/e2e/02 (B43, K145).
+tags: [journey, init, b43]
+surfaces: [cli]
+seed: none
+cli: init
+post:
+  - path: { path: .loctt/config/workflow.yaml, exists: true }
+  - path: { path: .loctt/config/queries.yaml, exists: true }

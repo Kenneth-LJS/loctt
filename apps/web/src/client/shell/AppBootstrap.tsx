@@ -9,6 +9,7 @@ import { InitWizard } from "../init/InitWizard.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { AppShell } from "./AppShell.tsx";
 import { InterruptedMigration } from "./InterruptedMigration.tsx";
+import { UpgradeRequired } from "./UpgradeRequired.tsx";
 
 /**
  * Gates the whole app on the two reads every screen needs: tracker
@@ -120,6 +121,14 @@ export function AppBootstrap() {
         sentinelPath={schemaMismatch.sentinel_path}
       />
     );
+  }
+
+  // K154: an older tracker is upgraded only on purpose, and until then
+  // every API route refuses it, so there is nothing to browse. The
+  // Upgrade screen replaces the shell (keeping the brand bar) instead of
+  // a banner over an app that would only show refusals.
+  if (schemaMismatch?.kind === "outdated") {
+    return <UpgradeRequired from={schemaMismatch.on_disk} to={schemaMismatch.current} />;
   }
 
   if (schemaMismatch !== null && placeholderInfo !== null) {
@@ -290,7 +299,7 @@ function UNKNOWN_INFO(): TrackerInfoResponse {
     taskCount: 0,
     keyPrefix: null,
     nextKey: null,
-    schemaStatus: { kind: "current", version: 0 },
+    schemaStatus: { kind: "current", version: "" },
     cwd: "",
     today: new Date().toISOString().slice(0, 10),
     // Nothing is known here, so the zone matches the server's own

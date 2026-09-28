@@ -1,0 +1,21 @@
+id: bulk-add-partial-cli
+name: A bulk add with one bad ref changes the rest and lists the failure (CLI)
+description: >
+  K153 (superseding K152's all-or-nothing): like bulk set, a task that
+  would fail (here, a ref that does not exist) is listed and the command
+  exits 1, while every other task still changes; the label `--create`
+  makes is created once.
+tags: [lists, labels, bulk, b47]
+surfaces: [cli]
+cli: set ${task.search_index.key},NOPE-404,${task.theme_tokens.key} labels --add brand-new --create
+expect_error:
+  cli: { message: "NOPE-404: task not found", partial: true }
+capture:
+  l: { entity: { kind: label, name: brand-new } }
+post:
+  - output: { contains: ["Updated labels (added brand-new) on 2 task(s)"] }
+  # Partial skips "tracker unchanged": only the two tasks and the label
+  # file may change.
+  - changed_only: { tasks: ["${task.search_index.key}", "${task.theme_tokens.key}"], files: [config/labels.yaml] }
+  - field: { task: "${task.search_index.key}", field: labels, contains: "${var.l.id}" }
+  - field: { task: "${task.theme_tokens.key}", field: labels, contains: "${var.l.id}" }

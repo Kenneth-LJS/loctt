@@ -734,7 +734,8 @@ describe("CLI commands", () => {
     await main();
     expect(process.exitCode).toBe(1);
     const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
-    expect(stderr).toContain("Error: Unknown sprint: Nonexistent");
+    // K148 wording for a name that matches nothing.
+    expect(stderr).toContain("Error: No sprint named 'Nonexistent'.");
   });
 
   it("sprint burndown rejects an unknown --format", async () => {
@@ -1351,13 +1352,13 @@ describe("CLI config subcommands", () => {
     process.argv = ["node", "loctt", "migrate"];
     await main();
     const lines = consoleSpy.mock.calls.map(c => String(c[0]));
-    expect(lines.some(l => /already at v/.test(l))).toBe(true);
+    expect(lines.some(l => /already at format 0\.3\.0/.test(l))).toBe(true);
     expect(process.exitCode).toBeUndefined();
   });
 
   it("migrate --dry-run does not crash on a fresh tracker", async () => {
     // With no migrations registered yet, the planner returns an
-    // empty plan and the command short-circuits with "already at v…".
+    // empty plan and the command short-circuits with "already at format …".
     // Dry-run still must not set exitCode.
     process.argv = ["node", "loctt", "migrate", "--dry-run"];
     await main();
@@ -1375,7 +1376,7 @@ describe("CLI config subcommands", () => {
     // mattered. It is read-only, so reporting costs nothing that
     // refusing was protecting.
     const { writeFile } = await import("node:fs/promises");
-    await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
+    await writeFile(join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf-8");
     const logs: string[] = [];
     const spy = vi.spyOn(console, "log").mockImplementation(m => { logs.push(String(m)); });
     try {
@@ -1385,7 +1386,7 @@ describe("CLI config subcommands", () => {
       spy.mockRestore();
     }
     expect(process.exitCode).toBeUndefined();
-    expect(logs.join("\n")).toMatch(/999/);
+    expect(logs.join("\n")).toMatch(/Schema: 9\.9\.9, this build reads 0\.3\.0\. This tracker needs loctt 9\.9\.9 or newer/);
   });
 });
 

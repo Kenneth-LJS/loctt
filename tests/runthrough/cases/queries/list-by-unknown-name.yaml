@@ -1,0 +1,12 @@
+id: list-by-unknown-name
+name: A query naming no label is refused, not empty
+description: >
+  K148: a name that matches nothing says so instead of returning an
+  empty list that reads as "no such tasks".
+tags: [queries, labels, k148]
+expect_error:
+  cli: { message: "No label named 'nope'" }
+  mcp: { message: "No label named 'nope'" }
+cli: list --query "labels = nope"
+mcp:
+  call: { tool: list_tasks, args: { query: labels = nope } }

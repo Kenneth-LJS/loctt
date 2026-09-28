@@ -1,0 +1,15 @@
+id: edit-status-done
+name: Move a task to a completed status
+description: >
+  Setting a completed-category status stamps status_updated_at and
+  completed_date (auto-managed, never user-set).
+tags: [edit]
+pre:
+  - field: { task: "${task.public_docs.key}", field: completed_date, absent: true }
+cli: set ${task.public_docs.key} status done
+mcp:
+  call: { tool: update_task, args: { ref: "${task.public_docs.key}", field: status, value: done } }
+post:
+  - field: { task: "${task.public_docs.key}", field: status, equals: done }
+  - field: { task: "${task.public_docs.key}", field: completed_date, matches: "^\\d{4}-\\d{2}-\\d{2}$" }
+  - field: { task: "${task.public_docs.key}", field: status_updated_at, matches: "^\\d{4}-" }

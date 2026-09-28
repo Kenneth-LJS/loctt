@@ -6,7 +6,8 @@ import { loadQueriesConfig } from "../config/queries.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { isEmptyTracker, missingCoreFiles } from "../init/core-files.js";
 import { getSchemaMigrationInProgressPath, resolveLocttDir } from "../paths/index.js";
-import { CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/index.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION, isFormatVersion, readSchemaVersion, upgradeRequiredMessage } from "../schema/index.js";
+import { formatForRecordedVersion } from "../schema/migrations.js";
 import { loadState } from "../state/state.js";
 import { listTaskIds } from "../task/list-ids.js";
 
@@ -25,9 +26,9 @@ import { listTaskIds } from "../task/list-ids.js";
  *    corrupted; surface in doctor).
  */
 export type SchemaStatus =
-  | { kind: "current"; version: number }
-  | { kind: "outdated"; on_disk: number; current: number }
-  | { kind: "future"; on_disk: number; current: number }
+  | { kind: "current"; version: string }
+  | { kind: "outdated"; on_disk: string; current: string }
+  | { kind: "future"; on_disk: string; current: string }
   | { kind: "missing" }
   /**
    * A `.schema-migration-in-progress` sentinel is present: a previous
@@ -38,8 +39,8 @@ export type SchemaStatus =
    */
   | {
       kind: "interrupted";
-      from?: number;
-      to?: number;
+      from?: string;
+      to?: string;
       backup?: string;
       sentinel_path: string;
     }
@@ -154,16 +155,60 @@ export async function computeSchemaStatus(locttDir: string): Promise<SchemaStatu
   const sentinel = await readMigrationSentinel(sentinelPath);
   if (sentinel !== null) return sentinel;
 
-  let onDisk: number | null;
+  let onDisk: string | null;
   try {
     onDisk = await readSchemaVersion(locttDir);
   } catch (err) {
     return { kind: "unknown", message: (err as Error).message };
   }
   if (onDisk === null) return { kind: "missing" };
-  if (onDisk === CURRENT_SCHEMA_VERSION) return { kind: "current", version: onDisk };
-  if (onDisk < CURRENT_SCHEMA_VERSION) return { kind: "outdated", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
-  return { kind: "future", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
+  if (compareFormatVersions(onDisk, CURRENT_SCHEMA_VERSION) > 0) {
+    return { kind: "future", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
+  }
+  // K142: the recorded version stands for the highest known format at or
+  // below it; one below every known format is not a LocTT format.
+  let format: string;
+  try {
+    format = formatForRecordedVersion(onDisk);
+  } catch (err) {
+    return { kind: "unknown", message: (err as Error).message };
+  }
+  if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) === 0) return { kind: "current", version: onDisk };
+  return { kind: "outdated", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
+}
+
+/**
+ * One line for each schema state, shared by CLI `loctt info` and MCP
+ * `info` so the two describe one condition the same way. An older
+ * tracker gets K154's sentence: the same one every refusal carries.
+ */
+export function describeSchemaStatus(status: SchemaStatus): string {
+  switch (status.kind) {
+    case "current":
+      return `${status.version} (current)`;
+    case "outdated":
+      return upgradeRequiredMessage(status.on_disk, status.current)
+        .replace(/^This tracker needs/, "needs")
+        .replace(/\.$/, "");
+    case "future":
+      return `${status.on_disk}, this build reads ${status.current}`
+        + `. This tracker needs loctt ${status.on_disk} or newer`;
+    case "missing":
+      return `not recorded. This tracker predates schema versioning`;
+    case "interrupted": {
+      // The backup path is the recovery, so it leads. Everything else
+      // here is context for it.
+      const versions = status.from !== undefined && status.to !== undefined
+        ? ` (${status.from} → ${status.to})`
+        : "";
+      const backup = status.backup !== undefined
+        ? ` Restore from ${status.backup}, remove ${status.sentinel_path}, then re-run.`
+        : ` The sentinel at ${status.sentinel_path} names the backup to restore from.`;
+      return `a migration${versions} was interrupted and did not finish.${backup}`;
+    }
+    case "unknown":
+      return `unreadable: ${status.message}`;
+  }
 }
 
 /**
@@ -185,14 +230,12 @@ async function readMigrationSentinel(
   }
   const field = (name: string): string | undefined =>
     new RegExp(`^${name}:\\s*(.+)$`, "m").exec(raw)?.[1]?.trim();
-  const num = (name: string): number | undefined => {
+  const version = (name: string): string | undefined => {
     const v = field(name);
-    if (v === undefined) return undefined;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : undefined;
+    return v !== undefined && isFormatVersion(v) ? v : undefined;
   };
-  const from = num("from");
-  const to = num("to");
+  const from = version("from");
+  const to = version("to");
   const backup = field("backup");
   return {
     kind: "interrupted",

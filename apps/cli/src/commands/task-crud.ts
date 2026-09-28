@@ -6,12 +6,14 @@ import {
   buildListContext,
   buildShowModel,
   bulkDelete,
+  bulkEditTaskFields,
   bulkMoveTasksToProject,
   bulkSetFields,
   computeProgressFromStatuses,
   createTask,
   deleteTask,
   duplicateTask,
+  editTaskFields,
   filtersToScannableText,  getCurrentUser,
   listTasks,
   loadAllTasksDetailed,
@@ -23,18 +25,22 @@ import {
   loadProjectsConfig,
   loadSprintsConfig,
   loadState,
+  loadUserProfile,
   loadWorkflowConfig,
   lookupTask,
   moveTaskToProject,
+  orderRelationships,
   readHistory,
   readTaskBody,
   resolveCommentMentionsContext,
+  resolveEntityNamesContext,
   resolveLocttDir,
   resolveProjectIdForUser,
   resolveProjectIdFromInput,
   resolveView,
   saveState,
   setField,
+  UnknownFieldValueError,
   unsetField,
   ViewError,
   withStateLock,
@@ -47,6 +53,8 @@ import { formatHistoryEntry } from "../format/history.js";
 import { getArg, getNonNegativeIntArg, hasFlag, parseOptionalArchivedScope, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
+import type { SetListFlags } from "../runtime/set-value.js";
+import { coerceListItems, coerceSetValue, parseSetListFlags } from "../runtime/set-value.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
 
 /**
@@ -99,7 +107,7 @@ function warnBrokenWorkflow(workflowConfig: WorkflowConfig | undefined): void {
 }
 const TASK_DUPLICATE_FLAGS: readonly string[] = ["--title", "--project"];
 const TASK_MOVE_FLAGS: readonly string[] = [];
-const TASK_SET_FLAGS: readonly string[] = [];
+const TASK_SET_FLAGS: readonly string[] = ["--add", "--remove", "--create"];
 const TASK_UNSET_FLAGS: readonly string[] = [];
 const TASK_DELETE_CMD_FLAGS: readonly string[] = ["--yes"];
 const TASK_BODY_FLAGS: readonly string[] = ["--set", "--append", "--token", "--expect"];
@@ -278,12 +286,13 @@ export async function list(args: string[], root: string): Promise<void> {
   const viewQuery = view !== undefined && queriesConfig !== undefined
     ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
     : [];
-  const ctx = await resolveCommentMentionsContext(
+  // K148: names in the query resolve to the IDs the tasks store.
+  const ctx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
     locttDir,
     tasks,
     buildListContext(tasks),
     [baseQuery, ...viewQuery],
-  );
+  ), [baseQuery, view]);
 
   const requestedScope = parseOptionalArchivedScope(args);
 
@@ -380,6 +389,15 @@ async function nameOfEntity(
   }
 }
 
+/** A user's name for display; the id when the profile can't be read. */
+async function nameOfUser(locttDir: string, id: string): Promise<string> {
+  try {
+    return (await loadUserProfile(locttDir, id)).name ?? id;
+  } catch {
+    return id;
+  }
+}
+
 /**
  * Loads the workflow config and user roster once per `log` invocation so
  * the formatter can render labels and display names instead of stored
@@ -393,7 +411,14 @@ async function nameOfEntity(
 async function buildHistoryDisplayContext(
   locttDir: string,
 ): Promise<HistoryDisplayContext> {
-  const ctx: { workflow?: WorkflowConfig; users?: Map<string, string> } = {};
+  const ctx: {
+    workflow?: WorkflowConfig;
+    users?: Map<string, string>;
+    labels?: Map<string, string>;
+    milestones?: Map<string, string>;
+    sprints?: Map<string, string>;
+    projects?: Map<string, string>;
+  } = {};
   try {
     ctx.workflow = await loadWorkflowConfig(locttDir);
   } catch {
@@ -409,6 +434,14 @@ async function buildHistoryDisplayContext(
   } catch {
     // Leave undefined — actor ids render in place of names.
   }
+  // K148: the log names labels, milestones, sprints and projects as
+  // `show` does. Each is best-effort on its own, like the two above.
+  const byName = (list: readonly { id: string; name: string }[]): Map<string, string> =>
+    new Map(list.map(e => [e.id, e.name]));
+  try { ctx.labels = byName((await loadLabelsConfig(locttDir)).labels); } catch { /* ids */ }
+  try { ctx.milestones = byName((await loadMilestonesConfig(locttDir)).milestones); } catch { /* ids */ }
+  try { ctx.sprints = byName((await loadSprintsConfig(locttDir)).sprints); } catch { /* ids */ }
+  try { ctx.projects = byName((await loadProjectsConfig(locttDir)).projects); } catch { /* ids */ }
   return ctx;
 }
 
@@ -455,8 +488,10 @@ export async function show(args: string[], root: string): Promise<void> {
   if (fm.status) console.log(`Status: ${fm.status}`);
   if (fm.priority) console.log(`Priority: ${fm.priority}`);
   if (fm.task_type) console.log(`Type: ${fm.task_type}`);
-  if (fm.assignee) console.log(`Assignee: ${fm.assignee}`);
-  if (fm.reporter) console.log(`Reporter: ${fm.reporter}`);
+  // Users are stored by id too; print the name, as the reference's
+  // example does (G7). An unreadable or deleted user falls back to the id.
+  if (fm.assignee) console.log(`Assignee: ${await nameOfUser(locttDir, fm.assignee)}`);
+  if (fm.reporter) console.log(`Reporter: ${await nameOfUser(locttDir, fm.reporter)}`);
   if (fm.start_date) console.log(`Start: ${fm.start_date}`);
   if (fm.due_date) console.log(`Due: ${fm.due_date}`);
   if (fm.completed_date) console.log(`Completed: ${fm.completed_date}`);
@@ -485,7 +520,10 @@ export async function show(args: string[], root: string): Promise<void> {
   if (fm.archived) console.log(`Archived: ${fm.archived_at}`);
   if (model.relationships.length > 0) {
     console.log(`Relationships:`);
-    for (const r of model.relationships) {
+    // K141 6a: the web's order (kinds in workflow.yaml order, each
+    // group by rank, K143), from the one core
+    // sort, so `show` and the task page list children identically.
+    for (const r of orderRelationships(model.relationships, workflowConfig)) {
       // DEG-C5: mirror the four target states core resolves (and the web
       // renders, DEG-15), not the two (missing vs healthy) this used to
       // collapse them into. A corrupt-but-present target linked as ⚠, and
@@ -671,18 +709,49 @@ export async function move(args: string[], root: string): Promise<void> {
   console.log(`Moved ${result.oldKey} → ${result.newKey}`);
 }
 
+const SET_USAGE =
+  "loctt set <task> <field> <value> [--create]\n"
+  + "       loctt set <task>[,<task>...] <field> [--add <value>...] [--remove <value>...] [--create]";
+
 export async function set(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_SET_FLAGS);
   const ref = args[1];
   const field = args[2];
-  const value = args[3];
-  if (!ref || !field || value === undefined) {
-    throw new UsageError("missing args", "loctt set <task> <field> <value>");
+  const listFlags = parseSetListFlags(args);
+  const create = hasFlag(args, "--create");
+  const value = listFlags.value;
+  const editing = listFlags.add.length > 0 || listFlags.remove.length > 0;
+  if (!ref || !field || ref.startsWith("--") || field.startsWith("--")) {
+    throw new UsageError("missing args", SET_USAGE);
+  }
+  if (editing && value !== undefined) {
+    throw new UsageError("give a value to replace the list, or --add/--remove to edit it, not both", SET_USAGE);
+  }
+  if (!editing && value === undefined) {
+    throw new UsageError("missing args", SET_USAGE);
+  }
+  // K152/K153: add/remove takes several tasks. A replace value with
+  // --create stays one task at a time (A365).
+  if (!editing && create && splitRefs(ref).length > 1) {
+    throw new UsageError("--create with a value works on one task at a time. Use --add to add to several", SET_USAGE);
   }
   const locttDir = resolveLocttDir(root);
+  if (editing && splitRefs(ref).length > 1) {
+    await bulkListEdits(locttDir, splitRefs(ref), field, listFlags, create);
+    return;
+  }
+  if (editing || create) {
+    await setWithListEdits(locttDir, ref, field, value, listFlags, create);
+    return;
+  }
+  if (value === undefined) throw new UsageError("missing args", SET_USAGE);
   const { workflowConfig } = await loadOptionalConfigs(locttDir);
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
   const refs = splitRefs(ref);
+  // Typed custom fields and list fields from the command line's text
+  // (G2, G3). A number or boolean that doesn't parse is refused here,
+  // before any task is touched.
+  const { field: target, value: typed } = coerceSetValue(field, value, workflowConfig);
 
   // The enum check used to run first, so `set T-999 status doing` on an
   // absent task blamed the status vocabulary and exited 2 (usage) rather
@@ -703,7 +772,7 @@ export async function set(args: string[], root: string): Promise<void> {
     const result = await bulkSetFields({
       locttDir,
       taskRefs: refs,
-      changes: [{ field, value }],
+      changes: [{ field: target, value: typed }],
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       archivedGuard,
     });
@@ -716,12 +785,134 @@ export async function set(args: string[], root: string): Promise<void> {
   await setField({
     locttDir,
     taskId: task.frontmatter.id,
-    field,
-    value,
+    field: target,
+    value: typed,
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
     archivedGuard,
   });
   console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
+}
+
+/**
+ * `loctt set` with `--add`/`--remove` or `--create` (K150): applied to the
+ * task's current list under the lock by core, creating unknown labels or
+ * open-field values only with `--create`.
+ */
+async function setWithListEdits(
+  locttDir: string,
+  ref: string,
+  field: string,
+  value: string | undefined,
+  flags: SetListFlags,
+  create: boolean,
+): Promise<void> {
+  const { workflowConfig } = await loadOptionalConfigs(locttDir);
+  const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+  const task = await lookupTask(locttDir, ref);
+  let result;
+  let target: string;
+  try {
+    if (value !== undefined) {
+      const typed = coerceSetValue(field, value, workflowConfig);
+      target = typed.field;
+      result = await editTaskFields({
+        locttDir,
+        taskId: task.frontmatter.id,
+        set: [{ field: typed.field, value: typed.value }],
+        createMissing: create,
+        archivedGuard,
+      });
+    } else {
+      const add = coerceListItems(field, flags.add, workflowConfig);
+      const remove = coerceListItems(field, flags.remove, workflowConfig);
+      target = add.field;
+      result = await editTaskFields({
+        locttDir,
+        taskId: task.frontmatter.id,
+        lists: {
+          [add.field]: {
+            ...(add.values.length > 0 ? { add: add.values } : {}),
+            ...(remove.values.length > 0 ? { remove: remove.values } : {}),
+          },
+        },
+        createMissing: create,
+        archivedGuard,
+      });
+    }
+  } catch (err) {
+    // Name this surface's switch when it would have worked (K150).
+    if (err instanceof UnknownFieldValueError && err.creatable) {
+      err.message = `${err.message} Pass --create to create it.`;
+    }
+    throw err;
+  }
+  for (const c of result.created) {
+    console.log(c.field === "labels"
+      ? `Created label ${c.name}`
+      : `Created ${c.field} value ${c.name} (key ${c.id})`);
+  }
+  const key = task.frontmatter.key;
+  if (!result.changed) {
+    console.log(`No change to ${target} on ${key}`);
+    return;
+  }
+  if (value !== undefined) {
+    console.log(`Set ${field} = ${value} on ${key}`);
+    return;
+  }
+  const parts = [
+    ...(flags.add.length > 0 ? [`added ${flags.add.join(", ")}`] : []),
+    ...(flags.remove.length > 0 ? [`removed ${flags.remove.join(", ")}`] : []),
+  ];
+  console.log(`Updated ${target} on ${key}: ${parts.join("; ")}`);
+}
+
+/**
+ * `loctt set T-1,T-2 labels --add x` (K152, K153): the edit is applied to
+ * each task's own list as one operation, reported like bulk set: the
+ * count changed, the no-op tasks, and each task that failed (exit 1).
+ */
+async function bulkListEdits(
+  locttDir: string,
+  refs: readonly string[],
+  field: string,
+  flags: SetListFlags,
+  create: boolean,
+): Promise<void> {
+  const { workflowConfig } = await loadOptionalConfigs(locttDir);
+  const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+  const add = coerceListItems(field, flags.add, workflowConfig);
+  const remove = coerceListItems(field, flags.remove, workflowConfig);
+  let result;
+  try {
+    result = await bulkEditTaskFields({
+      locttDir,
+      taskRefs: refs,
+      lists: {
+        [add.field]: {
+          ...(add.values.length > 0 ? { add: add.values } : {}),
+          ...(remove.values.length > 0 ? { remove: remove.values } : {}),
+        },
+      },
+      createMissing: create,
+      archivedGuard,
+    });
+  } catch (err) {
+    if (err instanceof UnknownFieldValueError && err.creatable) {
+      err.message = `${err.message} Pass --create to create it.`;
+    }
+    throw err;
+  }
+  for (const c of result.created) {
+    console.log(c.field === "labels"
+      ? `Created label ${c.name}`
+      : `Created ${c.field} value ${c.name} (key ${c.id})`);
+  }
+  const parts = [
+    ...(flags.add.length > 0 ? [`added ${flags.add.join(", ")}`] : []),
+    ...(flags.remove.length > 0 ? [`removed ${flags.remove.join(", ")}`] : []),
+  ];
+  reportBulk(`Updated ${add.field} (${parts.join("; ")})`, result);
 }
 
 /**

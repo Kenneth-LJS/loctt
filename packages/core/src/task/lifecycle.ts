@@ -3,10 +3,12 @@ import { rm } from "node:fs/promises";
 import type { Task, TaskFrontmatter } from "@loctt/contracts";
 
 import { getTaskDir } from "../paths/index.js";
+import { forgetTasks } from "../state/key-index.js";
 import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
+import { deleteWithLinks, loadLinkSnapshot } from "./relationships.js";
 
 export class TaskLifecycleError extends Error {
   constructor(message: string) {
@@ -126,7 +128,9 @@ export async function unarchiveTask(locttDir: string, taskId: string): Promise<T
 }
 
 /**
- * Hard-deletes a task by removing its entire directory. Requires
+ * Hard-deletes a task by removing its entire directory, then removes
+ * the other side of each of its links from the partners (K147) and its
+ * keys from the on-disk key index (G5). Requires
  * force=true as a safety check. Wrapped in withStateLock so a
  * concurrent setField that's mid-write doesn't see the directory
  * disappear from under it (its writeTask would then create an
@@ -143,13 +147,33 @@ export async function deleteTask(
 
   await withStateLock(locttDir, async () => {
     // Verify task exists first.
-    await readTask(locttDir, taskId);
+    const task = await readTask(locttDir, taskId);
 
-    const taskDir = getTaskDir(locttDir, taskId);
-    await rm(taskDir, { recursive: true, force: true });
-    // Drop any cached "key not found" verdicts — the just-deleted
-    // task's keys still resolved a moment ago and any rebuild after
-    // this point should reflect the new (smaller) population.
-    clearLookupCaches(locttDir);
+    // The partners' side of every link, then the directory, all or
+    // nothing (K147).
+    const snapshot = await loadLinkSnapshot(locttDir);
+    await deleteWithLinks(
+      locttDir, task, snapshot,
+      () => rm(getTaskDir(locttDir, taskId), { recursive: true, force: true }),
+      new Date().toISOString(),
+    );
+    await afterDelete(locttDir, [taskId]);
   });
+}
+
+/**
+ * What follows a delete that happened: the task's keys leave the on-disk
+ * index (G5) and cached lookups are dropped. Runs after every successful
+ * delete. The index is a cache that lookups repair (a key whose task is
+ * gone is dropped when met), so a failure to rewrite it does not turn a
+ * delete that happened into a reported failure.
+ */
+export async function afterDelete(locttDir: string, ids: readonly string[]): Promise<void> {
+  try {
+    await forgetTasks(locttDir, ids);
+  } catch {
+    // See above: the lookup drops the stale entry when it meets it.
+  } finally {
+    clearLookupCaches(locttDir);
+  }
 }

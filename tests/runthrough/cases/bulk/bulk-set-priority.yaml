@@ -1,0 +1,14 @@
+id: bulk-set-priority
+name: Set one field on several tasks at once
+description: A comma-separated CLI ref list and MCP bulk_update_tasks set the same value on every task.
+tags: [bulk]
+cli: set ${task.search_index.key},${task.search_ui.key},${task.search_typo.key} priority high
+mcp:
+  call:
+    tool: bulk_update_tasks
+    args: { refs: ["${task.search_index.key}", "${task.search_ui.key}", "${task.search_typo.key}"], field: priority, value: high }
+post:
+  - count: { where: { priority: high, project: "${project.web_app.id}" }, equals: 11 }
+  - field: { task: "${task.search_index.key}", field: priority, equals: high }
+  - field: { task: "${task.search_ui.key}", field: priority, equals: high }
+  - field: { task: "${task.search_typo.key}", field: priority, equals: high }

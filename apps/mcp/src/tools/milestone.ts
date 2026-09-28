@@ -22,6 +22,7 @@ import { z } from "zod";
 import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
+import { named } from "../runtime/names.js";
 import type { ToolDef } from "../types.js";
 
 export const TOOLS: readonly ToolDef[] = [
@@ -110,7 +111,8 @@ export const TOOLS: readonly ToolDef[] = [
         ...("target_date" in args ? { target_date: td ?? null } : {}),
         ...(archived !== undefined ? { archived } : {}),
       });
-      return text(`Updated milestone ${id}`);
+      // K148: name and ID.
+      return text(`Updated milestone ${named((args["name"] as string | undefined) ?? cfg.milestones.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -135,7 +137,7 @@ export const TOOLS: readonly ToolDef[] = [
         hard: true,
         ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
       });
-      return text(JSON.stringify({ id, ...result }, null, 2));
+      return text(JSON.stringify({ id, name: cfg.milestones.find(e => e.id === id)?.name, ...result }, null, 2));
     },
   },
   {
@@ -146,7 +148,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadMilestonesConfig(locttDir);
       const id = resolveMilestoneIdFromInput(cfg, args["milestone"] as string, { includeArchived: true });
       await archiveMilestone(locttDir, id);
-      return text(`Archived milestone ${id}`);
+      return text(`Archived milestone ${named(cfg.milestones.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -157,7 +159,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadMilestonesConfig(locttDir);
       const id = resolveMilestoneIdFromInput(cfg, args["milestone"] as string, { includeArchived: true });
       await unarchiveMilestone(locttDir, id);
-      return text(`Unarchived milestone ${id}`);
+      return text(`Unarchived milestone ${named(cfg.milestones.find(e => e.id === id)?.name, id)}`);
     },
   },
 ];

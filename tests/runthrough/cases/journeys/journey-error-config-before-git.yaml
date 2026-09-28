@@ -1,0 +1,9 @@
+id: journey-error-config-before-git
+name: "Journey: a git setting before git mode is enabled is refused"
+description: Folded in from tests/e2e/10 (B43, K145).
+tags: [journey, error, config, b43]
+surfaces: [cli]
+seed: empty
+cli: config set git.auto_push true
+expect_error:
+  cli: { exit_code: 1, message: "Git mode is not enabled. Run 'loctt git enable' first." }

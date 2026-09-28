@@ -49,7 +49,7 @@ This case previously asserted the panels were read-only. That was an early draft
 
 - Priorities show `label`, `key`, and `value`, sorted by `value`; a tracker with two priorities renders two rows and a tracker with seven renders seven — nothing assumes a fixed count.
 - Task types show `label` and `key` with no invented semantics attached (no "epic" special-casing).
-- Relationships show forward `label`/`key`, `inverse`/`inverse_label`, `graph` (`none` / `acyclic` / `tree`) and `ranked` as explicit indicators rather than unlabelled icons. `graph` replaced the former `structural` boolean; `symmetric` is not among these — it is `kind: symmetric`, a separate discriminator (SET-5).
+- Relationships show forward `label`/`key`, `inverse`/`inverse_label` and `graph` (`none` / `acyclic` / `tree`) as explicit indicators rather than unlabelled icons. `graph` replaced the former `structural` boolean; `symmetric` is not among these — it is `kind: symmetric`, a separate discriminator (SET-5). There is no `ranked` indicator or control: every kind is ordered (K143, Ken 2026-09-28; this bullet listed `ranked` before B41).
 - A relationship configured with a custom key like `duplicates` appears with the user's own labels — nothing hardcodes `blocks` / `depends_on`.
 
 ### SET-5 · M4 · major · P3
@@ -134,15 +134,17 @@ This case previously asserted the panels were read-only. That was an early draft
 - Re-running after fixing something in a terminal flips that check to pass without a page reload.
 
 ### SET-15 · M4 · blocker · P1 P7
-**The schema migrate button returns the schema to current.** `.schema-version` is one behind `CURRENT_SCHEMA_VERSION`, so the shell shows the `outdated` banner.
+**The schema migrate button returns the schema to current.** `.schema-version` is one behind `CURRENT_SCHEMA_VERSION`, so the app shows the Upgrade screen.
 
-- The banner's "Migrate now" is present for the `outdated` kind only.
-- Clicking it states what will happen before it runs: the from/to versions and that a backup snapshot of `.loctt/` is taken first.
+- The Upgrade button is present for the `outdated` kind only.
+- The screen states what will happen before it runs: the from/to versions, that a backup is made first, and the steps.
 - It POSTs to `/api/migrate`; on success the response reports the version moved from and to.
-- `.schema-version` now equals `CURRENT_SCHEMA_VERSION`, a `.loctt.backup-v<from>-<ts>-<rand>/` directory exists as a sibling, and the banner clears without a page reload.
+- `.schema-version` now equals `CURRENT_SCHEMA_VERSION`, a `.loctt.backup-v<from>-<ts>-<rand>/` directory exists as a sibling, and the app reloads into the shell.
 - The rest of the app becomes writable again in the same session — a status change on a task now succeeds.
 
 ## B. Edge cases
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). The screen's single Upgrade button replaced the banner's Migrate now, and a success reloads the app.
 
 ### B1. Workflow and custom fields
 
@@ -327,7 +329,9 @@ This case previously asserted the panels were read-only. That was an early draft
 - The result names the step that failed and the version the tracker is now on (the intermediate version stamped by the last successful step).
 - It reports where the backup snapshot lives, by absolute path.
 - It states that the sentinel is present and that the app will refuse to boot until it is resolved, and gives the CLI recovery path.
-- It does not report a partial success as success, and it does not clear the schema banner.
+- It does not report a partial success as success, does not offer Upgrade again (only Reload, which shows the recovery screen), and does not leave the Upgrade screen.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). The failure is shown on the Upgrade screen, with the backup path from the sentinel.
 
 ### SET-38 · M4 · major · P4 P7
 **Migrate is attempted while the migration lock is held by the CLI.** `loctt migrate` is running in a terminal.
@@ -407,7 +411,7 @@ This case previously asserted the panels were read-only. That was an early draft
 ### SET-48 · M4 · major · P3 P4
 **A relationship type can be created.** Relationship-types panel, Create dialog.
 
-- The Create dialog takes key + label + symmetric/inverse + inverse_label + graph + ranked (`RelationshipDef`).
+- The Create dialog takes key + label + symmetric/inverse + inverse_label + graph (`RelationshipDef`). (`ranked` was removed by K143: every kind is ordered.)
 - On Save the new relationship type is written to `workflow.yaml` and is usable when linking tasks.
 - Creating a duplicate key is rejected before `PUT` with a message naming the collision.
 
@@ -471,3 +475,10 @@ search, and no saved views over archived items.
 > `MilestonesPanel.test.tsx`, `ProjectsPanel.test.tsx`,
 > `SavedViewsPanel.test.tsx`, `SprintsPanel.test.tsx`,
 > `UsersPanel.test.tsx`) — see `docs/dev/backlog.md` B9.
+
+### SET-56 · M4 · major · P4 P5 P10
+**Diagnostics offers the relationship repair and "Fix all" when they can act.** Settings → Diagnostics on a tracker with a link stored as a task key (K141 4a).
+
+- A "Repair relationships" button shows only when a check carries the `repair-relationships` fix. It asks for confirmation (it writes task files), then runs the same repair as `loctt doctor --repair-relationships` and re-runs the checks.
+- After the repair, the task page shows the link to the right task rather than a broken row, and the Diagnostics relationships warning is gone.
+- A "Fix all" button shows when more than one safe repair can act. It asks for confirmation, then runs the same repairs as `loctt doctor --fix` (key index rebuild and the relationship repair, not restoring missing files) and re-runs the checks.

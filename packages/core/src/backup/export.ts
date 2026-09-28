@@ -30,7 +30,7 @@ import {
   getUserDir,
   getUsersDir,
 } from "../paths/index.js";
-import { readSchemaVersion } from "../schema/version.js";
+import { CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/version.js";
 import {
   type BackupAttachment,
   type BackupHeader,
@@ -60,7 +60,7 @@ export interface ExportBackupReport {
   readonly includedHistory: boolean;
   /** What was deliberately left behind (BAK-C1, A96, Q22). */
   readonly excluded: readonly string[];
-  readonly schemaVersion: number;
+  readonly schemaVersion: string;
 }
 
 /**
@@ -292,7 +292,7 @@ export async function exportBackup(
   options: ExportBackupOptions,
 ): Promise<ExportBackupReport> {
   const includeHistory = options.includeHistory ?? true;
-  const schemaVersion = (await readSchemaVersion(locttDir)) ?? 1;
+  const schemaVersion = (await readSchemaVersion(locttDir)) ?? CURRENT_SCHEMA_VERSION;
 
   const writer = new PartWriter(
     options.outputPath,

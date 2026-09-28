@@ -1,0 +1,41 @@
+id: journey-mcp-lifecycle
+name: "Journey: every MCP tool mutation on one task"
+description: Folded in from tests/e2e/04 (B43, K145).
+tags: [journey, b43]
+surfaces: [mcp]
+seed: empty
+steps:
+  - name: create two tasks
+    mcp:
+      call:
+        - { tool: create_task, args: { title: primary } }
+        - { tool: create_task, args: { title: secondary } }
+  - name: get
+    mcp:
+      call: { tool: get_task, args: { ref: T-1 } }
+    post:
+      - output: { contains: ["primary"] }
+  - name: update status and priority, replace and append the body
+    mcp:
+      call:
+        - { tool: update_task, args: { ref: T-1, field: status, value: in_progress } }
+        - { tool: update_task, args: { ref: T-1, field: priority, value: high } }
+        - { tool: replace_task_body, args: { ref: T-1, body: first body } }
+        - { tool: append_task_body, args: { ref: T-1, text: more text } }
+  - name: get shows every change
+    mcp:
+      call: { tool: get_task, args: { ref: T-1 } }
+    post:
+      - output: { contains: ["first body", "more text", "in_progress", "high"] }
+  - name: link, unlink, archive, unarchive, unset, delete
+    mcp:
+      call:
+        - { tool: link_tasks, args: { refs: [T-1], type: blocks, target: T-2 } }
+        - { tool: unlink_tasks, args: { ref: T-1, type: blocks, target: T-2 } }
+        - { tool: archive_task, args: { refs: [T-1] } }
+        - { tool: unarchive_task, args: { refs: [T-1] } }
+        - { tool: unset_field, args: { ref: T-1, field: priority } }
+        - { tool: delete_task, args: { refs: [T-1], confirm: true } }
+    post:
+      - task_absent: T-1
+      - count: { where: {}, archived: include, equals: 1 }

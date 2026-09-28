@@ -1,0 +1,10 @@
+id: body-append
+name: Append to a task body
+description: Appending keeps the existing body and adds the new text after it.
+tags: [edit, body]
+cli: 'body ${task.ops_runbook.key} --append "Escalation: page the incident commander after 30 minutes."'
+mcp:
+  call: { tool: append_task_body, args: { ref: "${task.ops_runbook.key}", text: "Escalation: page the incident commander after 30 minutes." } }
+post:
+  - field: { task: "${task.ops_runbook.key}", field: body, contains: "## Paging" }
+  - field: { task: "${task.ops_runbook.key}", field: body, contains: "Escalation: page the incident commander after 30 minutes." }

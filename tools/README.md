@@ -22,10 +22,19 @@ the tests actually tag.
 ## Commands
 
 ```bash
-npm run cases:index       # regenerate tests/cases/case-index.json
-npm run cases:check       # fail if the committed index is stale
+npm run cases:index       # regenerate tests/cases/case-index.json AND tests/ui/smoke.list
+npm run cases:check       # fail if either committed file is stale
 npm run cases:coverage    # report which cases have tests
 ```
+
+`cases:index` also regenerates `tests/ui/smoke.list` (K155, B50): every
+`@verifies` tag naming a **blocker**-severity case, resolved to the exact
+Playwright test it annotates. `npm run test:smoke` runs only those tests
+instead of the full UI suite — see
+`docs/dev/process/build-loop.md` → "Smoke before every commit" for why
+and `tools/case-index/smoke.ts` for the resolution rules. `cases:check`
+fails if `smoke.list` no longer matches what the specs currently produce,
+same as it does for the case index itself.
 
 Gating forms:
 

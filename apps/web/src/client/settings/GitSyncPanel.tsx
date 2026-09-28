@@ -102,7 +102,7 @@ export function schemaRemoteNewer(error: unknown):
  * as `remote_version: null` (unknown ⇒ treated as ahead), phrased as "a
  * newer version".
  */
-function SchemaRemoteNewerRefusal({
+export function SchemaRemoteNewerRefusal({
   info,
   testId,
 }: {
@@ -110,8 +110,30 @@ function SchemaRemoteNewerRefusal({
   readonly testId: string;
 }) {
   const remote = info.remote_version !== null
-    ? `schema v${info.remote_version}`
-    : "a newer schema";
+    ? `format ${info.remote_version}`
+    : "a format this version doesn't recognise";
+  // The old integer counter (`1`, loctt 0.2.x) is an older branch, not a
+  // newer one: updating LocTT cannot help, and publish never writes the
+  // branch's .schema-version, so the fix is that file (K151, A366).
+  if (info.remote_version === null && info.remote_raw !== undefined && /^\d+$/.test(info.remote_raw)) {
+    return (
+      <div
+        role="alert"
+        data-testid={testId}
+        data-git-refusal="schema-remote-newer"
+        data-remote-version="unknown"
+        data-local-version={info.local_version}
+        className="mb-3 rounded-md border border-danger-fg p-3 text-[0.9286rem] text-danger-fg"
+      >
+        <p className="font-semibold">
+          The {info.branch} branch&apos;s <code className="text-[0.8571rem]">.schema-version</code> holds{" "}
+          {info.remote_raw}, the old version number LocTT 0.2.x and earlier wrote. Nothing was
+          changed. On the {info.branch} branch, change <code className="text-[0.8571rem]">.schema-version</code>{" "}
+          to 0.1.0 and commit it, then sync again.
+        </p>
+      </div>
+    );
+  }
   return (
     <div
       role="alert"
@@ -123,8 +145,9 @@ function SchemaRemoteNewerRefusal({
     >
       <p className="font-semibold">
         The {info.branch} branch was written by a newer LocTT ({remote}). This
-        version supports up to <code className="text-[0.8571rem]">schema v{info.local_version}</code>.
-        Nothing was changed. Update LocTT, then sync again.
+        version reads <code className="text-[0.8571rem]">format {info.local_version}</code>.
+        Nothing was changed. Update LocTT
+        {info.remote_version !== null ? ` to ${info.remote_version} or newer` : ""}, then sync again.
       </p>
     </div>
   );

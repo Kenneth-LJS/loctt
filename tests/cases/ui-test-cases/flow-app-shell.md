@@ -112,8 +112,11 @@ config changing underneath a live session is
 **The schema banner appears above the shell when the schema is not `current`.** Serve a tracker whose `.schema-version` is behind.
 
 - The banner renders above the header/shell, spanning full width, and is visible without scrolling on every route.
-- The rest of the app remains navigable — the banner informs, it does not blank the page. **Navigable is not readable:** the server's schema guard returns 409 for every `/api/` route while the mismatch stands, so each view renders its shell and then an explained error rather than data. A user can move around and read the explanation; they cannot see or change tasks.
+- For `future`, `missing` and `unknown`, the rest of the app remains navigable — the banner informs, it does not blank the page. **Navigable is not readable:** the server's schema guard returns 409 for every `/api/` route while the mismatch stands, so each view renders its shell and then an explained error rather than data. A user can move around and read the explanation; they cannot see or change tasks.
 - On a `current` tracker the banner is absent entirely and reclaims no vertical space.
+- `outdated` is not a banner: the Upgrade screen replaces the shell (ONB-C17), because nothing but upgrading can work there.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). An older tracker now gets the Upgrade screen instead of this banner over a navigable shell.
 
 ### SHL-14 · M1 · blocker · P8
 **Theme switches between light, dark, and system.** Use the theme toggle in the avatar menu.
@@ -279,7 +282,7 @@ a violation of P4.
 **`.schema-version` missing renders a "not a recognized tracker" banner.** Serve a tracker whose `.schema-version` file has been deleted (a legacy or hand-assembled `.loctt/`); `schemaStatus.kind` is `missing`.
 
 - The banner states that `.loctt/` exists but has no recorded schema version, so LocTT cannot tell what format the data is in.
-- The next action offered is running `loctt migrate` in the terminal to stamp and upgrade the tracker — **not** "reinitialize", which would risk data.
+- The next action offered is writing the tracker's format version into `.loctt/.schema-version` (`loctt doctor` says which) and reloading — **not** `loctt migrate`, which refuses a tracker with no recorded version (A366), and **not** "reinitialize", which would risk data.
 - The banner does **not** say the tracker is out of date; the version is unknown, not old.
 - No version numbers are displayed, because none are known — the banner does not print `undefined` or `0`.
 - The app does not route to `/init`; the directory is not uninitialized.
@@ -294,13 +297,15 @@ a violation of P4.
 - Writes are blocked or clearly marked unsafe rather than proceeding against a format the app doesn't understand.
 
 ### SHL-36 · M1 · blocker · P4 P7
-**A recorded version LESS than current renders a "run `loctt migrate`" banner.** Serve a tracker whose `.schema-version` is behind; `schemaStatus.kind` is `outdated`.
+**A recorded version LESS than current renders the Upgrade screen.** Serve a tracker whose `.schema-version` is behind; `schemaStatus.kind` is `outdated`.
 
 - The banner states that the tracker is on an older schema and shows both the on-disk and current version numbers.
-- The next action is the literal command `loctt migrate`, presented as copyable text.
-- It notes that migration takes a backup before changing anything, so the user isn't afraid to run it.
-- In M1 there is **no** "Migrate now" button — this kind, and only this kind, gains one in M4.3.
+- The next action is the **Upgrade** button (it runs the same upgrade as `loctt migrate`); the screen names no CLI command.
+- It says "A backup is made first." so the user isn't afraid to run it.
+- Only this kind offers an upgrade control (SET-30).
 - The banner is distinct in wording from SHL-35: "your tracker is behind the app" reads differently from "the app is behind your tracker".
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). Was a banner quoting `loctt migrate` (later with a Migrate now button); the Upgrade screen (ONB-C17) replaces it.
 
 ### SHL-37 · M1 · blocker · P4 P7 P5
 **The `.schema-migration-in-progress` sentinel renders a crashed-migration banner and blocks boot.** Place the sentinel file in `.loctt/` and start `loctt ui`.

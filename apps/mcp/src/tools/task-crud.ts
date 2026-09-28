@@ -18,12 +18,14 @@ import {
   buildListContext,
   buildShowModel,
   bulkDelete,
+  bulkEditTaskFields,
   bulkMoveTasksToProject,
   bulkSetFields,
   computeProgressFromStatuses,
   createTask,
   DEFAULT_LIST_LIMIT,
   duplicateTask,
+  editTaskFields,
   exportTasksToCSV,
   exportTasksToJSON,
   filterForExport,
@@ -35,13 +37,16 @@ import {
   loadProjectsConfig,
   loadState,
   lookupTask,
+  orderRelationships,
   readHistory,
   resolveCommentMentionsContext,
+  resolveEntityNamesContext,
   resolveProjectIdForUser,
   resolveProjectIdFromInput,
   resolveView,
   saveState,
   setField,
+  UnknownFieldValueError,
   unsetField,
   withStateLock,
 } from "@loctt/core";
@@ -50,9 +55,11 @@ import { z } from "zod";
 import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
 import {
+  checkFieldWritability,
   validateUnsetFieldArgs,
   validateUpdateTaskArgs,
 } from "../runtime/fields.js";
+import { historyEntryNames, loadEntityNames, taskReferenceNames } from "../runtime/names.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
 import type { ToolDef } from "../types.js";
 
@@ -88,7 +95,7 @@ function treeChildSideKey(
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
-    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token`. Pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}). It is category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
+    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. Relationships are listed in the same order as the web task page: kinds in workflow order, and within a kind by `rank` (carried on each edge). When the body is included the result carries `body_token`. Pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}). It is category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -106,17 +113,28 @@ export const TOOLS: readonly ToolDef[] = [
         ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
         aux,
       });
+      // K148: each entity reference also by name (additive siblings).
+      const refNames = taskReferenceNames(
+        model.task.frontmatter as unknown as Record<string, unknown>,
+        await loadEntityNames(locttDir),
+      );
       const result: Record<string, unknown> = {
         ...model.task.frontmatter,
+        ...refNames,
         // DEG-C2: an untitled task (title never set, or lifted whole into
         // `health`) shows its key where the title would go — never absent,
         // never "undefined". Mirrors the web and `list_tasks` (DEG-8). The
         // corrupt title, when that is why it is absent, still rides in
         // `health` below so the agent can repair it.
         title: model.task.frontmatter.title ?? model.task.frontmatter.key,
-        relationships: model.relationships.map(r => ({
+        // K141 6a: listed in the web's order, from the one core sort
+        // (kinds in workflow.yaml order, each group by rank, K143),
+        // with each edge's `rank` so an agent
+        // can see the order and pass neighbours to reorder_relationship.
+        relationships: orderRelationships(model.relationships, workflowConfig).map(r => ({
           type: r.type,
           target: r.missing ? r.target : r.resolvedKey ?? r.target,
+          ...(r.rank !== undefined ? { rank: r.rank } : {}),
           // Title and status save the agent a get_task per edge to
           // learn what a linked task actually is.
           ...(r.resolvedTitle !== undefined ? { title: r.resolvedTitle } : {}),
@@ -262,9 +280,10 @@ export const TOOLS: readonly ToolDef[] = [
       const listViewQuery = view !== undefined && queriesConfig !== undefined
         ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
         : [];
-      const listCtx = await resolveCommentMentionsContext(
+      // K148: names in the query resolve to the IDs the tasks store.
+      const listCtx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
         locttDir, tasks, buildListContext(tasks), [baseQuery, ...listViewQuery],
-      );
+      ), [baseQuery, view]);
       const result = listTasks({
         tasks,
         options: {
@@ -378,9 +397,9 @@ export const TOOLS: readonly ToolDef[] = [
       const exportViewQuery = view !== undefined && queriesConfig !== undefined
         ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
         : [];
-      const exportCtx = await resolveCommentMentionsContext(
+      const exportCtx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
         locttDir, tasks, buildListContext(tasks), [baseQuery, ...exportViewQuery],
-      );
+      ), [baseQuery, view]);
       const result = listTasks({
         tasks,
         options: {
@@ -449,10 +468,12 @@ export const TOOLS: readonly ToolDef[] = [
       sprint: z.string().optional().describe("Sprint id or name."),
       labels: z.array(z.string()).optional(),
       parent: z.string().optional().describe(
-        "Parent task key or id. Pre-links the new task under the "
+        "Parent task key or id. Links the new task under the "
         + "configured tree relationship (the workflow's `graph: tree` "
-        + "axis), so a create can build a hierarchy without a follow-up "
-        + "link_tasks call.",
+        + "axis) exactly as link_tasks would: the parent's id is stored "
+        + "and the parent gets the matching child link. A parent that "
+        + "does not exist or is archived is refused, and nothing is "
+        + "created.",
       ),
     },
     handler: async ({ locttDir }, args) => {
@@ -509,7 +530,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "update_task",
     description:
-      "Set a field on a task. Writable built-in fields: title, status, " +
+      "Set a field on a task, or add/remove values of a list field. Writable built-in fields: title, status, " +
       "task_type, priority, labels, assignee, reporter, start_date, due_date, " +
       "estimate, milestone, sprint. Any other field is treated as a custom " +
       "field (must be declared in workflow.yaml under custom_fields). " +
@@ -517,29 +538,103 @@ export const TOOLS: readonly ToolDef[] = [
       "created_at, project (immutable); relationships (use link_tasks / " +
       "unlink_tasks); archived / archived_at (use archive_task / " +
       "unarchive_task); status_updated_at (auto-stamped on status change); " +
-      "completed_date and board_rank (auto-managed).",
+      "completed_date and board_rank (auto-managed). " +
+      "`field` + `value` REPLACES the value (a list field takes the whole list). " +
+      "`add` / `remove` map a list field (labels or a multi-value custom field) " +
+      "to values to add or remove, applied to the task's current list: adding a " +
+      "value already there or removing one that isn't changes nothing. Labels " +
+      "are given by name or ID; choice values by key or label. An unknown label " +
+      "or value is refused unless `create_missing: true`, which creates a label, " +
+      "or a value of a choice field that allows new values (appended to its " +
+      "values). `field`/`value` and `add`/`remove` can be combined for different fields.",
     inputSchema: {
       ref: z.string().describe("Task key or ID"),
-      field: z.string(),
-      value: z.unknown().describe("The value to set"),
+      field: z.string().optional().describe("The field to replace. Give `value` with it."),
+      value: z.unknown().optional().describe("The value to set"),
+      add: z.record(z.string(), z.array(z.unknown())).optional()
+        .describe("List field → values to add, e.g. {\"labels\": [\"frontend\"]}."),
+      remove: z.record(z.string(), z.array(z.unknown())).optional()
+        .describe("List field → values to remove."),
+      create_missing: z.boolean().optional()
+        .describe("Create unknown labels, and unknown values of choice fields that allow new values. Default false."),
     },
     handler: async ({ locttDir }, args) => {
-      const invalid = validateUpdateTaskArgs(args);
-      if (invalid) return invalid;
+      const add = (args["add"] ?? {}) as Record<string, unknown[]>;
+      const remove = (args["remove"] ?? {}) as Record<string, unknown[]>;
+      const createMissing = args["create_missing"] === true;
+      const listFields = [...new Set([...Object.keys(add), ...Object.keys(remove)])];
+      const hasField = args["field"] !== undefined;
+      if (!hasField && listFields.length === 0) {
+        return errorResult("Pass `field` and `value` to set a field, or `add` / `remove` to edit a list field.");
+      }
+      if (hasField) {
+        const invalid = validateUpdateTaskArgs(args);
+        if (invalid) return invalid;
+      }
+      for (const f of listFields) {
+        const blocked = checkFieldWritability(f, "set");
+        if (blocked) return blocked;
+      }
       const task = await lookupTask(locttDir, args["ref"] as string);
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
       const archivedGuard = await loadArchivedGuardConfigs(locttDir);
-      const field = args["field"] as string;
+      const field = args["field"] as string | undefined;
       const value = args["value"];
-      const updated = await setField({
-        locttDir,
-        taskId: task.frontmatter.id,
-        field,
-        value,
-        ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-        archivedGuard,
-      });
-      return text(`Updated ${updated.frontmatter.key}: set ${field} = ${JSON.stringify(value)}`);
+
+      // The replace form alone keeps its original path and text.
+      if (listFields.length === 0 && !createMissing) {
+        const updated = await setField({
+          locttDir,
+          taskId: task.frontmatter.id,
+          field: field as string,
+          value,
+          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+          archivedGuard,
+        });
+        return text(`Updated ${updated.frontmatter.key}: set ${field as string} = ${JSON.stringify(value)}`);
+      }
+
+      const lists = Object.fromEntries(listFields.map(f => [f, {
+        ...(add[f] !== undefined ? { add: add[f] } : {}),
+        ...(remove[f] !== undefined ? { remove: remove[f] } : {}),
+      }]));
+      let result;
+      try {
+        result = await editTaskFields({
+          locttDir,
+          taskId: task.frontmatter.id,
+          ...(field !== undefined ? { set: [{ field, value }] } : {}),
+          lists,
+          createMissing,
+          archivedGuard,
+        });
+      } catch (err) {
+        // Name this surface's switch when it would have worked (K150).
+        if (err instanceof UnknownFieldValueError && err.creatable) {
+          return errorResult(`${err.message} Pass create_missing: true to create it.`);
+        }
+        throw err;
+      }
+      const lines: string[] = [];
+      for (const c of result.created) {
+        lines.push(c.field === "labels"
+          ? `Created label ${c.name} (${c.id})`
+          : `Created ${c.field} value ${c.name} (key ${c.id})`);
+      }
+      const key = result.task.frontmatter.key;
+      if (!result.changed) {
+        lines.push(`No change to ${key}: every value to add is already there and every value to remove is absent.`);
+        return text(lines.join("\n"));
+      }
+      const parts: string[] = [];
+      if (field !== undefined) parts.push(`set ${field} = ${JSON.stringify(value)}`);
+      for (const f of listFields) {
+        const fm = result.task.frontmatter as unknown as Record<string, unknown>;
+        const stored = f === "labels" ? fm["labels"] : (fm["fields"] as Record<string, unknown> | undefined)?.[f];
+        parts.push(`${f} = ${JSON.stringify(stored ?? [])}`);
+      }
+      lines.push(`Updated ${key}: ${parts.join("; ")}`);
+      return text(lines.join("\n"));
     },
   },
   {
@@ -649,26 +744,91 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "bulk_update_tasks",
     description:
-      "Set or clear one field across many tasks in a single operation. " +
+      "Set or clear one field across many tasks in a single operation, or add/remove " +
+      "values of a list field on each of them. " +
       "Prefer this over repeated update_task calls when changing the same " +
       "field on several tasks: it runs under one lock, stamps every " +
       "history entry with a shared bulk_op_id so the change reads as one " +
-      "action, and reports per-task outcomes instead of failing at the " +
-      "first bad ref. Omit `value` (or pass null) to CLEAR the field. " +
+      "action. `field` + `value` reports per-task outcomes instead of failing at the " +
+      "first bad ref; omit `value` (or pass null) to CLEAR the field. " +
+      "`add` / `remove` map a list field (labels or a multi-value custom field) to " +
+      "values, applied to each task's own list; like the set form, a task that " +
+      "would fail is listed and the rest still change. An unknown label or value " +
+      "refuses the whole call unless `create_missing: true`, as in update_task. " +
       "Same field allowlist as update_task.",
     inputSchema: {
       refs: z.array(z.string()).min(1).max(500)
         .describe("Task keys or IDs. Capped at 500, because one bulk op holds the tracker lock for its whole run."),
-      field: z.string(),
+      field: z.string().optional()
+        .describe("The field to set or clear. Omit when using add/remove."),
       value: z.unknown().optional()
         .describe("The value to set. Omit or pass null to clear the field."),
+      add: z.record(z.string(), z.array(z.unknown())).optional()
+        .describe("List field → values to add to every task, e.g. {\"labels\": [\"frontend\"]}."),
+      remove: z.record(z.string(), z.array(z.unknown())).optional()
+        .describe("List field → values to remove from every task."),
+      create_missing: z.boolean().optional()
+        .describe("With add: create unknown labels, and unknown values of choice fields that allow new values. Default false."),
     },
     handler: async ({ locttDir }, args) => {
       const refs = args["refs"] as string[];
-      const field = args["field"] as string;
+      const field = args["field"] as string | undefined;
       const raw = args["value"];
+      const add = (args["add"] ?? {}) as Record<string, unknown[]>;
+      const remove = (args["remove"] ?? {}) as Record<string, unknown[]>;
+      const listFields = [...new Set([...Object.keys(add), ...Object.keys(remove)])];
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
       const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+
+      if (listFields.length > 0) {
+        // K152/K153: add/remove is its own operation; one call does
+        // one kind of edit.
+        if (field !== undefined) {
+          return errorResult("Pass either `field` (with `value`) or `add` / `remove`, not both.");
+        }
+        for (const f of listFields) {
+          const blocked = checkFieldWritability(f, "set");
+          if (blocked) return blocked;
+        }
+        const lists = Object.fromEntries(listFields.map(f => [f, {
+          ...(add[f] !== undefined ? { add: add[f] } : {}),
+          ...(remove[f] !== undefined ? { remove: remove[f] } : {}),
+        }]));
+        let result;
+        try {
+          result = await bulkEditTaskFields({
+            locttDir,
+            taskRefs: refs,
+            lists,
+            createMissing: args["create_missing"] === true,
+            archivedGuard,
+          });
+        } catch (err) {
+          if (err instanceof UnknownFieldValueError && err.creatable) {
+            return errorResult(`${err.message} Pass create_missing: true to create it.`);
+          }
+          throw err;
+        }
+        const lines: string[] = [];
+        for (const c of result.created) {
+          lines.push(c.field === "labels"
+            ? `Created label ${c.name} (${c.id})`
+            : `Created ${c.field} value ${c.name} (key ${c.id})`);
+        }
+        const changed = result.succeeded.length - result.unchanged.length;
+        lines.push(
+          `${String(changed)} updated, ${String(result.unchanged.length)} unchanged, `
+          + `${String(result.failed.length)} failed (bulk_op_id ${result.bulk_op_id})`,
+        );
+        // Same shape as the set form (K153): failures are listed, the
+        // rest of the batch still landed.
+        for (const f of result.failed) lines.push(`  ${f.taskId}: ${f.error}`);
+        return text(lines.join("\n"));
+      }
+
+      if (field === undefined) {
+        return errorResult("Pass `field` (with `value`, or without it to clear), or `add` / `remove` to edit a list field.");
+      }
       const result = await bulkSetFields({
         locttDir,
         taskRefs: refs,
@@ -742,8 +902,10 @@ export const TOOLS: readonly ToolDef[] = [
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
       });
+      // K148: actor and entity values also by name (additive siblings).
+      const names = await loadEntityNames(locttDir);
       return text(JSON.stringify({
-        entries: page.entries,
+        entries: page.entries.map(e => historyEntryNames(e as unknown as Record<string, unknown>, names)),
         total: page.total,
         offset: offset ?? 0,
         ...(limit !== undefined ? { limit } : {}),

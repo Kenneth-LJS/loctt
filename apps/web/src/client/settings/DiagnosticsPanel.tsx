@@ -33,9 +33,10 @@ import { ErrorState } from "../ui/ErrorState.tsx";
  * the two programmatic repairs (if any) resolves the finding.
  *
  * **Contextual repair buttons** (K-diagnostics-repair, revising the old
- * "rebuild stays CLI-only" rule). There are exactly two safe programmatic
- * repairs — rebuild the key index, and restore missing core files — and
- * they cover only a small minority of findings. So this panel shows a
+ * "rebuild stays CLI-only" rule). There are three programmatic repairs —
+ * rebuild the key index, restore missing core files, and (K141) repair
+ * relationships — plus "Fix all", which runs the safe ones together like
+ * `loctt doctor --fix`. They cover only a small minority of findings. So this panel shows a
  * top-level button PER ACTION, gated on whether a finding tagged with that
  * `fix` is present in the current run — not a per-row Fix column (dead on
  * ~85% of rows). The buttons render only when they can act, which is what
@@ -44,7 +45,17 @@ import { ErrorState } from "../ui/ErrorState.tsx";
  */
 
 type CheckStatus = "ok" | "warn" | "error";
-type DiagnosticFix = "rebuild-index" | "restore-missing";
+type DiagnosticFix = "rebuild-index" | "restore-missing" | "repair-relationships";
+/** What a repair button asks the server to run: one fix, or every safe one. */
+type RepairAction = DiagnosticFix | "fix-all";
+/**
+ * The repairs "Fix all" runs, matching core's `SAFE_FIXES` and
+ * `loctt doctor --fix` (K141). Restoring missing files is not one: it
+ * writes default config in place of what is gone.
+ */
+const SAFE_FIXES: readonly DiagnosticFix[] = ["rebuild-index", "repair-relationships"];
+/** The repairs that write and so ask first. */
+type ConfirmAction = "restore-missing" | "repair-relationships" | "fix-all";
 
 interface DiagnosticCheck {
   readonly name: string;
@@ -251,18 +262,19 @@ export function DiagnosticsPanel() {
 
   // ── Repair (K-diagnostics-repair) ──────────────────────────────────
   // Which repair actions the current findings call for, and running one.
-  const [repairing, setRepairing] = useState<DiagnosticFix | undefined>(undefined);
+  const [repairing, setRepairing] = useState<RepairAction | undefined>(undefined);
   const [repairError, setRepairError] = useState<string | undefined>(undefined);
-  // A confirm is only needed for restore-missing (it writes default files);
-  // rebuild-index is idempotent and runs immediately.
-  const [confirmRestore, setConfirmRestore] = useState(false);
+  // A confirm is needed for the repairs that write the user's files:
+  // restore-missing (default config files), repair-relationships and
+  // fix-all (task files). rebuild-index rewrites a cache and runs at once.
+  const [confirming, setConfirming] = useState<ConfirmAction | undefined>(undefined);
   // K115 item 3: repair had no abort signal at all — an unmount mid-repair
   // left the fetch running with nothing to cancel it. Tracked the same
   // way `run`'s stream abort is, so unmounting cancels rather than
   // reporting a stray "did not complete" into a dead component.
   const repairAbortRef = useRef<AbortController | undefined>(undefined);
 
-  const runRepair = useCallback((action: DiagnosticFix): void => {
+  const runRepair = useCallback((action: RepairAction): void => {
     setRepairError(undefined);
     setRepairing(action);
     repairAbortRef.current?.abort();
@@ -308,7 +320,7 @@ export function DiagnosticsPanel() {
         setRepairError(err instanceof Error ? err.message : "The repair did not complete.");
       } finally {
         setRepairing(undefined);
-        setConfirmRestore(false);
+        setConfirming(undefined);
       }
     })();
   }, [run]);
@@ -323,6 +335,11 @@ export function DiagnosticsPanel() {
   // present — the button renders only when it can act (XS-41).
   const canRebuildIndex = checks.some(c => c.fix === "rebuild-index");
   const canRestoreMissing = checks.some(c => c.fix === "restore-missing");
+  const canRepairRelationships = checks.some(c => c.fix === "repair-relationships");
+  // "Fix all" (K141 4a) shows when more than one safe repair can act:
+  // with only one, it would be a second button doing the same thing.
+  const safeFixesPresent = SAFE_FIXES.filter(f => checks.some(c => c.fix === f));
+  const canFixAll = safeFixesPresent.length > 1;
   // The files restore-missing would recreate, named for the confirm body.
   const missingFiles = checks
     .filter(c => c.fix === "restore-missing")
@@ -419,7 +436,7 @@ export function DiagnosticsPanel() {
           {/* K-diagnostics-repair: contextual repair actions — each shows
               only when a finding it can fix is present, so a rendered button
               can always act (XS-41). Manual findings get no button. */}
-          {(canRebuildIndex || canRestoreMissing) && (
+          {(canRebuildIndex || canRestoreMissing || canRepairRelationships) && (
             <div data-testid="diagnostics-repairs" className="mb-3 flex flex-wrap gap-2">
               {canRebuildIndex && (
                 <Button
@@ -444,9 +461,37 @@ export function DiagnosticsPanel() {
                   disabled={repairing !== undefined || isRunning}
                   loading={repairing === "restore-missing"}
                   aria-label="Restore missing files"
-                  onClick={() => { setRepairError(undefined); setConfirmRestore(true); }}
+                  onClick={() => { setRepairError(undefined); setConfirming("restore-missing"); }}
                 >
                   Restore missing files
+                </Button>
+              )}
+              {canRepairRelationships && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  testId="diagnostics-fix-repair-relationships"
+                  disabled={repairing !== undefined || isRunning}
+                  loading={repairing === "repair-relationships"}
+                  aria-label="Repair relationships"
+                  onClick={() => { setRepairError(undefined); setConfirming("repair-relationships"); }}
+                >
+                  Repair relationships
+                </Button>
+              )}
+              {canFixAll && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  testId="diagnostics-fix-all"
+                  disabled={repairing !== undefined || isRunning}
+                  loading={repairing === "fix-all"}
+                  aria-label="Fix all"
+                  onClick={() => { setRepairError(undefined); setConfirming("fix-all"); }}
+                >
+                  Fix all
                 </Button>
               )}
             </div>
@@ -550,7 +595,50 @@ export function DiagnosticsPanel() {
         </>
       )}
 
-      {confirmRestore && (
+      {confirming === "repair-relationships" && (
+        <ConfirmDialog
+          title="Repair relationships?"
+          testId="diagnostics-repair-relationships-confirm"
+          confirmTestId="diagnostics-repair-relationships-confirm-button"
+          variant="primary"
+          confirmLabel="Repair"
+          confirmLoading={repairing === "repair-relationships"}
+          confirmDisabled={repairing !== undefined}
+          body={
+            <>
+              Links saved with a task key are changed to the task&apos;s ID, each
+              one-sided link gets its other side, and duplicate links are merged.
+              No link is removed.
+            </>
+          }
+          {...(repairError !== undefined ? { error: repairError } : {})}
+          onConfirm={() => { runRepair("repair-relationships"); }}
+          onCancel={() => { setConfirming(undefined); }}
+        />
+      )}
+
+      {confirming === "fix-all" && (
+        <ConfirmDialog
+          title="Fix all?"
+          testId="diagnostics-fix-all-confirm"
+          confirmTestId="diagnostics-fix-all-confirm-button"
+          variant="primary"
+          confirmLabel="Fix all"
+          confirmLoading={repairing === "fix-all"}
+          confirmDisabled={repairing !== undefined}
+          body={
+            <>
+              Rebuilds the key index and repairs relationships. Anything left
+              is listed again when it finishes.
+            </>
+          }
+          {...(repairError !== undefined ? { error: repairError } : {})}
+          onConfirm={() => { runRepair("fix-all"); }}
+          onCancel={() => { setConfirming(undefined); }}
+        />
+      )}
+
+      {confirming === "restore-missing" && (
         <ConfirmDialog
           title="Restore missing files?"
           testId="diagnostics-restore-confirm"
@@ -572,7 +660,7 @@ export function DiagnosticsPanel() {
           }
           {...(repairError !== undefined ? { error: repairError } : {})}
           onConfirm={() => { runRepair("restore-missing"); }}
-          onCancel={() => { setConfirmRestore(false); }}
+          onCancel={() => { setConfirming(undefined); }}
         />
       )}
     </div>

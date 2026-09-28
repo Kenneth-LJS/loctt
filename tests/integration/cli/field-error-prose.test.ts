@@ -24,9 +24,11 @@ describe("CLI field errors are prose, not a validator dump", () => {
       expect(out).not.toMatch(/"code":/);
       expect(out).not.toMatch(/"path":/);
 
-      // And what it must contain instead.
-      expect(out).toMatch(/labels/);
-      expect(out).toMatch(/array/i);
+      // And what it must contain instead. This used to expect "labels
+      // must be an array": the CLI refused every labels value (G3), and
+      // this test leaned on that. `labels` now takes a comma list, so the
+      // refusal is the unknown label, named in prose.
+      expect(out).toMatch(/No label named 'notanarray'\./);
 
       // Domain error, not a crash.
       expect(res.exitCode).toBe(1);

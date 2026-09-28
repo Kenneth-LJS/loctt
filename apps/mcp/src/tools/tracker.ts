@@ -1,12 +1,26 @@
 /**
  * Tracker-level tools: info (read-only summary), doctor
- * (diagnostic + optional repair), and init (bootstrap a new
- * tracker). `init` is the only tool that legitimately runs
- * against a non-existent tracker — its `exemptFromSchemaGuard`
- * flag bypasses the version check.
+ * (diagnostic + optional repair), init (bootstrap a new tracker) and
+ * migrate_schema (the deliberate format upgrade, K154).
+ *
+ * Four are exempt from the schema guard (`exemptFromSchemaGuard`),
+ * like the CLI's exempt commands: `init` runs before a tracker
+ * exists, `migrate_schema` is the remedy, and `info` and `doctor` are
+ * read-only on a tracker that is not current and report its state
+ * ("needs upgrading from X to Y") instead of refusing (K154).
  */
 
-import { getTrackerInfo, initLoctt, migrateToCurrent, planMigration, resolveLocttDir, runDoctor } from "@loctt/core";
+import {
+  computeSchemaStatus,
+  describeSchemaStatus,
+  type DiagnosticCheck,
+  getTrackerInfo,
+  initLoctt,
+  migrateToCurrent,
+  planMigration,
+  resolveLocttDir,
+  runDoctor,
+} from "@loctt/core";
 import { z } from "zod";
 
 import { errorResult, text } from "../runtime/errors.js";
@@ -17,6 +31,10 @@ export const TOOLS: readonly ToolDef[] = [
     name: "info",
     description: "Returns prose summary of the tracker state (locttDir, task count, key prefix, statuses, next key). Mirrors the CLI 'info' command.",
     inputSchema: {},
+    // Read-only, and the tool that tells an agent the tracker needs
+    // upgrading: it reports the schema state rather than refusing, like
+    // CLI `loctt info` (K154).
+    exemptFromSchemaGuard: true,
     handler: async ({ root }) => {
       const info = await getTrackerInfo(root);
       if (!info.exists) {
@@ -34,6 +52,7 @@ export const TOOLS: readonly ToolDef[] = [
       const lines: string[] = [];
       lines.push(`LocTT directory: ${info.locttDir}`);
       lines.push(`Tasks: ${info.taskCount}`);
+      lines.push(`Schema: ${describeSchemaStatus(info.schemaStatus)}`);
       if (info.workflowConfig) {
         lines.push(`Key prefix: ${info.workflowConfig.key.prefix}`);
         lines.push(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
@@ -54,11 +73,17 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "doctor",
-    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message,fix?}]}. Branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. A check's optional `fix` names the programmatic repair for it: \"rebuild-index\" (pass rebuild_index:true) or \"restore-missing\" (pass restore_missing:true). Pass `rebuild_index: true` to rebuild the key-lookup cache (recovery for out-of-band frontmatter edits); pass `restore_missing: true` to recreate missing core config/state files with defaults (existence-guarded: never overwrites surviving data).",
+    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message,fix?}]}. Branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. A check's optional `fix` names the programmatic repair for it: \"rebuild-index\" (pass rebuild_index:true), \"restore-missing\" (pass restore_missing:true) or \"repair-relationships\" (pass repair_relationships:true). Pass `rebuild_index: true` to rebuild the key-lookup cache (recovery for out-of-band frontmatter edits); pass `restore_missing: true` to recreate missing core config/state files with defaults (existence-guarded: never overwrites surviving data); pass `repair_relationships: true` to rewrite links stored as a task key to the task's id, add the missing side of every one-sided link (refused when it would create a loop), and merge identical links, never deleting a link. Pass `fix: true` to run every safe repair (rebuild_index and repair_relationships, not restore_missing) before the checks, so the checks report what is left.",
     inputSchema: {
       rebuild_index: z.boolean().optional().describe("If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's key or key_history."),
       restore_missing: z.boolean().optional().describe("If true, recreate any missing core config/state files with defaults (initLoctt repair). Existence-guarded: surviving files and tasks are untouched."),
+      repair_relationships: z.boolean().optional().describe("If true, run the relationship repair before the checks: key-valued link targets are rewritten to the task's id, every one-sided link gets its missing side (unless that would create a loop), identical links are merged. No link is ever deleted."),
+      fix: z.boolean().optional().describe("If true, run every safe repair (rebuild_index and repair_relationships) before the checks, then report what is left. restore_missing is not included because it writes default config in place of missing files."),
     },
+    // Exempt, like CLI `loctt doctor`: it explains a tracker the guard
+    // refuses. It never writes to one that is not current: every repair
+    // is skipped there, saying why (K154).
+    exemptFromSchemaGuard: true,
     handler: async ({ root }, args) => {
       const rebuildIndex = args["rebuild_index"] === true;
       // restore-missing parity (K-diagnostics-repair): the web Diagnostics
@@ -66,10 +91,37 @@ export const TOOLS: readonly ToolDef[] = [
       // BEFORE the checks so the returned findings reflect the repaired
       // state. Gap-fill only — `initLoctt({repair:true})` recreates missing
       // core files with defaults and never overwrites what survives.
+      //
+      // Only on a current tracker, or one whose `.schema-version` is
+      // missing (restoring it is what the repair is for). Anywhere else
+      // it would write this build's default files into a tracker of
+      // another format; the checks report the schema problem instead.
+      let restoreSkipped: DiagnosticCheck | undefined;
       if (args["restore_missing"] === true) {
-        await initLoctt(root, { repair: true });
+        const schema = await computeSchemaStatus(resolveLocttDir(root));
+        if (schema.kind === "current" || schema.kind === "missing") {
+          await initLoctt(root, { repair: true });
+        } else {
+          restoreSkipped = {
+            name: "restore missing files",
+            status: "error",
+            message: schema.kind === "outdated"
+              ? "skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again"
+              : "skipped. Resolve the schema version problem first",
+          };
+        }
       }
-      const checks = await runDoctor(root, { rebuildIndex });
+      // K141 4a: `fix` runs every safe repair first; `repair_relationships`
+      // runs the relationship repair alone. Both run before the checks,
+      // inside core, so the result lists what is left.
+      const checks = [
+        ...(restoreSkipped !== undefined ? [restoreSkipped] : []),
+        ...(await runDoctor(root, {
+          rebuildIndex,
+          ...(args["repair_relationships"] === true ? { repairRelationships: true } : {}),
+          ...(args["fix"] === true ? { fix: true } : {}),
+        })),
+      ];
       // Structured, not prose (ONB-C7). An agent deciding whether to
       // proceed had to substring-match "[error]" in a human sentence —
       // which silently stops working the moment the wording changes, and
@@ -140,14 +192,14 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "migrate_schema",
     description:
-      "Upgrade the tracker's on-disk schema to the version this build " +
-      "understands. Call with confirm: false (or omit it) FIRST to preview " +
-      "what would change. Migration rewrites task frontmatter across the " +
-      "whole tracker and some steps are marked risky. Only call with " +
-      "confirm: true once the user has seen the plan and agreed. A backup " +
-      "is written before any step runs and is never deleted. Unlike the " +
-      "delete tools, `confirm` here is a preview/apply toggle, not a safety " +
-      "gate.",
+      "Upgrade the tracker's data format to the one this build reads. "
+      + "Don't call migrate_schema unless the user asked you to upgrade the tracker. "
+      + "Tell the user it needs upgrading and ask. "
+      + "Call with confirm: false (or omit it) to preview the plan: from and to, "
+      + "each step and what it changes, any step marked risky, and where the backup goes. "
+      + "Show the user the preview, and call with confirm: true only once they agree. "
+      + "A backup of .loctt/ is written before any step runs and is never deleted. "
+      + "Unlike the delete tools, `confirm` here is a preview/apply toggle, not a safety gate.",
     inputSchema: {
       confirm: z.boolean().optional()
         .describe("false/omitted previews the plan; true performs the migration."),
@@ -163,22 +215,24 @@ export const TOOLS: readonly ToolDef[] = [
         if (!confirm) {
           const plan = await planMigration(locttDir);
           if (plan.steps.length === 0) {
-            return text(`Already at schema v${plan.to}. Nothing to migrate.`);
+            return text(`Already at format ${plan.to}. Nothing to migrate.`);
           }
           const lines = [
-            `Plan: v${plan.from} → v${plan.to} (${plan.steps.length} step(s)).`,
-            "Re-run with confirm: true to apply.",
+            `This tracker needs upgrading from ${plan.from} to ${plan.to} (${plan.steps.length} step(s)).`,
           ];
           for (const st of plan.steps) {
-            lines.push(`  v${st.from}→v${st.to}: ${st.description}${st.risky === true ? "  [RISKY]" : ""}`);
+            lines.push(`  ${st.from}→${st.to}: ${st.description}${st.risky === true ? "  [RISKY]" : ""}`);
+            if (st.changes !== undefined) lines.push(`    ${st.changes}`);
           }
+          lines.push(`Before any step runs, .loctt/ is copied to a backup beside it: ${locttDir}.backup-v${plan.from}-<date and time>`);
+          lines.push("Show the user this plan. Call again with confirm: true only if they agree.");
           return text(lines.join("\n"));
         }
         const result = await migrateToCurrent(locttDir);
         if (result.steps.length === 0) {
-          return text(`Already at schema v${result.to}. Nothing to migrate.`);
+          return text(`Already at format ${result.to}. Nothing to migrate.`);
         }
-        const lines = [`Migrated v${result.from} → v${result.to}.`];
+        const lines = [`Upgraded this tracker from ${result.from} to ${result.to}.`];
         if (result.backupPath !== undefined) lines.push(`Backup: ${result.backupPath}`);
         return text(lines.join("\n"));
       } catch (err) {

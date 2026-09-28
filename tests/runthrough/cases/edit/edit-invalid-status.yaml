@@ -1,0 +1,10 @@
+id: edit-invalid-status
+name: Setting an unknown status is refused
+description: An unknown enum key is refused, naming the valid keys, and nothing is written.
+tags: [edit, error]
+cli: set ${task.search_typo.key} status frobnik
+mcp:
+  call: { tool: update_task, args: { ref: "${task.search_typo.key}", field: status, value: frobnik } }
+expect_error:
+  cli: { exit_code: 2, message: "frobnik" }
+  mcp: { message: "frobnik" }

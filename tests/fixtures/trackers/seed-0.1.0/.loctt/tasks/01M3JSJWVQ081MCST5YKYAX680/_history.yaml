@@ -1,0 +1,35 @@
+- timestamp: 2026-09-28T01:20:34.168Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJWVQ081MCST5YKYAX680
+      key: OPS-1
+      project: 01M3JSJ7938VBX3QQAD1AMW8MA
+      title: Nightly backups
+      created_at: 2026-09-28T01:20:34.168Z
+      updated_at: 2026-09-28T01:20:34.168Z
+      status: backlog
+      task_type: task
+      priority: high
+      labels:
+        - 01M3JSJ84E9HFQPW32EER1RWTQ
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:34.531Z
+  kind: custom_field_change
+  field: team
+  before: null
+  after: ops
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:34.867Z
+  kind: custom_field_change
+  field: area
+  before: null
+  after: infra
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:42.140Z
+  kind: field_change
+  field: status
+  before: backlog
+  after: done
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

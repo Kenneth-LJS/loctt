@@ -1,0 +1,13 @@
+id: journey-error-self-link
+name: "Journey: a self-link is refused"
+description: Folded in from tests/e2e/10 (B43, K145).
+tags: [journey, error, links, b43]
+surfaces: [cli]
+seed: empty
+steps:
+  - name: a task
+    cli: create self
+  - name: link it to itself
+    cli: link T-1 blocks T-1
+    expect_error:
+      cli: { exit_code: 1, message: "can't link to itself" }

@@ -31,6 +31,12 @@ export interface AttachmentInfo {
 export interface ResolvedRelationship {
   readonly type: string;
   readonly target: string;
+  /**
+   * The stored edge's rank, when it has one. Carried so a surface can
+   * list the edges in the shared order (`orderRelationships`, K141 6a)
+   * and MCP can return it. Omitted when the edge is unranked.
+   */
+  readonly rank?: string;
   readonly resolvedKey?: string;
   readonly missing: boolean;
   /**
@@ -168,6 +174,7 @@ export async function resolveRelationships(
         return {
           type: r.type,
           target: r.target,
+          ...(r.rank !== undefined ? { rank: r.rank } : {}),
           resolvedKey: target.frontmatter.key,
           // title is optional now (K26 — a target with a degraded title
           // still resolves); include it only when present.
@@ -201,7 +208,7 @@ export async function resolveRelationships(
         // Genuinely absent: no task directory. `missing` alone — this is
         // the deleted/dangling case REL-24 renders as "no task with id".
         if (err instanceof TaskNotFoundError) {
-          return { type: r.type, target: r.target, missing: true };
+          return { type: r.type, target: r.target, ...(r.rank !== undefined ? { rank: r.rank } : {}), missing: true };
         }
         // On disk but object-fatally unreadable (bad id/key, YAML syntax
         // error). Still `missing` from this task's point of view — the
@@ -210,7 +217,7 @@ export async function resolveRelationships(
         // accept it as gone. Distinguishing the two costs nothing: they
         // are already separate exception classes.
         if (err instanceof UnreadableTaskError) {
-          return { type: r.type, target: r.target, missing: true, targetCorrupt: true };
+          return { type: r.type, target: r.target, ...(r.rank !== undefined ? { rank: r.rank } : {}), missing: true, targetCorrupt: true };
         }
         throw err;
       }

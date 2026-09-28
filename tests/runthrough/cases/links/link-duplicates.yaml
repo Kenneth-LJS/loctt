@@ -1,0 +1,14 @@
+id: link-duplicates
+name: Mark a task as a duplicate
+description: duplicates on the source, is_duplicated_by on the original.
+tags: [links]
+cli: link ${task.mob_ios_crash.key} duplicates ${task.login_crash.key}
+mcp:
+  call: { tool: link_tasks, args: { refs: ["${task.mob_ios_crash.key}"], type: duplicates, target: "${task.login_crash.key}" } }
+post:
+  - relationship: { task: "${task.mob_ios_crash.key}", type: duplicates, target: "${task.login_crash.key}" }
+  - relationship: { task: "${task.login_crash.key}", type: is_duplicated_by, target: "${task.mob_ios_crash.key}" }
+  - relationship_order:
+      task: "${task.login_crash.key}"
+      type: is_duplicated_by
+      targets: ["${task.login_crash_dup.key}", "${task.mob_ios_crash.key}"]

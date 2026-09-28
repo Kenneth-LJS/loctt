@@ -426,3 +426,52 @@ describe("entity key charset validation", () => {
     }
   });
 });
+
+// K150: an enum field may allow new values; the setting survives every
+// later workflow write, and so does a field's type scope (the serializer
+// used to drop `task_types`, turning a scoped field global on any edit).
+// @verifies CFG-C6
+describe("custom-field allow_new_values and scope survive writes", () => {
+  it("creates an open enum field and keeps it open across an unrelated edit", async () => {
+    await createCustomField(locttDir, {
+      key: "platforms", label: "Platforms", type: "enum", multi: true, searchable: false,
+      values: [{ key: "ios", label: "iOS" }], allow_new_values: true,
+    });
+    await createPriority(locttDir, { key: "p9", label: "P9" });
+    const def = (await loadWorkflowConfig(locttDir)).custom_fields.find(f => f.key === "platforms");
+    expect(def?.allow_new_values).toBe(true);
+  });
+
+  it("toggles allow_new_values on edit, and leaves it alone when not given", async () => {
+    await createCustomField(locttDir, {
+      key: "area", label: "Area", type: "enum", multi: false, searchable: false,
+      values: [{ key: "ui", label: "UI" }],
+    });
+    await editCustomField(locttDir, "area", { allow_new_values: true });
+    await editCustomField(locttDir, "area", { label: "Area of work" });
+    let def = (await loadWorkflowConfig(locttDir)).custom_fields.find(f => f.key === "area");
+    expect(def?.allow_new_values).toBe(true);
+    await editCustomField(locttDir, "area", { allow_new_values: false });
+    def = (await loadWorkflowConfig(locttDir)).custom_fields.find(f => f.key === "area");
+    expect(def?.allow_new_values).toBeUndefined();
+  });
+
+  it("refuses allow_new_values on a non-enum field", async () => {
+    await expect(createCustomField(locttDir, {
+      key: "team", label: "Team", type: "string", multi: false, searchable: false, allow_new_values: true,
+    })).rejects.toThrow("Only a choice (enum) field can allow new values. This field is string.");
+    await createCustomField(locttDir, { key: "team", label: "Team", type: "string", multi: false, searchable: false });
+    await expect(editCustomField(locttDir, "team", { allow_new_values: true }))
+      .rejects.toBeInstanceOf(WorkflowEntityError);
+  });
+
+  it("keeps a field's task_types scope across an unrelated workflow write", async () => {
+    await createCustomField(locttDir, {
+      key: "severity", label: "Severity", type: "string", multi: false, searchable: false,
+      task_types: ["bug"],
+    });
+    await createPriority(locttDir, { key: "p8", label: "P8" });
+    const def = (await loadWorkflowConfig(locttDir)).custom_fields.find(f => f.key === "severity");
+    expect(def?.task_types).toEqual(["bug"]);
+  });
+});

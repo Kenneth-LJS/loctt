@@ -1,0 +1,17 @@
+id: doctor-clean-seed
+name: doctor is clean on the seed
+description: >
+  After one read (which builds the per-checkout key index the seed cannot
+  carry), doctor reports no warning and no error, and writes nothing.
+tags: [doctor]
+cli:
+  - show ${task.epic_checkout.key}
+  - doctor
+mcp:
+  call:
+    - { tool: get_task, args: { ref: "${task.epic_checkout.key}" } }
+    - { tool: doctor, args: {} }
+post:
+  - output: { surface: cli, contains: ["✓ tasks: 40 task(s) found, references valid"], not_contains: ["  ! ", "  ✗ "] }
+  - output: { surface: mcp, contains: ["\"warn\": 0", "\"error\": 0"] }
+  - tracker_unchanged: true

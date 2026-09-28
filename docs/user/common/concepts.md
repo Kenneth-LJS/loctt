@@ -101,4 +101,4 @@ The configurability matters because LocTT isn't trying to impose someone else's 
 - [Query Language](query-language.md) — filtering tasks
 - [Recovery & health](recovery.md) — undo, lost tasks, hand-editing, `doctor`
 - [Data portability](data-portability.md) — reading and exporting your data
-- [Upgrading & migrations](upgrading.md) — updating safely
+- [Upgrading & format versions](upgrading.md) — updating safely

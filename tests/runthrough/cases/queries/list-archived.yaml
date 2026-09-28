@@ -1,0 +1,9 @@
+id: list-archived
+name: Include archived tasks in a list
+description: Archived tasks are hidden by default and included on request.
+tags: [queries, archive]
+cli: list --archived --query "status = wont_do"
+mcp:
+  call: { tool: list_tasks, args: { query: status = wont_do, archived: all } }
+post:
+  - output: { keys: ["${task.login_crash_dup.key}", "${task.legacy_ie.key}"] }

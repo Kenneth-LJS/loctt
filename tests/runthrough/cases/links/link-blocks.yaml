@@ -1,0 +1,12 @@
+id: link-blocks
+name: Link one task as blocking another
+description: >
+  A directional link is written on both sides — blocks on the source,
+  is_blocked_by on the target — with both targets stored as ids.
+tags: [links]
+cli: link ${task.perf_budget.key} blocks ${task.search_ui.key}
+mcp:
+  call: { tool: link_tasks, args: { refs: ["${task.perf_budget.key}"], type: blocks, target: "${task.search_ui.key}" } }
+post:
+  - relationship: { task: "${task.perf_budget.key}", type: blocks, target: "${task.search_ui.key}" }
+  - relationship: { task: "${task.search_ui.key}", type: is_blocked_by, target: "${task.perf_budget.key}" }

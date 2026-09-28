@@ -1,0 +1,9 @@
+id: list-children
+name: List a parent's children
+description: parent = <key> returns the direct children only, not grandchildren.
+tags: [queries, links]
+cli: list --query "parent = ${task.epic_checkout.key}"
+mcp:
+  call: { tool: list_tasks, args: { query: "parent = ${task.epic_checkout.key}" } }
+post:
+  - output: { keys: ["${task.checkout_cart.key}", "${task.checkout_payment.key}", "${task.checkout_confirm.key}"] }

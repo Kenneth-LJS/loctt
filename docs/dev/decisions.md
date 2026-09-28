@@ -22685,6 +22685,296 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K155 · A smoke tier before every commit; the full set before every merge
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Measured on an idle machine (2026-09-28): lint 53 s (5 s with a cache
+after a one-file change), unit 2.1 min, runthrough ~2.3 min, full
+Playwright ~25 min, Playwright blocker-case tests only 7.6 min; the full
+gate set ~45 min. Ken chose a smoke tier and **(a)** for integration:
+`npm run test:smoke` = build, typecheck, cached lint, all unit tests, the
+full runthrough, packaging, and the Playwright tests that `@verifies` a
+blocker case (~13-14 min). Integration is not in smoke (only 8 of 586
+integration tests tie to a blocker case; the runthrough covers CLI and
+MCP end to end); it runs on touched files while working and in full
+before merge, with the full Playwright suite.
+
+### K154 · Format upgrades are intentional on every surface (reverses K143's automatic upgrade)
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Ken asked whether automatic upgrades behave the same everywhere and told
+the orchestrator not to follow K143 blindly (*"these stories are
+ai-created so i wouldnt completely treat is source of truth"*). From a
+product view: on MCP a background agent would change the data format
+without the user seeing it, and on a git-shared tracker whoever runs the
+new version first forces everyone else to upgrade; format changes are
+rare, so one deliberate step costs little. Ken chose **(b)**:
+- CLI: a command on an older tracker stops with "This tracker needs
+  upgrading from X to Y. Run `loctt migrate` (a backup is made first)."
+  `loctt migrate` shows what it will do and asks to confirm (`--yes` for
+  scripts).
+- Web: a banner with an **Upgrade** button (backup, upgrade, reload);
+  nothing else works until then. Ken: *"get ui agent to design banner if
+  needed"*.
+- MCP: tools return the same message; the tool instructions tell agents
+  to ask the user before calling `migrate_schema`.
+- Doctor and info are read-only everywhere and report that an upgrade is
+  needed.
+The backup, crash sentinel, K142 mapping and upgrade steps stay; only the
+trigger changes. K143's "automatic for non-risky steps" is superseded.
+
+### K153 · Bulk add/remove is partial, like bulk set (supersedes K152)
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+K152 chose all-or-nothing for bulk add/remove on the premise, stated by
+the orchestrating agent, that bulk set/archive/delete are all-or-nothing.
+That was false for bulk set: it writes what it can and reports per-task
+failures (DEG-C8). Told this, Ken chose **"Both partial, like bulk set"**:
+bulk add/remove changes every task it can and lists the failures, one
+rule for every bulk edit.
+
+### K152 · Bulk add/remove, all-or-nothing
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+B45 left bulk add/remove refused. Asked whether `loctt set WEB-1,WEB-2
+labels --add urgent` (and MCP `bulk_update_tasks`) should work, and
+whether it should be all-or-nothing like the other bulk writes, Ken:
+*"(a)"*: yes, all-or-nothing (if any task would fail, none change),
+matching bulk set, archive and delete.
+
+### K151 · No `1` anywhere, git branches included; sync orders incoming links
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+B41 (A361 call 7) let git sync treat a branch whose `.schema-version` is
+the old integer `1` as "older" so 0.2.x-published branches could still
+sync. Ken: *"just assume we no longer have git branches holding the old 1.
+at all"*: the exception is removed; a branch holding `1` is refused like
+any other non-semver version (K142). And for G8 (a synced branch bringing
+links without ranks) he chose the recommendation: **sync assigns ranks to
+any unranked incoming links as part of applying the branch**, using the
+same step as the 0.1.0 → 0.3.0 upgrade, so doctor has nothing left over.
+
+### K150 · Add/remove for multi-value fields; open choice fields; create-on-the-fly is explicit everywhere
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Ken asked whether multi-select custom fields could get add/remove like
+labels, whether users can create single/multi-select fields, and whether
+those can allow *"custom-adding as we go"*. Chosen:
+- **Add/remove for labels and every multi-value custom field** (CLI
+  `loctt set <task> <field> --add x --remove y`; MCP `update_task`
+  `add`/`remove` maps; core applies them to the current list under the
+  lock; adding a present value or removing an absent one is a no-op).
+  Replace still works.
+- **Choice (enum) fields get an "allow new values" option, off by
+  default.** Off keeps today's behaviour (listed values only).
+- On *"so on labels, we allow making new ones, right? JIRA-style? can we
+  do the same across all?"*: yes. One model for labels and every open
+  choice field: the web picker shows **"Create 'x'"** as a separate row
+  (as labels already do); the CLI creates an unknown value only with
+  `--create`; MCP only with `create_missing: true`. Otherwise an unknown
+  value is refused (K148). This brings labels on CLI/MCP to the same
+  level. Ken: *"sounds good. yes"*.
+
+### K149 · No exact-ID fallback for non-ID-shaped input
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+B44 (A360) added a fallback: input that is not ID-shaped and matches no
+name was still tried as an exact ID. Offered removing it (K148 exact) or
+keeping it as a safety net for hand-edited IDs, Ken: *"(a) remove it"*.
+Web list URLs accept names or IDs through the same resolver; the web app
+keeps emitting IDs in the URLs it builds, so bookmarks survive renames.
+
+### K148 · IDs are recognised by their shape; names may not be ID-shaped
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Context: storage holds IDs; the runthrough found `list --query "labels =
+urgent"` returns nothing because queries match entity fields by ID only.
+Ken asked how an ID is told apart from a name, proposed a `#[id]` sigil
+(declined over shell comments and names like "Sprint #12"), then a length
+limit (declined: 25 characters rejects ordinary names), then an `id:`
+prefix. Shown the ULID shape (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`), he chose
+the shape rule with no prefix: *"sure. then during creation we need to do
+a check for this too"*.
+
+- A value that matches the ULID shape is an ID; anything else is a name.
+- Creating or renaming a label, user, milestone, sprint, project or saved
+  view with an ID-shaped name is refused ("That looks like an ID; choose a
+  different name.") on every surface.
+- No characters are banned in names; no prefix exists.
+- Confirmed (*"looks good"*): CLI and MCP accept a name or an ID for
+  labels, users, milestones, sprints and projects, and so do queries
+  (`labels = urgent`); the CLI prints names; MCP returns both name and ID;
+  a name matching several things is refused listing each with its ID; a
+  name matching nothing says so instead of returning nothing.
+
+### K147 · Deleting a task removes the other side of its links (G4)
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+The runthrough found that `deleteTask`/`bulkDelete` leave every partner's
+inverse edge pointing at nothing, which doctor then reports. Offered (a)
+delete removes the partners' edges in the same operation, recorded in
+their history, or (b) keep them and silence doctor, Ken chose **(a)**.
+
+### K146 · Full integration runs before merge, not per change
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Shown the measured gate times (unit ~2 min, integration ~6 min, Playwright
+~24 min, full set ~35 min) and three ways to shorten agent cycles, Ken:
+*"sure 2"*: while working, agents run only the integration files a change
+touches or could affect; the full `npm run test:integration` runs once in
+the pre-merge gate, like the full Playwright suite. Recorded in
+`docs/dev/process/build-loop.md`.
+
+### K145 · Test suites: fold e2e journeys into the runthrough; integration keeps surface mechanics; doctor after every integration write
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Asked whether integration, e2e and runthrough should merge, and offered
+three changes, Ken: *"sure go with all three."*
+1. The e2e journeys become runthrough scenarios and `test:e2e` is
+   retired; the MCP tool-list snapshot (with its no-em-dash guard) moves
+   to integration.
+2. Integration stays, scoped to how each surface behaves (flags, output,
+   exit codes, error text, locks, git, stdin); new data-behaviour tests go
+   to the runthrough; existing integration tests move only when touched.
+3. A shared integration step runs `loctt doctor` after every test that
+   writes and fails on any new finding.
+
+### K144 · Runthrough tests for CLI and MCP over a seed tracker
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Ken's design: *"we have a test "database" that's pinned to the newest
+version; whenever we run an MCP/CLI test, we copy this test store into a
+temp folder; then we run the tests"*. Each test is *"a slug identifier +
+name + description + precondition/postcondition test … + the CLI/MCP
+instruction to test. for CLI, its just a command line prompt (or
+multiple…). for MCP, its the text instruction to give to the agent"*, with
+*"a pre-amble of instructions"* and *"a script that the agent can call to
+get the test one by one, and to run pre/post condition checks"*. On error
+cases the post-check proves *"nothing changed, or we got the right error
+state"*. Asked the open calls, he chose:
+- **Both MCP modes from the same tests** (later reversed: agent mode
+  dropped, see below): each test carries the exact MCP call (scripted,
+  runs in every gate).
+- **Checks read the tracker files directly** (plain YAML, no core import)
+  so a core bug cannot vouch for itself; `loctt doctor` runs after every
+  test; error cases assert that no file changed.
+- **One file per test, independent** (each starts from a fresh copy of the
+  seed, so order does not matter), plus a few multi-step scenario tests.
+- **Its own script, `npm run test:runthrough`, part of every gate run.**
+- The seed must match the code's format version, and the runner refuses
+  otherwise, pointing at `npm run seed:upgrade`.
+- *"always run cli version first before mcp"*: every test runs the CLI
+  first, then scripted MCP; an MCP result after a CLI failure is marked as
+  such. (Scripted MCP drives `loctt mcp` directly with no AI model, so it
+  costs no tokens.)
+- **Agent mode dropped.** Told that scripted MCP tests the server without
+  an AI and that agent mode only adds whether an agent reads the tool
+  descriptions correctly, Ken: *"ok drop agent mode then."* Any future
+  agent-driven check belongs with the existing `tests/llm` harness.
+
+### K143 · Ordering scope, automatic upgrades, full versioning tests
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Asked what "order on everything" covers, when upgrades run, and how much
+to test the first real migration, Ken chose: **every relationship kind
+carries an order** (the `ranked` flag in workflow.yaml is removed and
+every group on the task page gets handles); **non-risky upgrade steps run
+automatically** on first use, after a backup, printing one line; risky
+steps still wait for `loctt migrate`; **full tests** of the versioning
+machinery. The 0.1.0 → 0.3.0 step (order every link in its current
+displayed order) is non-risky.
+
+### K142 · The data format version is the `loctt` release that introduced it
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Today `.loctt/.schema-version` holds an integer counter (`1`) unrelated
+to the package version. Ken: *"can we peg it to semantic versions? so if
+we're looking up the versions, we just find the highest version that's
+lower/at the data version"*. So the format version is the semver of the
+`loctt` release that introduced that format (e.g. `0.1.0`, then `0.3.0`
+for ordered links). A build writes the highest format-changing release at
+or below its own version; a tracker whose format is newer is refused with
+the release to install; an older one is upgraded. No pre-release tags in
+format versions; the constant is set to the release the change will ship
+in and frozen once published.
+
+No compatibility for the old integer: *"i can update the schema version
+manually in existing data BECAUSE im the only user"*. The new code accepts
+only semver strings; Ken edits his trackers from `1` to `0.1.0`. The
+0.1.0 → 0.3.0 upgrade step (ordering every link) still runs in code.
+
+### K141 · Relationship repair and ordering rulings (B39, B40)
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+After the B39/B40 proposals:
+- *"So the repair should be comprehensive"*: every one-sided link is
+  repaired, not only this bug's footprint. Rule (2a): when one side of a
+  link exists, add the other; if adding it would create a loop, refuse and
+  report; a target that resolves to nothing or to an ambiguous key stays
+  reported and is never deleted. This reverses the `17fae3f` "reported,
+  not repaired" rationale for one-sided edges.
+- *"we should be storing the ID, yes"*. *"for MCP and web UI, i think we
+  can operate on the ID. for CLI, the user is likely manually typing, so we
+  want them to be able to use the key."* Told that agents work in keys and
+  an ID-only MCP would break agent setups, Ken chose (1a): **MCP keeps
+  accepting a key or an ID; every surface stores the ID.**
+- (3a) Identical duplicate links left by a repair are merged into one.
+- (4a) The repair runs as `loctt doctor --repair-relationships`, an MCP
+  doctor option and a Diagnostics button; and *"doctor --fix, should it fix
+  this issue too? so if the user doesnt want to fully diagnose part by
+  part, they can just run all at once, manually fix what's left"*: a
+  `loctt doctor --fix` runs every safe repair, this one included, then
+  reports what is left.
+- (6a) `loctt show` and MCP `get_task` list relationships in the same rank
+  order as the web, and MCP returns the order.
+- (7a) List and board are unchanged (they count children, not list them).
+- (5) *"let's force there to be an order on everything now. we bump the
+  data store into a new version. then we can test the versioning too?"*:
+  every link carries an order; a schema bump to v2 with a migration that
+  ranks existing links in their current displayed order. Then (K143):
+  **every relationship kind** is ordered and the `ranked` setting is
+  removed; **non-risky upgrade steps run automatically** (backup, upgrade,
+  one line saying so; risky steps still wait for `loctt migrate`); and
+  **full versioning tests** (upgrade correctness, idempotency, backup,
+  crash sentinel, too-new refusal naming the release, non-semver refusal,
+  CLI/MCP/web before and after, and the installed package).
+
+### K140 · User bug report: `create --parent`; children can't be reordered
+
+**Date:** 2026-09-28 · **Ken's request.**
+
+A user of `loctt` 0.2.1 reported: *"loctt create --parent GAME-4 writes
+the raw key into the task file instead of the task ID, and doesn't add
+the child link on the parent. doctor then reports 26 broken references,
+and unlink can't remove them."* They hand-edited frontmatter to recover.
+Ken: *"a bug reported by a user. can we fix?"* and *"under a
+task/story/etc with children, you cant re-order the children. how can we
+fix this?"*
+
+Cause: core `createTask` pushed `{ type: <tree axis>, target:
+options.parent }` verbatim, with no lookup and no inverse edge (CLI and
+MCP both use it; the web "new child" path does not). Fix: resolve the
+parent like `linkTask` does, write both sides, and give `doctor` a repair
+for key-valued relationship targets and missing inverses so affected
+trackers heal without hand edits (B39). Children reordering exists in
+core (`reorderRelationship`, CLI `rerank`, MCP `reorder_relationship`)
+but the task page's tree-rendered Children group has no handles (B40).
+
 ### K139 · One package, `loctt`, with all three surfaces (supersedes K89)
 
 **Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
@@ -22936,6 +23226,1574 @@ Ken's answers on the "needs your call" rows of the app-message audit
 Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
+
+### A368 · Smoke tier and lint cache (B50, K155)
+
+#### A368 · Smoke tier, lint cache, Upgrade-screen caret check (B50, K155)
+
+**Ticket:** B50 · **Date:** 2026-09-29 · **Agent-made** (under K155).
+
+**The situation.** K155 chose a two-tier gate: `npm run test:smoke`
+before every commit (build, typecheck, cached lint, all unit tests, the
+full runthrough, packaging, and only the Playwright tests that
+`@verifies` a blocker-severity case), the full set (integration + full
+Playwright) before every merge. B50 asked for the script, a *precise*
+Playwright selection generated from the case index (not a line-window
+scan or a hand list), a cached `lint`, and the docs updated.
+
+**What had to be decided.** How to resolve a `@verifies` tag to the
+exact Playwright test it names, since the tag can sit in two different
+places relative to the `test(...)` call it covers, and how to fail
+safely when a tag can't be pinned to one.
+
+**Decided.** `tools/case-index/smoke.ts` resolves each `@verifies` tag
+naming a blocker case to a test line by searching backward up to 8 lines
+(the tag-immediately-before-`test(`) shape), then forward up to 60 lines
+(the tag-as-first-statement-inside-the-test-body shape, which also
+covers a `test.describe(...)` docblock with the tag inside the nested
+`test`). A tag matching neither (one observed case: a file-header
+docblock listing several IDs for the whole file, no single test to bind
+to) expands to every `test(...)` in that file rather than being dropped.
+A tag that still resolves to nothing is a **hard failure**, not a
+silent drop — `npm run cases:index` (which now also writes
+`tests/ui/smoke.list`) exits non-zero and names the tag, and
+`tools/smoke/run.ts` (the `test:smoke` script) refuses to run an empty
+Playwright step. `cases:check` fails if `smoke.list` is stale, same as
+the case index. Alternative considered: a Playwright `tag`/`@smoke`
+title marker instead of a generated file list — rejected because it
+would require writing the marker onto every blocker-case test by hand
+(880 `@verifies` tags exist; retagging by severity whenever a case's
+severity changes is exactly the drift B50 asked to avoid), where the
+file-list approach reads `case-index.json`'s severity directly and
+regenerates on every `cases:index` run with no per-test edit.
+
+Current count: 274 resolved smoke tests (276 Playwright cases once
+`test.describe` nesting is counted), 0 unresolved, against 353 blocker
+cases total (many blocker cases are CLI/MCP-surface, not UI, so have no
+Playwright test to resolve to at all — only cases with a UI `@verifies`
+tag are counted).
+
+`lint`/`lint:fix` now pass `--cache --cache-location .eslintcache`
+(`.eslintcache` added to `.gitignore`). Measured: cold 54.0s, warm
+(no changes) 2.3s, warm after touching one file ~4s — matches K155's
+53s/5s measurement.
+
+**Side check (ticket item 5): the Upgrade screen's disclosure caret.**
+Verified live in a real browser (a 0.1.0 seed tracker, `loctt ui`) that
+opening "What changes" DOES rotate the caret — `getComputedStyle`
+reported `matrix(0, 1, -1, 0, 0, 0)` (90°) after the click, and a
+screenshot confirmed the chevron visually points down when open.
+`Disclosure`'s `className` prop is additive (`cn("loctt-disclosure",
+className)` in `apps/web/src/client/ui/Disclosure.tsx`), so
+`UpgradeRequired.tsx`'s own `className="mb-5 ml-11 [&>summary]:min-h-6"`
+cannot drop the `.loctt-disclosure` hook the `[open]` rotation selector
+in `styles/index.css` keys off. The reported screenshot was mid-transition
+or captured before the click's re-render — not a real defect. A prior
+session's own scratchpad screenshot (`upgrade-light-steps-open.png`,
+this same scratchpad dir) shows the identical stuck-right-chevron
+artifact, corroborating "screenshot timing", not "selector broken".
+Added a red-proven assertion to the existing `ONB-C17` Playwright test
+(`tests/ui/flow-schema-mismatch.spec.ts`) asserting the caret's computed
+`transform` after opening the disclosure, so a real regression here
+would be caught going forward. No product code changed for this item.
+
+**Files touched.**
+- `package.json` — added `test:smoke`; `lint`/`lint:fix` now use
+  `--cache --cache-location .eslintcache`.
+- `.gitignore` — `.eslintcache`.
+- `tools/case-index/smoke.ts` (new) + `smoke.test.ts` (new, 8 unit
+  tests, each red-proven against a matching mutation).
+- `tools/case-index/main.ts` — `cases:index`/`cases:check` now also
+  write/verify `tests/ui/smoke.list`.
+- `tools/smoke/run.ts` (new) — the `test:smoke` orchestrator: build once,
+  then typecheck, lint, cases:check, unit, runthrough, packaging,
+  Playwright (blocker selection), printing each step's duration and the
+  total, stopping at the first failure.
+- `tests/ui/smoke.list` (new, generated) — 274 entries.
+- `tests/ui/flow-schema-mismatch.spec.ts` — added the caret-rotation
+  assertion to `ONB-C17`.
+- Docs: `docs/dev/process/build-loop.md` (new "Smoke before every
+  commit, the full set before every merge (K155)" section),
+  `CONTRIBUTING.md`, `tests/README.md`, `tools/README.md`, and
+  `CLAUDE.md`'s Commands block only (per this session's constraint).
+
+**Gates run this session:** `npm run cases:check` (pass, 1095 cases,
+274 smoke tests); `npx tsc --noEmit -p tools` (clean); `npx eslint .`
+(clean, cache warm and cold both measured); `npx vitest run --config
+tools/vitest.config.ts` (20/20, includes the new smoke.test.ts, each
+new test red-proven by a matching mutation and restored); `npm run
+typecheck` (clean, all workspaces).
+
+**Full, real `npm run test:smoke` run, end to end, exit 0. Per-step
+timings:**
+
+| step | time |
+|---|---|
+| build | 6.2s |
+| typecheck | 11.9s |
+| lint (warm cache) | 2.1s |
+| cases:check | 0.8s |
+| unit | 2.2m |
+| runthrough | 1.3m |
+| packaging | 9.3s |
+| playwright (blocker cases, 276 tests) | 8.3m |
+| **total** | **12.4m** |
+
+All 276 Playwright tests passed. Total time lands inside K155's
+"~13-14 min" estimate for the smoke tier.
+
+**To revert.** Delete `tools/case-index/smoke.ts`,
+`tools/case-index/smoke.test.ts`, `tools/smoke/run.ts`,
+`tests/ui/smoke.list`; revert `tools/case-index/main.ts` to its
+prior version (case-index only, no smoke.list); revert `package.json`'s
+`lint`/`lint:fix` cache flags and remove `test:smoke`; remove
+`.eslintcache` from `.gitignore`; revert the caret-rotation assertion
+in `tests/ui/flow-schema-mismatch.spec.ts` (the rest of that test is
+untouched); revert the four doc files' additions. No schema, API,
+on-disk tracker format, or product runtime code is touched by this
+ticket — it is tooling, tests and docs only, plus the one Playwright
+assertion.
+
+### A367 · Intentional upgrades everywhere; the Upgrade screen (B48, K154)
+
+#### A367 · Intentional upgrades everywhere (B48, K154)
+
+**Ticket:** B48 · **Date:** 2026-09-28 · **Agent-made** (under K154, K142, A361, A366, A333).
+
+**The situation.** K154 reverses K143: no surface upgrades a tracker on
+its own; every surface refuses an older tracker with "This tracker needs
+upgrading from X to Y. Run `loctt migrate` (a backup is made first).";
+`loctt migrate` previews and confirms; the web gets a designed Upgrade
+banner; MCP tells agents to ask first; doctor and info are read-only.
+The ruling left the calls below open.
+
+**What had to be decided.** How the pieces are shaped where K154 did not
+say.
+
+**Options considered.** (per call; the chosen one first)
+
+1. *The refusal in core.* (a) A new `SchemaUpgradeRequiredError`
+   (`schema/version.ts`, a `SchemaVersionError` with `from`/`to`) thrown
+   by `requireSupportedSchema`, with `upgradeRequiredMessage(from, to)`
+   as the one source of K154's sentence. `from` is the recorded version as
+   written (`0.2.1` stays `0.2.1`). (b) Keep a plain `SchemaVersionError`
+   with the new text: surfaces and tests could only match prose. (a)
+   chosen. `upgradeIfSafe`, `upgradeNotice`, the wait/poll helpers,
+   `stillUpgradingError`, `TrackerInfoResponse.completedUpgrade`, the
+   web `completedUpgradeNotice`, `UpgradeNotice.tsx` and its test are
+   deleted.
+2. *A live upgrade in another process.* Without `upgradeIfSafe`'s wait,
+   a command during someone's `loctt migrate` would read the live
+   sentinel as a crash ("interrupted mid-run", restore the backup).
+   (a) `requireSupportedSchema`, `planMigration` and `migrateToCurrent`'s
+   pre-check refuse with `SchemaUnmigratableError` "This tracker is being
+   upgraded by another loctt process." / "Wait for the upgrade to finish,
+   then try again." when the migration lock is held and the tracker is
+   behind or a sentinel is present. A current tracker never checks the
+   lock (SET-38's write-refusal path is unchanged). (b) Leave the
+   pre-K143 behaviour (a live upgrade reported as a crash). (a) chosen.
+3. *Which MCP tools the guard exempts.* K154 says every tool returns the
+   refusal and that MCP `doctor`/`info` report "needs upgrading" and never
+   write. (a) `info` and `doctor` join `init` and `migrate_schema` as
+   exempt, like the CLI's exempt `doctor`/`info`: `info` prints `Schema:
+   <describeSchemaStatus>` (moved from the CLI into core so both surfaces
+   print one sentence), `doctor` reports the schema check and skips every
+   repair. Every other tool returns the refusal. (b) Keep them guarded:
+   they would return only the refusal, and an agent asking "what is this
+   tracker" learns nothing else. The registry test's exempt list (it
+   asserted `init`, `migrate_schema` only) is updated and says why. As a
+   consequence MCP `info`/`doctor` now also run on a too-new, missing or
+   interrupted tracker, as the CLI's do; they write nothing there either.
+4. *Doctor while an upgrade is pending.* (a) The schema check says
+   "needs upgrading from X to Y. Run loctt migrate (a backup is made
+   first)"; every requested repair (`--fix`, `--repair-relationships`,
+   and now `--rebuild-index`, which ran after the checks regardless of
+   the schema before this) is skipped with "skipped. This tracker needs
+   upgrading first. Run loctt migrate, then run the repair again". MCP
+   `restore_missing` runs only on a current tracker or one whose
+   `.schema-version` is missing (restoring it is that repair's job);
+   otherwise it is skipped with the same sentence (or "Resolve the schema
+   version problem first"). The relationship check on a 0.1.0 tracker
+   still reports its unranked links ("N can be fixed with loctt doctor
+   --repair-relationships"), which the upgrade itself ranks. Not changed:
+   it is a report, and the repair it names says why it is skipped.
+5. *Web `/api/info` and `/api/doctor`.* (a) Stay behind the guard: they
+   answer 409 `schema_mismatch` with kind `outdated`, both versions, the
+   K154 message and `recovery: loctt migrate`, and write nothing. The
+   client learns the state from that envelope, as it did (ONB-C6). (b)
+   Exempt them like the CLI/MCP ones: the client boot path would have to
+   branch on a 200 carrying `outdated` as well as on the 409. (a) chosen:
+   read-only and reporting, with no client rework.
+6. *The web: a screen, not a banner over the shell.* Every API route
+   refuses an older tracker, so a banner over the shell would sit above
+   views that only show refusals. (a) `AppBootstrap` routes kind
+   `outdated` to `UpgradeRequired` (like `interrupted` to
+   `InterruptedMigration`): a brand bar (the header "can stay"; only its
+   brand does, since search, New task and the user menu would all be
+   refused) and one centered card. `SchemaBanner` keeps `future`,
+   `missing`, `unknown`, and throws on `outdated` like it does on
+   `interrupted`. The A333 synchronous in-flight guard moved with the
+   button. (b) Keep `SchemaBanner` with a bigger button: the shell under
+   it cannot do anything. SHL-13, SHL-36, XS-35, XS-36, SET-15 and SET-37
+   are amended to match.
+7. *The design.* Card: warn-toned round `arrowUp` badge, h1 "Upgrade
+   needed", "This tracker needs upgrading from 0.1.0 to 0.3.0.", "A
+   backup is made first.", a `Disclosure` "What changes (N step[s])"
+   (collapsed; each step's description, from → to, a warn "Risky" tag,
+   and its plain-words `changes`), a primary md **Upgrade** button
+   (32px, focused on mount, `loading` spinner, `aria-label` kept). The
+   container is `role="alert"` labelled by the h1. Success: "Upgraded to
+   0.3.0. Reloading…" and `window.location.reload()`. Failure, from the
+   envelope: after the backup (`data_state: unknown`) a danger `Callout`
+   "The upgrade didn't finish. <message>" / "The tracker may be partly
+   upgraded. Restore .loctt/ from this backup, then reload:" / the path
+   (from `schema_status.backup`, which `/api/migrate`'s failure now
+   carries), and **Reload** instead of Upgrade (reload shows the
+   recovery screen; SET-37: no bare retry); refused before anything ran:
+   the message, the detail, "Nothing was changed.", Upgrade kept; no
+   answer: "The server stopped responding." / "Reload to see whether the
+   upgrade finished." with Reload. The web text names no CLI command (the
+   button is the remedy, K154 "adapted to the button").
+8. *Steps in plain words.* (a) `Migration` gains an optional `changes`
+   sentence shown by `loctt migrate`, `migrate_schema`'s preview and the
+   web (`MigrationStepResponse.changes`). The 0.1.0 → 0.3.0 step's
+   description became "Save the order of every task's links" (was "Give
+   every link a rank, in the order it is shown today": "rank" is internal
+   lore). (b) Reword `description` only: one line cannot say what
+   changes. Optional so test fixtures that build `Migration`s need no
+   change.
+9. *`loctt migrate`'s prompt and refusal.* (a) Preview (versions, steps
+   with `[risky]`/`[deprecated]` and `changes`, the backup location as
+   `<.loctt>.backup-v<from>-<date and time>`), then `confirmHardDelete`'s
+   three outcomes: `y` upgrades; anything else "Not upgraded. Nothing was
+   changed." exit 0; no terminal and no `--yes` refused with "Pass --yes
+   to skip." exit 2. Before this, a non-interactive `loctt migrate`
+   printed the refusal and "Aborted." with exit 0. A second migrate that
+   waited for the lock and found the tracker current prints "already at
+   format X. Nothing to do." (it printed a success "from 0.3.0 to
+   0.3.0").
+10. *MCP wording.* `migrate_schema`'s description and a new
+    `MCP_INSTRUCTIONS` line carry "Don't call migrate_schema unless the
+    user asked you to upgrade the tracker. Tell the user it needs
+    upgrading and ask." (the instruction prefixes "If a tool says the
+    tracker needs upgrading," and adds that it changes the format for
+    everyone sharing the tracker). Preview now reads "This tracker needs
+    upgrading from X to Y (N step(s))." and ends "Show the user this
+    plan…"; apply reads "Upgraded this tracker from X to Y." (was
+    "Plan: …" / "Migrated X → Y.").
+11. *`SCHEMA_VERSION_REPAIR` and the missing-file remedy* said "The next
+    command upgrades the tracker from there", false under K154; they now
+    say "Then run 'loctt migrate' to upgrade the tracker from there."
+12. *Runthrough harness.* An `expect_error` step whose tracker is
+    unchanged no longer runs doctor (the tracker is the one the previous
+    step or seed left, already judged). Needed because a refused command
+    on the 0.1.0 seed leaves it at 0.1.0, whose findings the current
+    seed's baseline lacks. `upgrade-on-first-use` became
+    `upgrade-intentional` (refused, `migrate --yes` / `migrate_schema
+    confirm`, then the command runs).
+13. *Flaky TSK-17 (flow-task-body.spec.ts:343).* The test clicked the
+    paragraph and pressed End while `BodyEditor`'s rAF focus of the rich
+    surface could still land and reset the caret to the start. It now
+    waits for that focus, sets the DOM selection at the end of the last
+    text node, and polls that the collapsed selection is there before
+    typing. No product change.
+
+**Decided.** As chosen in 1–13.
+
+**Why.** One refusal, built in core and printed identically by three
+surfaces; nothing writes a tracker the user has not chosen to upgrade;
+the web shows the one action that can work; each failure says what
+happened, what it did to the data, and what to do (messaging.md).
+
+**To revert.**
+1. `SchemaUpgradeRequiredError`/`upgradeRequiredMessage` in
+   `packages/core/src/schema/version.ts`; the throw in
+   `requireSupportedSchema` (`schema/migrate.ts`). Restoring automatic
+   upgrades means restoring `upgradeIfSafe` and its callers (see A361's
+   revert list), which K154 forbids without Ken.
+2. `upgradeRunningError` and its three `isMigrationLocked` checks in
+   `schema/migrate.ts`.
+3. `exemptFromSchemaGuard: true` on `info`/`doctor` in
+   `apps/mcp/src/tools/tracker.ts`, the registry test's list, and the
+   `Schema:` line; `describeSchemaStatus` in `diagnostics/info.ts`.
+4. `SchemaCheckState` and the skip in `runRequestedRepairs` /
+   the final `rebuildIndex` in `diagnostics/doctor.ts`; `restoreSkipped`
+   in the MCP doctor handler.
+5. Nothing to revert in the server guard beyond (1); `/api/info` and
+   `/api/doctor` were never exempted.
+6. `AppBootstrap`'s `outdated` branch and
+   `apps/web/src/client/shell/UpgradeRequired.tsx`; `SchemaBanner`'s
+   `outdated` case (it threw before K154 only for `interrupted`).
+7. The copy in `UpgradeRequired.tsx`; `schema_status` in `/api/migrate`'s
+   failure envelope (`server.ts`).
+8. `Migration.changes`, `MigrationStepResponse.changes`, the step's
+   description in `schema/migrations.ts`.
+9. `apps/cli/src/commands/migrate.ts` (`confirmHardDelete` → the old
+   `confirmInteractive`).
+10. `apps/mcp/src/tools/tracker.ts` (`migrate_schema`), `MCP_INSTRUCTIONS`
+    in `apps/mcp/src/server.ts`.
+11. `SCHEMA_VERSION_REPAIR` (`version.ts`), `missingVersionError`
+    (`migrate.ts`).
+12. `skipDoctor` in `tests/runthrough/lib/execute.ts` and its README
+    paragraph; the case file.
+13. The caret block in `tests/ui/flow-task-body.spec.ts` (TSK-17 rich).
+
+### A366 · Branch review fixes: format mapping, repair stamping, create/delete ordering, messages (fix/parent-and-child-order)
+
+#### A366 · Review fixes: recorded versions map to known formats, honest remedies, create/delete ordering, sync ranking, gate checks
+
+**Ticket:** review of B39–B47 (M1, M2, minors 1–9) · **Date:** 2026-09-28 · **Agent-made** (under K142, K143, K147, K148, K149, K151, K153; K154 noted).
+
+**The situation.** An independent review of the B39–B47 work found two
+majors and nine minors, each checked against the code before fixing. The
+fixes left the calls below open. None changes scope or a recorded ruling
+except where noted (call 10 reverses A360 call 2 on the reviewer's
+instruction; call 1 departs from one requested test and says why).
+
+**Options considered / decided.** (chosen first)
+
+1. *A recorded version between known formats (M1, K142 "highest at or
+   below").* (a) `formatForRecordedVersion` (`schema/migrations.ts`)
+   maps a recorded semver to the highest known format at or below it
+   (known = `CURRENT_SCHEMA_VERSION` plus every migration's `from`/`to`):
+   `0.2.1` → `0.1.0`. Below the first format (`0.0.9`) is refused as
+   `SchemaUnmigratableError` ("… is not a LocTT format. The first format
+   is 0.1.0.") with the write-the-file remedy, never `loctt migrate`.
+   Above `CURRENT_SCHEMA_VERSION` stays `SchemaTooNewError`, naming the
+   release. `planMigration`, `migrateToCurrent`, `requireSupportedSchema`,
+   `upgradeIfSafe`, doctor and `computeSchemaStatus` all go through it.
+   **The review also asked that `0.3.1` be treated as current** (and
+   `0.3.4` → `0.3.0`). Not done: a build writes `CURRENT_SCHEMA_VERSION`,
+   never its own release, so a file holding `0.3.1` can only have come
+   from a build that introduced format `0.3.1` (or a hand edit). Reading
+   it as `0.3.0` would let this build write old-format data into a newer
+   tracker, the corruption K142's "too new is refused" exists to
+   prevent. The resolver takes the migration list as a parameter, and a
+   unit test shows the mapping for a release between two formats.
+   (b) Treat anything above current as current (the review's reading):
+   silent downgrade of a newer tracker. (c) A build-release constant as
+   the ceiling: every release would have to bump it, and it only matters
+   for hand-edited files.
+2. *Rewrite to the canonical version.* The upgrade runs the steps from
+   the mapped format and the last step's stamp writes `0.3.0`, so `0.2.1`
+   ends as `0.3.0`; the backup is named `…backup-v0.2.1-…` and the notice
+   says "from 0.2.1". `migrateToCurrent` also stamps the canonical
+   version when a recorded one maps to the current format (unreachable
+   while the ceiling is the current format; kept so the rule is whole).
+3. *Remedies that name only what helps (M1, M2).* `SCHEMA_VERSION_REPAIR`
+   (unreadable or empty file, or below every format) no longer names
+   `loctt init --repair`, which refuses a tracker whose config and state
+   are present: "… If you don't know it, write 0.1.0. The next command
+   upgrades the tracker from there." A missing `.schema-version` names
+   `init --repair` only when a core file (workflow/projects/state) is also
+   missing, since only then does repair run; otherwise "Create
+   .schema-version holding …". "No upgrade path" and the automatic
+   upgrade's wait-timeout are `SchemaUnmigratableError` (the web guard
+   then offers no command). The web `/api/migrate` catch sends `recovery:
+   none` plus the remedy for an unmigratable or too-new tracker (it named
+   `loctt migrate` for every failure). Restore's sentinel refusal said
+   "Run 'loctt migrate' to finish it", which refuses with a sentinel
+   present; it now says to wait, or restore from the backup the file names
+   and remove it. The web banner's `missing` kind said "Run `loctt
+   migrate` to stamp and upgrade it", which also refuses: it now says to
+   write the file and reload, with `loctt doctor` naming the version (no
+   version number in the banner, SHL-34). **Cases changed:** XS-33 and
+   SHL-34 required the `loctt migrate` advice; their text now requires
+   the write-the-file remedy and says why.
+4. *What `init --repair` stamps (M2).* `isProvablyRanked`
+   (`schema/steps/rank-every-link.ts`): workflow.yaml parses (or is
+   absent) and sets no retired `ranked`, and every readable task's every
+   link carries a rank, with no unreadable task or `relationships`. Then
+   `0.3.0`; otherwise `0.1.0`, so the automatic upgrade ranks the links.
+   A tracker with no links stamps `0.3.0`. Known cost of `0.1.0` on data
+   that was really `0.3.0`: a group whose ranks disagree with stored order
+   (a reorder) is re-ranked in stored order.
+5. *Create keeps the key invariant (minor 1).* `createTask` writes the
+   parent's edge first, then the child; if the child write fails the
+   parent's edge is taken back (`rollbackParentLink`, a `link_removed`
+   entry). Right after the child is on disk, `createTask` saves the key
+   counter itself (the caller saves again, harmlessly), so a later failure
+   (key index, history) can't lead to the key being issued twice.
+   **Residual:** if the parent's task.md is written but its history
+   append fails, the create throws and the parent keeps an edge to a task
+   that never existed (doctor reports it, `unlink` removes it); no key is
+   issued.
+6. *`created` from add/remove (minor 2).* Reported only when something
+   was saved: `editTaskFields` with no change returns `[]`; bulk returns
+   `[]` when no task changed.
+7. *Automatic upgrade racing a starting upgrade (minor 3).* In
+   `upgradeIfSafe`'s catch, a held migration lock sends it back to
+   waiting (the sentinel it tripped on is the other process's live one);
+   the wait-timeout is an `SchemaUnmigratableError` naming no command.
+   **Not tested**, by the coordinator's instruction: K154 removes the
+   automatic upgrade and this path with it.
+8. *Sync from a branch older than 0.3.0 (minor 4).* When the branch's
+   `.schema-version` is a format version below `0.3.0`, sync runs the
+   step's full `rankInShownOrder` (`rankLinksInShownOrder`) on the tasks
+   it applied, with the branch's own workflow.yaml `ranked` settings. No
+   file on the branch (what publish leaves: `.schema-version` is
+   LOCAL_OWNED and never mirrored), an empty one, or `0.3.0`+ keep the
+   fill-only rank (A365 call 5).
+9. *A branch holding `1` (minor 7).* The refusal said "may have been
+   written by a newer loctt … Upgrade loctt", which cannot help. For a
+   bare integer it now says the branch holds the old version number and
+   to change `.schema-version` on that branch to `0.1.0` and commit it
+   (re-publishing cannot: publish never writes that file).
+   `GitRemoteSchemaNewerError.raw` and the envelope's
+   `schema_remote_newer.remote_raw` carry the text; the web panel renders
+   the same remedy. Other non-format text keeps the "newer" wording.
+10. *Delete (minor 5, K147; reverses A360 call 2).* `deleteWithLinks`
+    (`task/relationships.ts`): scans every readable task
+    (`loadLinkSnapshot`) for links to the task, one-sided ones included,
+    writes each partner (with `link_removed`), **then** removes the
+    folder. A partner write failure or an `rm` failure puts the written
+    partners back (`link_added`) and throws `DeleteDetachError`
+    (`io_failed`; "… Nothing was deleted." / for `rm`, data state
+    `unknown`: "… some of its files may already be gone"). Bulk delete
+    keeps K153's partial shape: each task all-or-nothing, failures listed,
+    the rest deleted; one snapshot per batch, kept current. After every
+    successful delete `afterDelete` runs `forgetTasks` (a failure is
+    swallowed: the index is a cache lookup repairs) and always
+    `clearLookupCaches`. A360's reason for the old order (a crash between
+    leaves a one-sided link the repair would complete onto a deleted
+    task) no longer applies: with partners first, a crash leaves the task
+    present, and the repair restores the links it still holds.
+11. *ID-shaped starting project name (minor 6, K148).* `initLoctt`
+    refuses it with K148's message as a `LocttError` at field
+    `projectLabel`; the web init route places it at that field (it pinned
+    every init refusal on `prefix`). K148's message keeps its semicolon:
+    it is the text Ken's ruling quotes.
+12. *Messages (minor 7).* The six semicolon sentences are split. Doctor's
+    "has no rank" finding names both tasks by key when known:
+    `"parent" link from T-1 to T-2 has no rank, …`.
+13. *Leftovers (minor 8).* registry.test.ts points at
+    `tests/integration/mcp/tool-contract.test.ts`; the contracts `rank`
+    comment drops `ranked: true`; `get_task`'s description drops the
+    ranked/unranked wording; the archived-project lookup in
+    `resolveProjectIdFromInput` matches `p.id` only for ID-shaped input
+    (K149).
+14. *Doctor gate (minor 9a).* The premise was partly false: doctor
+    prints every relationship finding again as its own `data integrity`
+    line (path, field, message), and the gate already compared those one
+    by one, so a swap failed it. Kept as is (doctor has no JSON); a test
+    now pins it, and the gate's comment says the per-link lines are what
+    catch a swap.
+15. *Runthrough `changed_only` (minor 9b).* A post check `changed_only:
+    { tasks: [refs], files: [paths] }` fails on any change outside those
+    tasks' folders and files. A step with `expect_error.cli.partial` must
+    carry one (load-time error otherwise). Used in both bulk-add-partial
+    cases.
+16. *Green tests that asserted a bug.* `backup/restore.test.ts` (sentinel
+    refusal expected "migrate"); `SchemaBanner.test.tsx` (missing kind
+    expected `loctt migrate`); `schema-guard.test.ts` (missing and empty
+    `.schema-version` expected `init --repair`).
+
+**Decided.** As chosen in 1–16.
+
+**Why.** Each remedy names only a step that works; a failure never
+leaves a reissued key, a delete half-done, or an error that misstates
+what happened; the format rule is K142's in one resolver.
+
+**To revert.**
+1. `knownFormats`, `formatForRecordedVersion`, `readRecordedFormat` in
+   `schema/migrations.ts`; `requireRecordedFormat` and its callers in
+   `schema/migrate.ts`; the resolver calls in `diagnostics/doctor.ts`
+   (`checkSchemaVersion`) and `diagnostics/info.ts`
+   (`computeSchemaStatus`); the M1 tests in `schema/upgrade-0.3.0.test.ts`.
+2. The canonical-stamp branch and `let current = format` in
+   `migrateToCurrent`.
+3. `SCHEMA_VERSION_REPAIR` text in `schema/version.ts`;
+   `missingVersionError`, `noUpgradePathError`, `stillUpgradingError` in
+   `migrate.ts`; the `/api/migrate` catch in `apps/web/src/server/server.ts`;
+   `assertNotMidOperation` text in `backup/restore.ts`; the `missing`,
+   `future` and `unknown` copy in `SchemaBanner.tsx`; XS-33
+   (`flow-cross-surface.md`) and SHL-34 (`flow-app-shell.md`); the tests
+   in call 16.
+4. `isProvablyRanked` and its use in `repairLoctt` (`init/init.ts`); the
+   ".schema-version lost" tests in `init.test.ts`.
+5. The write order, `saveState` and `rollbackParentLink` in
+   `task/create.ts` / `task/relationships.ts` (`commitParentLink` returns
+   a boolean); two tests in `create-parent.test.ts`.
+6. The two `created:` lines in `task/list-edit.ts`; the test in
+   `list-edit-bulk.test.ts`.
+7. The catch in `upgradeIfSafe`.
+8. `branchPredatesRanks`, `rankLinksInShownOrder`, `legacyRankedTypesIn`
+   and the branch in `sync` (`git/publish-sync.ts`,
+   `schema/steps/rank-every-link.ts`); the test in
+   `sync-ranks-incoming.test.ts`.
+9. `raw` on `GitRemoteSchemaNewerError`, `remote_raw` in contracts
+   `service.ts` and `server.ts`, the integer branch in
+   `SchemaRemoteNewerRefusal` (`GitSyncPanel.tsx`, now exported); tests in
+   `schema-remote-newer.test.ts` and `GitSyncPanel.test.tsx`.
+10. `loadLinkSnapshot`, `DeleteDetachError`, `deleteWithLinks` (restore
+    `detachDeletedTasks`), `afterDelete` in `task/lifecycle.ts`,
+    `bulkDelete` in `task/bulk.ts`; the "delete detaches first" tests in
+    `delete-links.test.ts`; the delete paragraphs in the CLI and MCP
+    references.
+11. The `assertNameNotIdShaped` call in `initLoctt`, the `LocttError`
+    branch in the web init route; the "project name" test.
+12. The strings in `list-edit.ts`, `workflow-entities.ts`, CLI
+    `task-crud.ts`, `migrate.ts`, `task/traversal.ts`, and their tests.
+13. Per file.
+14. The comment in `tests/integration/fixtures/doctor-gate.ts` and the
+    swap test in `tests/integration/doctor-gate.test.ts`.
+15. `changed_only` in `tests/runthrough/lib/schema.ts` and `checks.ts`,
+    the check in `load.ts`, the two case files, the README paragraph.
+
+### A365 · Batch fix round: gate failures, git sync refuses `1` and orders links, bulk add/remove (B46, B47, K151, K153)
+
+#### A365 · Batch gate fixes (B41/B45/B40/B43 fallout), B46, B47
+
+**Date:** 2026-09-28 · **Agent-made** (under K142, K143, K145, K148, K151, K152).
+
+**The situation.** The combined gate run of B41 + B45 + B40 + B43 failed 6
+integration tests (all from B43's doctor gate) and 8 Playwright tests. Each
+was classed as superseded, deliberate bad data, or a product bug. Then B46
+(K151) and B47 (K152) were built.
+
+**Calls made (each: decision · why · to revert).**
+
+1. *doctor's key-index check skips unparseable task dirs.* A dir whose
+   task.md won't parse was counted "not in index" and doctor prescribed
+   `--rebuild-index`, which cannot index it (its key is in the broken part),
+   so the finding outlived the repair. `data integrity` already names that
+   file. Only "not in index" orphans are filtered; "stale entry
+   (unreadable)" is unchanged. **To revert:** in `diagnostics/doctor.ts`, drop
+   the `readTask`/`TaskParseError` filter and restore
+   `const orphanIds = [...allTaskIds].filter(id => !indexedIds.has(id));`,
+   then delete the test "does not count an unparseable task dir…" in
+   `diagnostics.test.ts`.
+2. *`init --repair` recovers project ids when projects.yaml is lost.* The
+   existing code said reusing the id matters (P-2) but only did so when
+   projects.yaml survived. Ids come from state.yaml `keys` (in order), then
+   from task `project` fields (prefix read from the key). One project keeps
+   the given name ("Tasks"). Several are each **named after their prefix**,
+   with the first as the default. The names were in the lost file, so this
+   is a placeholder. **To revert:** remove `recoverProjectIdentities`,
+   `recoveredProjectsYaml` and the `else` branch in `repairLoctt`, and delete
+   the "initLoctt repair — projects.yaml lost" tests and the CLI reference
+   sentence.
+3. *State lock retries contention only.* proper-lockfile retried every
+   error, so EACCES waited out the full ~3.75 s backoff. That is why XS-64's
+   alert missed its 5 s window under load. Now `retries: 0` goes to
+   proper-lockfile, and `acquireStateLock` retries only on ELOCKED, on the
+   same schedule. The history/comments/migration locks still retry all
+   errors; they were not changed. **To revert:** restore
+   `retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 }` in
+   `LOCK_OPTIONS` and the single `lockfile.lock` call in
+   `state/lock.ts`, then delete the "unwritable tracker" test.
+4. *Sprints board says a deleted sprint "no longer exists".* Since K148 the
+   server says "No sprint with ID '<ULID>'". Before K148 it said "unknown
+   sprint "<ULID>"; valid: …", so both showed a raw ULID, which messaging.md
+   forbids. On a failed drop the view refetches sprints. If the target is
+   gone, it shows "That sprint no longer exists." instead of the server
+   text. This is decided from the data, not the wording. **To revert:**
+   remove `moveTargetGone`, `sprintId` and the refetch in
+   `SprintsView.tsx`, then drop the `not.toContainText(staleId)` line in
+   SPR-36.
+5. *Git sync ranks incoming unranked links with fill only* (K151). It uses
+   `rankUnrankedLinks` → `fillMissingRanks`, the first half of the upgrade
+   step's `rankInShownOrder`. The step's even re-rank is not used: it
+   reproduces 0.1.0's display of a group whose ranks disagree with stored
+   order, and on 0.3.0 such a group is one someone reordered, so re-ranking
+   would undo the reorder. It runs only on tasks the sync wrote, and does
+   not touch `updated_at` or history. **To revert:** remove the
+   `rankUnrankedLinks` call in `publish-sync.ts` and the function in
+   `schema/steps/rank-every-link.ts`.
+6. *Bulk add/remove is its own operation, partial like bulk set* (K152,
+   amended by Ken's K153). `bulkEditTaskFields` in `task/list-edit.ts`
+   changes every task it can. Per-task failures go in `failed`, in bulk
+   set's shape. `unchanged` is reported separately (and, as in archive,
+   is a subset of `succeeded`). An unknown value without create refuses
+   the whole call once as `UnknownFieldValueError`. Created values are
+   saved only when some task changes; there is one staged swap and one
+   `bulk_op_id`. The CLI prints `reportBulk` and exits 1 on any failure;
+   MCP prints `N updated, M unchanged, F failed (bulk_op_id …)` plus
+   one line per failure, not as an error, like the set form. The CLI
+   still refuses a replace value with `--create` on several tasks
+   (usage, exit 2). MCP refuses `field` together with `add`/`remove` in
+   one `bulk_update_tasks` call. The first K152 build was all-or-nothing;
+   its tests were rewritten for K153 and say so. The runthrough harness
+   gained `expect_error.cli.partial` (skip the automatic
+   tracker-unchanged check) for a bulk command that changed some tasks
+   and exited 1. **To revert:** remove `bulkEditTaskFields`, CLI
+   `bulkListEdits`, the MCP `add`/`remove` branch and the `partial` flag;
+   restore the old usage refusal.
+7. *Test classifications.* These are noted in the test comments:
+   - superseded: REL-9/27/42 (rank "u"), A11Y-49 (semver sentinel;
+     "v1" had only passed because of the backup path), SPR-36,
+     `schema-remote-newer` integer test, and the CLI set-lists "several
+     tasks" refusal;
+   - deliberate bad data: the attach-file sentinel and the
+     sync-from-git malformed task (`allowDoctorFindings`);
+   - fixture error: sync-from-git rekey `status: todo` → `backlog`;
+   - test robustness: SET-56 waits on the passing row, because doctor
+     emits one data-integrity row per finding.
+   **To revert:** per file.
+
+**Settled since.** The K152 premise mismatch (bulk set is partial, not
+all-or-nothing) was raised, and Ken ruled K153: bulk add/remove follows
+bulk set (call 6).
+
+8. *Git spec sync waits get `SYNC_SETTLE_MS` (15 s).* Click → reconcile
+   panel was measured at 4230/4752/5222 ms on GIT-13 (sync POST ~2 s,
+   reconcile GET ~0.7 s, status refetch ~1 s), on top of Playwright's
+   5 s default. It applies only to the first wait after a sync/publish
+   click (and a reload into a pending reconcile) in
+   `flow-git-reconcile.spec.ts` and `flow-git-sync.spec.ts`. G9 was
+   removed. **To revert:** delete the constant from
+   `tests/ui/fixtures/git-tracker.ts` and the `{ timeout: SYNC_SETTLE_MS }`
+   arguments.
+
+### A364 · e2e journeys folded into the runthrough; doctor gate on integration (B43, K145)
+
+#### A364 · e2e journeys folded into the runthrough; the integration doctor gate (B43)
+
+#### A364 · B43 implementation calls (K145)
+
+**Ticket:** B43 · **Date:** 2026-09-28 · **Agent-made** (under K145, K146).
+
+**The situation.** K145: the e2e journeys become runthrough scenarios and
+`test:e2e` goes; the MCP tool-list snapshot and em-dash guard move to
+integration; integration keeps surface mechanics, the runthrough data
+behaviour; and a shared integration step runs `loctt doctor` after every
+writing test, failing on any new finding. The runthrough started every
+case from the seed tracker and ran each case on one surface at a time,
+which the journeys (init from nothing, git repos with a remote, CLI⇄MCP
+interop, an out-of-band push) could not express. The calls below were
+needed.
+
+**Options considered / decided.** (chosen first)
+
+1. *Journeys on the seed or from scratch.* (a) Two new starting points,
+   `seed: empty` (a tracker `loctt init --no-docs --quiet --timezone UTC`
+   just made: prefix `T`, no tasks) and `seed: none` (an empty directory),
+   so each journey keeps its own steps, keys (`T-1`…) and assertions
+   verbatim. (b) Rewrite the journeys over the seed with captured keys:
+   different steps and different assertions, which K145 ruled out ("same
+   steps, same assertions").
+2. *Git.* A case-level `git: local | remote` makes the temp root a git
+   repository (identity in the repo's own config) and, for `remote`, adds
+   a bare `origin` at `<root>/.remote.git` (inside the root so one `rm`
+   cleans both; exposed as `${var.remote}`). New checks `git` (a ref
+   exists / is absent, locally or on the remote, optionally moved from a
+   captured commit), `git_show`, and a `git_rev` capture.
+3. *Interop and out-of-band actions.* A step-level `via: cli | mcp` pins a
+   step to one surface whatever run it is (the interop journey runs once,
+   on `cli`, with an MCP session opened because a step needs it). A
+   step-level `script: <file.ts>` runs an action no loctt command can do
+   (another clone pushing to the remote). Considered: a generic `shell:`
+   step (rejected: quoting and portability, and the runthrough has no
+   shell anywhere else).
+4. *Other checks added.* `path: {path, exists}` (config files written,
+   docs not written) and `output.line_count: {matches, equals}` (the
+   `--limit 5` journey counted rows).
+5. *Where the journeys live.* `tests/runthrough/cases/journeys/`, 19 cases
+   (one per e2e `it`: 01 → 1, 02 → 4, 03–09 → 1 each, 10 → 7; the two
+   delete `it`s of 10 are one scenario). The two tests of e2e 11 moved
+   verbatim to `tests/integration/mcp/tool-contract.test.ts`.
+6. *What was deleted.* `tests/e2e/`, `tests/vitest.e2e.config.ts`, and the
+   `test:e2e` / `pretest:e2e` scripts. Docs updated: CONTRIBUTING,
+   build-loop.md (gate list, K145 suite split, the gate's cost),
+   development.md (suite table), tests/README.md (layout, commands,
+   layers, the new "Which suite" section), tests/ui/README.md,
+   tests/runthrough/README.md, and the one case (flow-projects-users.md)
+   that named the e2e file. **Not edited: `CLAUDE.md`**, whose Commands
+   list still shows `npm run test:e2e` — it is project instruction text
+   and is Ken's to change.
+7. *Doctor gate: how it attaches.* (a) `withTmpLoctt` (164 of the
+   integration files use it) registers the root and checks when the body
+   returns; the shared adapters report each surface action: `runCli`
+   (root found from `cwd`, `--root`/`--cwd` or `LOCTT_ROOT`) and each MCP
+   `callTool`. No test file was rewritten. (b) A vitest `afterEach`: it
+   cannot know which root a test used, nor what the test did between
+   commands. (a) chosen.
+8. *Doctor gate: the baseline.* "The starting tracker" is taken per
+   *segment*: the tracker is snapshotted before and after every surface
+   action, and a change made between actions (a test corrupting a file or
+   removing a task out of band to set up a degradation case) starts a new
+   segment with that state as its baseline. For each segment in which a
+   surface action wrote, doctor's findings at its end must all have been
+   present at its start. `local/` (key index, op journal) never counts as
+   a write but is captured, so a restored copy reports the same key-index
+   state; directories are captured too (an empty `tasks/` matters to
+   doctor). A segment that began with no tracker compares against a
+   freshly initialised tracker's findings. Paths are normalised to
+   `<root>`. (b) Baseline = the tracker as the fixture hands it over:
+   every degradation test would fail on its own setup. (c) Doctor before
+   and after every command: ~2× the cost for no extra catch.
+9. *Doctor gate: cost.* One `loctt doctor` spawn (~0.5 s) per writing
+   test when its writes leave doctor clean; a restored-copy run of the
+   start only when the end has findings. Snapshots are in-process reads.
+   Not yet measured over the full suite (batch mode): K146's ~6 min
+   integration figure will grow; the timeouts were left alone (the config
+   warns that raising them hides contention).
+10. *Doctor gate: opt-outs.* `withTmpLoctt(fn, { allowDoctorFindings:
+    [/…/] })` for a test whose writes are meant to leave a finding
+    (justified at the call site) and `{ doctorGate: false }` for a test
+    of doctor's own reporting. Neither is used yet; the full integration
+    run may show tests that need one, or product bugs.
+
+**Why.** It keeps K145's three rulings without rewriting 647 tests, keeps
+the journeys' own steps and assertions, and keeps the runthrough's
+property that checks read the files (the new git checks read git, not
+core).
+
+**To revert.**
+1–4. `seed` values `empty`/`none`, `git`, step `via`/`script`, checks
+     `path`/`git`/`git_show`, `output.line_count`, capture `git_rev` in
+     `tests/runthrough/lib/schema.ts`; `blankTracker` in `lib/seed.ts`;
+     `prepare`/`runAction`/`runCase` (needsMcp)/`applyCapture` in
+     `lib/execute.ts`; the checks and `gitRev` in `lib/checks.ts`; the
+     step validation in `lib/load.ts`; README sections.
+5. Delete `tests/runthrough/cases/journeys/` and
+   `tests/integration/mcp/tool-contract.test.ts`; restore `tests/e2e/`
+   from git.
+6. Restore `tests/vitest.e2e.config.ts` and the two scripts from git;
+   revert the doc edits listed above.
+7–10. Delete `tests/integration/fixtures/doctor-gate.ts` and
+      `tests/integration/doctor-gate.test.ts`; remove the `gated(...)`
+      wrappers in `adapters/cli-spawn.ts` and `adapters/mcp-stdio.ts` and
+      the begin/finish/abandon calls and the two options in
+      `fixtures/tmp-loctt.ts`.
+
+**Red-proofs.** Gate: core `linkTask` changed to skip the inverse write,
+rebuilt; `tests/integration/cli/rank-history.test.ts` "records a
+relationship reorder" (which never looks at the target's file) failed
+with the gate's message naming the one-sided links; restored and rebuilt.
+Gate unit tests (`tests/integration/doctor-gate.test.ts`) fail under the
+same mutation. Journeys: 12 of 19 cases were broken one at a time
+(behaviour or expectation) and each went red.
+
+### A363 · One reorder handle for every relationship group (B40)
+
+#### A363 · One reorder handle for every relationship group, the Children tree included (B40)
+
+#### A363 · B40 implementation calls (K140, K141, K143)
+
+**Ticket:** B40 · **Date:** 2026-09-28 · **Agent-made** (under K140, K141, K143; built on B41's model).
+
+**The situation.** K140 reported that a task's children could not be
+reordered on its page; K143 made every relationship kind ordered. B40:
+every group, including the Children tree's direct children, gets the same
+24px drag/keyboard handle; grandchildren sort by rank; ancestor pages
+refresh after a reorder. The calls below were not settled by the rulings.
+
+**Options considered / decided.** (chosen first)
+
+1. *Where the shared control lives.* (a) `apps/web/src/client/relationships/Reorder.tsx`:
+   a `useReorder({count, nameAt, onMove, enabled})` hook returning
+   `order()` (the buffered pickup order), `rowProps(i)` (HTML5 drag/drop
+   on the row element), `handle(i, name)` and the live-region
+   `announcer`, plus the `ReorderHandle` button. FlatGroup and TreeGroup
+   both use it, so the keyboard model (FlatGroup's pickup: arrows move
+   visually, Enter/Space commits one rerank, Escape cancels with no
+   write — REL-15) exists once. (b) Copy FlatGroup's logic into the tree:
+   two copies of REL-15's rule. (a) chosen.
+2. *Handle.* A `<button data-testid="drag-handle">`, `min-h/min-w 24px`,
+   the drawn `drag` icon (A208's rule for the settings rows, now here
+   too), labelled "Reorder {key}, position N of M. Arrow up and down to
+   move, Enter to drop, Escape to cancel." (the existing text, kept so
+   existing specs and screen-reader copy do not change).
+3. *Which groups get handles.* Every group of a declared kind; a group of
+   a type workflow.yaml does not declare gets none, because core's
+   `reorderRelationship` refuses an undeclared kind. The panel gates on
+   `!group.unknown`, not on `group.ranked`. `group.ranked` still exists in
+   `group.ts` after B41 (hard-coded true for declared kinds, false for
+   unknown) and still feeds the `data-ranked` attribute some specs read;
+   it now says the same thing as `!unknown`. Left in place (B41's file)
+   rather than removed.
+4. *Tree drag target.* The depth-0 `<li>` carries the drag props, so the
+   dragged element is the row with its whole subtree and a drop on any
+   part of a sibling's block lands next to that sibling. `onDragStart` and
+   `onDrop` stop propagation so nested elements do not start or receive a
+   second drag. Only depth-0 rows get a handle; grandchildren's links
+   belong to their own parent (the existing "only the top level can be
+   unlinked" reasoning) and are reordered on its page.
+5. *Tree indices.* `buildTree` maps `group.rows[i]` to `nodes[i]`, so the
+   pickup buffer reorders `nodes` with the same stored indices FlatGroup
+   uses on rows, and `move(group, from, to)` (unchanged) computes the
+   `before`/`after` anchor.
+6. *Nested order.* `buildTree` sorts every nested level with core's
+   `compareRankedEdges` (browser-safe subpath, as `group.ts` already
+   imports): rank ascending, unranked after, stored order as tiebreak —
+   the order that task's own page and `loctt show` use (K141 6a).
+7. *Refresh.* `useRerankRelationship` invalidates `["task-graph"]` (the
+   whole-tracker index the tree is drawn from), so an ancestor's page
+   picks up a child page's reorder. `invalidateBoth` (link/unlink) now
+   invalidates it too: a link or unlink changes the subtree an ancestor
+   draws in exactly the same way. That second line goes slightly past
+   "after a reorder"; it is one invalidation and the same defect.
+8. *Announcer.* One live region per group (FlatGroup already had one per
+   group), rendered by the tree group too.
+9. *Playwright drag.* The spec drives HTML5 drag-and-drop with dispatched
+   `dragstart`/`dragover`/`drop`/`dragend` events sharing one
+   `DataTransfer`; the existing specs note that Playwright's mouse drag
+   does not reliably produce them.
+
+**Why.** One control and one keyboard model for every group (P8, P10);
+the child order the user sets is the order every surface shows (K141 6a);
+nothing moves on screen that is not on disk (REL-46: no optimistic move,
+the panel still re-renders from the refetch).
+
+**To revert.**
+1–2. Delete `Reorder.tsx`; restore FlatGroup's inline pickup/drag code
+     and `moveInArray` in `RelationshipsPanel.tsx`.
+3. `orderable()` in `RelationshipsPanel.tsx`.
+4–5. The `reorder` prop, `top` index and `rowProps`/`handle` uses in
+     `TreeRows.tsx`; `onMove`/`useReorder` in `TreeGroup`.
+6. The `.sort(compareRankedEdges)` step in `buildTree` (`tree.ts`).
+7. The `["task-graph"]` invalidations in `useRelationships.ts`.
+8–9. Nothing separate.
+
+**Tests.** `RelationshipsPanel.test.tsx` "Children tree reorder (B40…)" (5),
+`tree.test.ts` "buildTree nested order (B40)", `useRelationships.test.tsx`
+(2), `tests/ui/flow-relationships-children-reorder.spec.ts` (3). Cases
+REL-5, REL-6, REL-13, REL-14, REL-15 amended (K140/K143, B40).
+
+### A362 · Add/remove for multi-value fields; open choice fields (B45, K150)
+
+#### A362 · Add/remove for list fields; open choice fields; create on the fly (B45)
+
+#### A362 · B45 implementation calls (K150)
+
+**Ticket:** B45 · **Date:** 2026-09-28 · **Agent-made** (under K150, K148).
+
+**The situation.** K150 fixes the model: add/remove for labels and every
+`multi` custom field, applied under the lock, no-op for present/absent
+values, through the K148 resolver; `allow_new_values` on enum fields
+(default off); unknown values created only when asked (web "Create 'x'"
+row, CLI `--create`, MCP `create_missing: true`), appended with a key from
+the label, collision-safe. The calls below were not settled by the ruling.
+
+**What had to be decided.** Where the list logic lives and how it
+validates; how choice values are "named"; the CLI and MCP shapes; how the
+web creates a value; what counts as a no-op and what is refused.
+
+**Options considered / decided.** (chosen first)
+
+1. *One core entry point.* (a) `editTaskFields` in
+   `packages/core/src/task/list-edit.ts`: takes replace entries (`set`),
+   per-field `lists` ({add, remove}) and `createMissing`; under one state
+   lock it reads the task, reloads labels.yaml and workflow.yaml, resolves
+   and plans in memory, validates through `setFieldsLocked({defer: true})`
+   against the configs *as they will be*, and only then saves
+   labels.yaml / workflow.yaml and writes the task and its history. A
+   refusal anywhere leaves every file untouched. (b) Create labels/values
+   first, then set: a later refusal left an orphan label. (a) chosen.
+2. *Choice values by key or label.* The "ID" of a choice value is its key
+   and its "name" its label: matched by key first, then by exact label;
+   several values sharing the label are refused listing `label (key)`
+   ("Use the key."). Unknown: `No <field> value named 'x'.` This applies
+   in the new path only (add/remove, and replace with `--create` /
+   `create_missing`); the plain replace form (`setField`, used by the web
+   and bulk) still takes keys only and keeps its messages, so no existing
+   caller changes behaviour.
+3. *Remove semantics.* A value stored on the task given literally is
+   removed even when it no longer resolves (a deleted label's ID, a value
+   dropped from the config); otherwise it is resolved and a name matching
+   nothing is **refused** (K148: "a name matching nothing says so"), while
+   a known value not on the task is a silent no-op.
+4. *No-op.* When every list ends identical and no replace entry was
+   given, nothing is written (no history, no `updated_at`), and the result
+   says `changed: false`; CLI prints `No change to <field> on <key>`, MCP
+   `No change to <key>: …`.
+5. *Refusals added.* A value both added and removed; a field both
+   replaced and edited in one call; add/remove on a non-list field
+   (`<f> holds one value, not a list; set it instead.` /
+   `<f> is not a list field. …`); a stored list the file holds as
+   something else or with a health finding (`… can't be read as a list …
+   Replace the whole list instead.`) — adding to it would silently replace
+   what the file holds.
+6. *Creating.* Labels: `{id: ulid(), name}` exactly as `label create`
+   (ID-shaped names never created: "No label with ID '…'."). Values:
+   `deriveValueKey(label, existingKeys)` in contracts: NFKD-strip
+   accents, lower-case, runs outside `[a-z0-9]` → `_`, trim `_`, a leading
+   non-letter gets `v_`, empty → `value`, then `_2`, `_3`… on a clash.
+   A closed field refuses even with create:
+   `<f> does not allow new values; choose one of: <labels>.`
+   `UnknownFieldValueError.creatable` lets each surface append its own
+   switch: CLI "Pass --create to create it.", MCP "Pass create_missing:
+   true to create it." (only when asking would have worked).
+7. *Stored members on a create-replace.* With `createMissing`, a replace
+   element the task already stores passes through unchanged (the web
+   multi picker resends the whole list plus the new label; a stale key
+   must not be "created" back as a label).
+8. *CLI shape.* `loctt set <task> <field> [--add <v>…] [--remove <v>…]
+   [--create]`: `--add`/`--remove` take every word to the next flag, may
+   repeat, `--add=v` works, and each word splits on commas like the
+   replace form; items are type-converted like the replace form;
+   `fields.<key>` accepted. A value with `--add`/`--remove`, or
+   `--add`/`--remove`/`--create` with several task refs, is a usage error
+   (exit 2) — bulk add/remove is not built (see open question).
+   `--create` also works with the replace form.
+9. *MCP shape.* `update_task` keeps `field`/`value` (now optional) and
+   gains `add`, `remove` (`{field: [values]}`) and `create_missing`. The
+   replace form alone still goes through `setField` with its old text; any
+   add/remove or `create_missing` goes through `editTaskFields`, and one
+   call may combine a replace of one field with edits of others (one
+   write). A call with neither is refused ("Pass `field` and `value` …").
+   The unit test "rejects a missing field argument" asserted the old
+   schema-layer message (`field` required); updated to the new message —
+   a contract change, not a bug the test encoded.
+10. *Web.* `POST /api/tasks/:ref/set` accepts `create_missing: true`
+    (contracts `UpdateTaskRequest.create_missing`), routed to
+    `editTaskFields`. `OptionPicker` gained `onCreate` (searchable list,
+    "Create “x”" footer row `meta-create-<slug>`, Enter creates) — the
+    labels picker's pattern; shown only when the text names no option by
+    label or key (case-insensitive) and no value already on the task.
+    `customFieldRows` offers it only for `allowsNewValues(def)` fields.
+    `useSetField` sends `create_missing`, applies nothing optimistically
+    for it (the key is only known from the response) and refetches
+    `["workflow"]`/`["config"]`. Labels keep their existing create flow.
+11. *`allow_new_values` placement.* Optional boolean on
+    `CustomFieldDefSchema`, written only when true. Core create/edit
+    refuse it on a non-enum field (`Only a choice (enum) field can allow
+    new values; this field is <type>.`); the schema does not, so a
+    hand-written one on a non-enum field is ignored rather than making the
+    field a broken entry (corruption guide: degrade). Settings dialog shows
+    the toggle for enum fields only ("Allow new values from a task"); the
+    field row shows "new values allowed".
+12. *Defect found and fixed while here.* `serializeCustomField` in
+    `config/workflow-write.ts` never wrote `task_types`, so **any**
+    workflow write (adding a priority, editing any field) silently turned
+    a type-scoped custom field global. Fixed next to `allow_new_values`;
+    test "keeps a field's task_types scope across an unrelated workflow
+    write" red-proven.
+
+**Why.** One core path (P10), validation before any write (P1), K148's
+resolver and messages reused rather than a second vocabulary, and the
+existing replace paths untouched so no caller's behaviour moves.
+
+**To revert.**
+1. Delete `packages/core/src/task/list-edit.ts` (+ test) and its exports in
+   `task/index.ts` / `index.ts`.
+2. `matchChoice` / `choiceResolver` in `list-edit.ts`.
+3–5. The remove/no-op/refusal blocks in `editTaskFields`.
+6. `deriveValueKey` / `allowsNewValues` in `packages/contracts/src/workflow.ts`
+   (and exports); `UnknownFieldValueError` and the two `creatable` catch
+   blocks (`apps/cli/src/commands/task-crud.ts` `setWithListEdits`,
+   `apps/mcp/src/tools/task-crud.ts` `update_task`).
+7. The `storedNow` passthrough in `editTaskFields`.
+8. `parseSetListFlags` / `coerceListItems` in
+   `apps/cli/src/runtime/set-value.ts`; `setWithListEdits`, `SET_USAGE`
+   and `TASK_SET_FLAGS` in `task-crud.ts`; usage text in `usage.ts`.
+9. `update_task` in `apps/mcp/src/tools/task-crud.ts`; the updated
+   assertion in `apps/mcp/src/mcp.test.ts`.
+10. `create_missing` in `packages/contracts/src/service.ts` and
+    `handleSetField` (`apps/web/src/server/server.ts`); `onCreate`/`taken`
+    in `OptionPicker.tsx`; `onCreate` in `CustomFields.tsx`,
+    `onCreateValue` in `MetaPanel.tsx`/`TaskDetail.tsx`; `createMissing`
+    in `useSetField.ts`.
+11. `allow_new_values` in `CustomFieldDefSchema`, `serializeCustomField`,
+    `createCustomField`/`editCustomField` (+ `assertAllowNewValuesFits`),
+    CLI `--allow-new-values` (`workflow-entities.ts`), MCP
+    `fields.allow_new_values`, `CustomFieldEditDialog.tsx`,
+    `CustomFieldsPanel.tsx`, `workflowForms.ts`.
+12. Do not revert (it is a bug fix); the line is the `task_types` spread
+    in `serializeCustomField`.
+
+**Open question (skipped, needs Ken).** Bulk add/remove (`loctt set
+WEB-1,WEB-2 labels --add x`, MCP `bulk_update_tasks` add/remove) was not
+in K150; the CLI refuses it as a usage error for now. Should bulk
+add/remove exist, and should it be atomic (bulk swap) like `bulkSetFields`?
+
+### A361 · Semver format versions, every link ordered, automatic upgrades (B41, K142, K143, K149)
+
+#### A361 · Semver format versions, every link ordered, automatic upgrades (B41, K142, K143, K149)
+
+#### A361 · B41 implementation calls (and K149)
+
+**Ticket:** B41 (+ K149) · **Date:** 2026-09-28 · **Commit:** (this one) · **Agent-made** (under K142, K143, K149).
+
+**The situation.** K142 makes `.schema-version` the semver of the `loctt`
+release that introduced the format; K143 orders every relationship kind,
+runs non-risky upgrade steps automatically with a backup and one line,
+and asks for full versioning tests; K149 removes A360's exact-ID
+fallback. The rulings left the calls below open. None changes scope or a
+recorded ruling; each is contained and listed with its revert path.
+
+**What had to be decided.** How the pieces are shaped where the rulings
+did not say.
+
+**Options considered.** (per call; the chosen one first)
+
+1. *Where the automatic upgrade runs.* (a) One core entry,
+   `upgradeIfSafe(locttDir)`, that every surface calls where it called
+   `requireSupportedSchema`: current → pass; older with only non-risky
+   steps → `migrateToCurrent` (backup, sentinel per step) and return the
+   result; risky → refuse pointing at `loctt migrate`; missing, unreadable,
+   too new, interrupted → the old refusals. (b) Each surface composes
+   `planMigration` + `migrateToCurrent` itself. (a) chosen: one rule, three
+   callers. `requireSupportedSchema` stays as the strict form.
+2. *Which commands upgrade.* (a) Whatever passes each surface's existing
+   guard: every CLI command except the guard-exempt `init`, `migrate`,
+   `doctor`, `info`, `help`, `--version` (and `mcp`/`ui`, which upgrade on
+   their first request); every MCP tool except `init` and `migrate_schema`
+   (MCP `info` and `doctor` are guarded today, so they upgrade); every web
+   API route except `/api/init` and the two migrate routes. (b) Also exempt
+   MCP `info`/`doctor` from upgrading, which means exempting them from the
+   guard entirely (they would then run on a too-new tracker). (a) chosen:
+   no change to which commands are guarded. CLI `doctor` reports an older
+   tracker as "The next command that opens it upgrades it (with a backup),
+   or run loctt migrate" and `info` as "The next command upgrades it, or
+   run 'loctt migrate'", without writing. `migrate_schema` stays exempt, so
+   it can still preview.
+3. *Where each surface shows the one line.* CLI: stderr (stdout stays
+   clean for `--format json`). MCP: an extra text item appended after the
+   tool's own content on the call that upgraded (so `content[0]` is
+   unchanged for callers that parse it), plus stderr (the host's server
+   log). Web: the server holds `completedUpgrade {from, to, backup, line}`
+   for the life of the process (like K16's `completedPrefixRename`) and
+   returns it on `/api/info`; the shell renders it as `UpgradeNotice`, a
+   `role="status"` bar above the app with Dismiss, dismissal kept in
+   `sessionStorage` keyed by the backup path (the AdvisoryFsBanner
+   pattern). Also logged to the server's stdout. (b) A toast: gone before
+   anyone reads a backup path. (c) Settings → Diagnostics only: nobody
+   looks there after an upgrade. (a) chosen.
+4. *Concurrency.* The second process opening an older tracker waits (poll,
+   up to 60 s) while the migration lock is held, and a sentinel seen while
+   that lock is held is treated as the first process's live upgrade, not a
+   crash. A lock-contention error from `migrateToCurrent` (the migration
+   lock's own retries run out while the first upgrade is slow) goes back
+   to waiting. A tracker that is already current never waits on the lock
+   (writes racing a migration are refused by `withStateLock` as before;
+   SET-38's test depends on it). (b) Rely on `withMigrationLock`'s ~2.5 s
+   of retries: a slow upgrade fails the second command with ELOCKED, and
+   its sentinel reads as a crash. (a) chosen.
+5. *The 0.1.0 → 0.3.0 step (`schema/steps/rank-every-link.ts`).* "Shown
+   order" is 0.1.0's rule, read from the raw `workflow.yaml` (the schema no
+   longer carries `ranked`): a kind with `ranked: true` (both sides) by
+   rank then unranked in stored order; any other kind, and an undeclared
+   type, in stored order (ignoring stale ranks REL-33 kept). Per group:
+   unranked links get ranks after the group's highest (`fillMissingRanks`);
+   if the result does not list in the shown order (stale ranks on a
+   formerly unranked kind, or a rank outside the alphabet), the group is
+   re-ranked evenly in shown order. Then each type's links are stored in
+   that order within the slots that type already holds. That last part is
+   what makes the step idempotent without a marker: a second run finds no
+   `ranked` keys (the first removed them), reads stored order as shown
+   order, and finds it already ranked that way. Only `relationships` is
+   written: no `updated_at` bump, no history entry (a format change, not
+   an edit). A task that cannot be read, or whose `relationships` cannot,
+   is skipped (doctor reports it; the repair ranks it once fixed). The
+   step also strips `ranked:` from `workflow.yaml` (YAML document edit,
+   comments kept), so an upgraded tracker is doctor-clean. (b) Leave
+   `ranked:` in place and have doctor say nothing: the setting would
+   linger forever with no signal. (c) Only fill missing ranks: wrong for a
+   formerly unranked kind whose stale ranks disagree with stored order.
+6. *A leftover `ranked:` key (K143 "must not break loading").* The
+   contracts schema drops `RETIRED_RELATIONSHIP_KEYS` (`["ranked"]`) in a
+   `z.preprocess` before the strict parse, so the kind loads and is not
+   `broken`; doctor reports a `warn`, `workflow.yaml retired settings:
+   'ranked' on <kind> … no longer does anything: every link is ordered
+   since loctt 0.3.0. Remove that line`; any workflow write drops it.
+   (b) Keep `ranked` in the schema, ignored: the setting would stay
+   editable and documented. (a) chosen. The CLI `--ranked` flag and MCP
+   `fields.ranked` are removed (an unknown flag is a usage error; MCP
+   `fields` is a free record, so a stray `ranked` is ignored).
+7. *A git branch's `.schema-version`.* A bare positive integer (what
+   0.2.x published, `1`) is older than every format: sync/publish
+   proceeds. Garbage is still refused as "may be newer" (K94), now with
+   `remoteVersion: null`; a newer semver is refused naming the release.
+   (b) Treat `1` as garbage: every git-backed tracker last published by
+   0.2.x could never sync again after Ken's local edit to `0.1.0`. Links
+   synced in from such a branch arrive unranked: known gap G8.
+8. *Backups.* The header's `schema_version` is the format version
+   string. An older backup is still refused (the § 8 decision "refused
+   rather than migrated"); 0.2.x's integer header is accepted by the
+   parser only so restore can refuse it by name ("taken at format 1
+   (loctt 0.2.x or earlier)"). Restore ranks any unranked link it writes
+   (`fillMissingRanks`, only when `relationships` is readable, so a
+   corrupt task still restores byte for byte).
+9. *Ranks on every write (K143).* One helper module, `task/edge-rank.ts`:
+   `appendRankedEdge` (after the highest rank of that type on that task;
+   INITIAL `u` for the first) used by `link` (both sides),
+   `commitParentLink`, and create-with-parent; `fillMissingRanks` used by
+   the repair (new step 4, counting only links stored without a rank, not
+   the sides step 3 adds), restore, and `reorderRelationship` (which ranks
+   a group's unranked siblings in listed order before placing, so
+   `--before`/`--after` are exact even on hand-edited data). Reconcile goes
+   through `linkTask`. A workflow remap that changes an edge's type keeps
+   its rank (it moves groups; ties list by stored position). `rankAfter`
+   of a hand-edited non-lexorank rank appends `u` to it, which still sorts
+   after it. `mergeRelationships` became generic so a union keeps ranks.
+10. *Doctor reports an unranked link.* `relationshipFindings` adds
+    `"<type>" to "<target>" has no rank, so its place in the list isn't
+    stored. The relationship repair ranks it at the end of its group.`
+    (field `relationships[i].rank`, `inconsistent`, never blocking). This
+    makes the runthrough's doctor gate catch any future write path that
+    forgets a rank. `DoctorRepairResponse.relationships` gains `ranked`.
+11. *The web.* Every configured kind's group is `ranked: true` (handles on
+    every flat group; the Children tree's handles are B40); an undeclared
+    type lists by rank but gets no handles (core refuses to reorder it).
+    `orderRelationships` sorts every group, unknown types included.
+12. *Messages.* Too new: "This tracker needs loctt <v> or newer." Not a
+    format version: "`.schema-version` must hold a format version such as
+    0.3.0 (three whole numbers separated by dots). Got: <raw>." Empty:
+    "`.schema-version` is empty. It must hold a format version such as
+    0.3.0." Both carry the remedy "Put the tracker's format version in
+    .schema-version: 0.1.0 for a tracker made by loctt 0.2.x or earlier
+    (which wrote 1). …", which the CLI now prints after the error and MCP
+    appends to its error text (both printed only the message before; the
+    web already sent it as `detail`). Risky path: "This tracker's format is
+    X; this build reads Y. The upgrade includes a step that needs your
+    go-ahead (<step>). Run `loctt migrate` to upgrade." Banner, `info`,
+    doctor, `migrate` and `migrate_schema` print versions as written
+    (`0.1.0`), never `v1`.
+13. *Runthrough harness.* A case may say `seed: "0.1.0"` to start from the
+    frozen fixture (`tests/fixtures/trackers/seed-0.1.0/`, same ids and
+    index). `seed:upgrade` now ignores the one checkout baseline finding
+    ("key index: no index on disk"), which it treated as failure and so
+    could never have succeeded on a real upgrade.
+14. *K149 fallout.* Removing the exact-ID fallback broke one test that used
+    a fake, non-ULID sprint id (`01HXSPRINT…`, which contains `I`); it now
+    uses an ID-shaped one. No product path writes such IDs.
+15. *Version mirrors.* Root, `apps/cli` (`loctt`), `apps/mcp` and
+    `apps/web` package.json → `0.3.0` (the manifest test requires them to
+    agree). `package-lock.json` already recorded `0.1.0` for these and was
+    not touched.
+
+**Decided.** As chosen in 1–15.
+
+**Why.** Each keeps K142/K143's rule in core (one resolver for "can this
+tracker be opened, and upgraded"; one helper for "a new link's rank"),
+keeps existing response shapes (MCP's first content item, `/api/info`'s
+fields), and degrades rather than refuses where the cause is a leftover
+or hand-edited value (P-7), per the corruption-handling guide.
+
+**To revert.**
+1. `upgradeIfSafe` / `upgradeNotice` in `packages/core/src/schema/migrate.ts`
+   and their calls in `apps/cli/src/index.ts`, `apps/mcp/src/index.ts`
+   (`executeTool`, `validateAndRun`) and the guard in
+   `apps/web/src/server/server.ts`; restore `requireSupportedSchema` there.
+2. `SCHEMA_GUARD_EXEMPT_COMMANDS` (CLI) and `exemptFromSchemaGuard` (MCP)
+   are unchanged; the doctor/info wording is in `checkSchemaVersion`
+   (`diagnostics/doctor.ts`) and `describeSchema` (`apps/cli/src/commands/info.ts`).
+3. CLI: the `process.stderr.write` after `upgradeIfSafe`. MCP: the
+   appended content item. Web: `completedUpgradeNotice` in `server.ts`,
+   `TrackerInfoResponse.completedUpgrade` in contracts,
+   `apps/web/src/client/shell/UpgradeNotice.tsx` and its line in
+   `AppShell.tsx`.
+4. `waitForOtherUpgrade`, the sentinel-while-locked `continue` and the
+   `isLockContention` retry in `upgradeIfSafe`.
+5. `packages/core/src/schema/steps/rank-every-link.ts` (and its entry in
+   `MIGRATIONS` in `migrations.ts`); the slot permutation is the last loop
+   of `rankInShownOrder`.
+6. `RETIRED_RELATIONSHIP_KEYS` / `dropRetiredRelationshipKeys` in
+   `packages/contracts/src/workflow.ts`; `config/retired-keys.ts` and the
+   doctor block after the workflow.yaml check.
+7. The integer branch in `assertRemoteSchemaNotNewer`
+   (`git/publish-sync.ts`).
+8. `backup/format.ts` (`schema_version` union), the version block in
+   `restoreBackup`, `toTask`'s `fillMissingRanks` (`backup/restore.ts`).
+9. `packages/core/src/task/edge-rank.ts` and its callers: `addEdge`
+   (`task/relationships.ts`), `createTask` (`task/create.ts`), step 4 in
+   `planRelationshipRepair`, `reorderRelationship`'s first line after the
+   lookup; `mergeRelationships`' generic signature.
+10. The rank finding in `relationshipFindings` (`task/traversal.ts`);
+    `ranked` in `DoctorRepairResponse` and `describeRelationshipRepair`.
+11. `sidesOf` / `orderRows` in `apps/web/src/client/relationships/group.ts`;
+    `orderRelationships` in `task/relationship-order.ts`.
+12. The message strings in `schema/version.ts` (`REPAIR`,
+    `readSchemaVersion`, `SchemaTooNewError`) and `migrate.ts`; the remedy
+    print in `apps/cli/src/index.ts`'s catch and `apps/mcp/src/index.ts`.
+13. `seed` in `tests/runthrough/lib/schema.ts`, `load.ts`, `execute.ts`
+    (`prepare`), `paths.ts` (`frozenSeedLoctt`), `seed.ts`
+    (`freshTracker`'s `from`); the filter in `seed/upgrade-seed.ts`.
+14. The sprint id in `apps/mcp/src/mcp.test.ts`.
+15. The four package.json versions.
+
+### A360 · Runthrough bugs G1–G7 fixed; names and IDs everywhere (B44, K147, K148)
+
+#### A360 · B44 implementation calls (G1–G7, K147, K148)
+
+**Ticket:** B44 · **Date:** 2026-09-28 · **Commit:** (this one)
+
+**The situation.** B44 fixes the runthrough's G1–G7 and builds K147
+(delete removes the other side of its links) and K148 (IDs recognised by
+shape; names accepted everywhere; ID-shaped names refused; CLI prints
+names, MCP returns both). The rulings and the gap entries left the calls
+below open. None changes scope or a recorded decision; each is contained
+and listed with its revert path.
+
+**What had to be decided.** How each fix is shaped where the ruling or
+the gap's "possible fix" did not say.
+
+**Options considered.** (per call; the chosen one first)
+
+1. *Key index owner (G5, G6).* (a) Two incremental helpers in
+   `state/key-index.ts` (`recordTaskKeys`, `forgetTasks`) used by create,
+   move and delete; bulk rewrites (reconcile, restore, prefix change)
+   keep their full `rebuildKeyIndex`. Neither helper creates an index
+   when none is on disk (it is built lazily; creating one would change
+   when). (b) Rebuild the whole index after every create and delete:
+   O(tasks) reads per write. (a) chosen. `forgetTasks` drops every entry
+   pointing at a deleted id, current and former keys alike; a key also
+   held by another task (only after a merge) then resolves through
+   lookup's existing fold path, as the old drop-dangling path did.
+2. *What a delete detaches (K147).* (a) The partners are the targets of
+   the deleted task's own links; each partner loses every link that
+   points at a deleted task (the inverse and any stray link of another
+   type), with one `link_removed` history entry per link removed
+   (`meta: {type, target}`, and the batch's `bulk_op_id` on a bulk
+   delete). A partner deleted in the same batch, gone, unreadable, or
+   with unreadable `relationships` is skipped. The directories are
+   removed first, the partners written after, so a crash in between
+   leaves dangling links (which `unlink` and doctor handle), never a
+   one-sided link the K141 repair would complete back onto a deleted
+   task. (b) Scan every task for links to the deleted id: O(tasks) reads
+   per delete, only for links that were already one-sided (a doctor
+   finding before the delete). (a) chosen. `link_removed` is the kind
+   `unlink` writes on the far side, so the activity feed already renders
+   it. Tests that used `loctt delete` to make a dangling link now remove
+   the directory out of band (`removeTaskOutOfBand`), which is what
+   REL-24 and XS-40 describe.
+3. *Unlink by stored target (G1).* (a) Core `unlinkTask` takes an
+   optional `storedTarget` (the ref as typed); when this task has no link
+   to the resolved id but has one storing exactly that text, that link is
+   removed. The check runs before the inverse-only case, so a holder's
+   inverse is not removed while the source keeps its key link (a first
+   draft had that bug; a test caught it). The inverse is removed from any
+   task holding that key (current or former) that links back, unless the
+   source still links to that task by id. (b) Surface-side fallback in
+   each of CLI, MCP and web: three copies of the same rule. (a) chosen.
+   MCP `unlink_tasks` also stopped refusing a target that resolves to no
+   task: its description always said a deleted target was tolerated, and
+   the handler failed with "task not found". Doctor's ambiguous-key
+   message now ends "Remove this link, then link the right task." (the
+   web row's remove action and `unlink` both do it now).
+4. *`loctt set` values (G2, G3).* (a) CLI-only conversion
+   (`apps/cli/src/runtime/set-value.ts`): `labels` and any `multi`
+   custom field take a comma list (the CLI's existing list syntax for
+   refs); `number` and `boolean` custom fields are parsed (booleans
+   accept the CLI's flag spellings true/false/yes/no/on/off/1/0);
+   `fields.<key>` names a declared custom field; everything else passes
+   through for core to validate. A number or boolean that does not parse
+   is refused before any task is touched, as `validation_failed`
+   (exit 1): `risk takes a number, not "high".` (b) Coerce in core:
+   MCP and web already send typed JSON, so core would guess types for
+   no caller that needs it. (a) chosen. `set <task> labels a,b`
+   **replaces** the labels (MCP `update_task` and the web do the same);
+   there are no add/remove flags, and a label name containing a comma
+   can't be written this way (use its ID). If Ken wants add/remove, it is
+   a CLI-shape addition on top of this.
+5. *`show` user names (G7).* The profile's name, else the stored id
+   (unreadable or deleted profile), matching milestones/sprints/labels.
+6. *The one resolver (K148).* `packages/core/src/utils/entity-ref.ts`
+   (`matchEntityRef`, `resolveEntityRefOrThrow`,
+   `assertNameNotIdShaped`); the five `*IdFromInput`/`resolveUserRef`
+   resolvers delegate to it, so every write path, the CLI, MCP and web
+   share it. Calls the ruling left open:
+   - A project's slug is matched as a name, ahead of the display name
+     (K3 unchanged). Users keep the unique case-insensitive prefix match
+     after the exact name. Archived entities are excluded unless the
+     caller asks, as before; projects keep their "is archived" message.
+   - An ID-shaped input that matches nothing: `No <entity> with ID
+     '<x>'.` (the ruling gave only the name sentence).
+   - Ambiguous: `'<x>' matches N <entities>: <name> (<id>), … Use the
+     ID.`
+   - A non-ID-shaped input that matches no name falls back to an exact
+     ID match. LocTT writes only ULIDs, so this only reaches an entity
+     whose ID was hand-edited into another shape, which the strict rule
+     would make unreachable. It never overrides a name match.
+   - The shape test is case-sensitive (upper case, as the ruling's
+     regex): `01m3…` is a name.
+   - ID-shaped names are refused in core's create/edit for labels,
+     milestones, sprints, projects, users and saved views (field
+     `name`). `ViewError` gained an optional `field` so the web answers
+     400 at `name` (it said `filters` for every view error except a
+     taken name).
+7. *Names in queries (K148).* A pass over the parsed query
+   (`query/entities.ts`) rewrites names to IDs for `labels`, `assignee`,
+   `reporter`, `comment_mentions`, `milestone`, `sprint`, `project` under
+   `=`, `!=`, `in`, `not in`; `~` and `is empty` are untouched. An
+   ID-shaped value is never refused (a task may hold a deleted entity's
+   ID). An ad hoc query naming nothing, or something ambiguous, is a
+   `QueryValidationError` (the sentence loses its full stop, because the
+   class appends " at position N"). A saved view naming something since
+   renamed or deleted warns and runs, as a view naming a deleted field
+   does. Loaded per list call (`resolveEntityNamesContext`) only when a
+   query or view is in play; a kind whose file can't be read is left
+   unresolved rather than refused. The tokenizer reads an unquoted
+   ID-shaped word as one value (it read `01…` as a number and a word and
+   refused `labels in (urgent, 01…)`).
+   The web's structured list URL params (`?labels=`, `?project=`, …) are
+   folded into the same query, so an unknown non-ID value there is now a
+   400 naming it (it was an empty list). The UI's facets send IDs (and
+   the project slug, already resolved), so only a hand-typed or stale
+   URL reaches this. Two web tests asserted the empty list / used a
+   label that did not exist and were updated; two UI specs used fake
+   "IDs" containing L (not ID-shaped) and now use ID-shaped ones.
+8. *MCP names beside IDs (K148).* Additive siblings, never a changed
+   field: `get_task` gains `project_name`, `assignee_name`,
+   `reporter_name`, `milestone_name`, `sprint_name` and `label_names`
+   (aligned with `labels`, `null` for a label that no longer exists; a
+   scalar reference to a deleted entity gets no `*_name`).
+   `get_task_history` entries gain `actor_name` and, for entity fields
+   and label add/remove, `before_name`/`after_name`. Entity tools:
+   edit/archive/unarchive texts read `name (id)`; delete and
+   `count_user_references` JSON gain `name`; `get_sprint_burndown` gains
+   `sprintName`; `list_users` gains `current_name`; the user-settings,
+   sidebar and shortcut tools gain `user_name`; `set_default_project`
+   names the project. `list_*` already return whole entities and
+   `list_tasks` rows hold no references. (b) A nested `refs: {field:
+   {id, name}}` object: one more level for every read. (a) chosen.
+9. *CLI names (K148).* `log` names users, labels, milestones, sprints
+   and projects (the id when it can't); `sprint burndown`'s table prints
+   the sprint name (the id stays in `--format json`); `project edit` and
+   `user edit` confirmations print names. Listing commands that print an
+   ID column on request (`--ids`, `user list`) are unchanged: that is how
+   a user finds an ID to pass.
+10. *Runthrough harness.* `expect_error` messages are now interpolated
+    (`${…}`), which the README already promised for "any string"; the
+    ambiguity case needs an ID captured by its first step.
+11. *Web client.* `useBulk`'s private `isUlid` now uses contracts'
+    `isIdShaped` (first character 0–7, as a ULID's is).
+
+**Decided.** As chosen in 1–11.
+
+**Why.** Each keeps the ruling's rule in one place (core for behaviour,
+the surface only for its own text format), keeps existing response
+shapes, and degrades rather than refuses where the cause is unreadable
+data (P-7), per the corruption-handling guide.
+
+**To revert.**
+1. `recordTaskKeys` / `forgetTasks` in `packages/core/src/state/key-index.ts`
+   and their calls in `task/create.ts`, `task/move.ts` (`reindexKey`),
+   `task/lifecycle.ts` (`deleteTask`), `task/bulk.ts` (`bulkDelete`).
+2. `detachDeletedTasks` in `task/relationships.ts` and its calls in
+   `deleteTask` / `bulkDelete`; `removeTaskOutOfBand` in
+   `tests/integration/fixtures/tmp-loctt.ts`.
+3. `storedTarget` / `removeStoredEdge` in `task/relationships.ts`; the
+   `storedTarget:` argument in `apps/cli/src/commands/task-links.ts`,
+   `apps/mcp/src/tools/task-links.ts`, `handleUnlink` in
+   `apps/web/src/server/server.ts`; the message in `task/traversal.ts`.
+4. `apps/cli/src/runtime/set-value.ts` and `coerceSetValue` in
+   `apps/cli/src/commands/task-crud.ts` (`set`).
+5. `nameOfUser` in `apps/cli/src/commands/task-crud.ts`.
+6. `packages/core/src/utils/entity-ref.ts`; the delegating bodies of
+   `resolve{Label,Milestone,Sprint,Project}IdFromInput` and
+   `resolveUserRef`; the `assertNameNotIdShaped` calls in the create/edit
+   functions; `ViewError.field`; `packages/contracts/src/id-shape.ts`.
+7. `packages/core/src/query/entities.ts`, `ListContext.entities` and
+   `resolveEntityNamesContext` in `query/list.ts`, the five list/export
+   call sites, the ID branch in `query/tokenizer.ts`.
+8. `apps/mcp/src/runtime/names.ts` and its uses in `tools/task-crud.ts`,
+   `label.ts`, `milestone.ts`, `sprint.ts`, `project.ts`, `user.ts`.
+9. `apps/cli/src/format/history.ts` (`entityNames`, `labelName`),
+   `buildHistoryDisplayContext`, `sprint.ts` burndown, `project.ts` and
+   `user.ts` edit messages.
+10. The `expected` interpolation in `verifyStep`
+    (`tests/runthrough/lib/execute.ts`).
+11. `apps/web/src/client/api/hooks/useBulk.ts`.
+
+### A359 · Runthrough tests over a seed tracker (B42)
+
+#### A359 · B42 runthrough harness: the calls K144 did not settle
+
+**Ticket:** B42 (K144) · **Date:** 2026-09-28 · **Commit:** (this one)
+
+**The situation.** K144 fixes the shape: a checked-in seed pinned to the
+format version, one YAML file per test, CLI command lines and a scripted
+MCP call per test, pre/post checks that read the files directly, doctor
+after every test, "nothing changed" on errors, `npm run test:runthrough`
+in every gate, and a refusal when the seed's format is not the code's.
+Building it needed the calls below. Two further rulings arrived from Ken
+mid-build (relayed by the coordinator) and are quoted at the end; they
+are his, not this entry's, and belong in § 9.
+
+**What had to be decided.** How the seed is produced and addressed; what
+the case format and checks are exactly; how "nothing changed", doctor
+and known product bugs are judged; how the runner is wired into the
+gates.
+
+**Options considered.**
+
+1. *Seed ids.* (a) Make ids/timestamps deterministic — core reads no
+   clock or id override (only `LOCTT_ROOT`, `LOCTT_DEBUG`,
+   `LOCTT_CLIENT_DIR`, `USER`/`USERNAME`), so this needs a core change;
+   (b) generate once, check the output in, and address everything
+   through a generated slug index. (b) chosen.
+2. *Seed generator surface.* (a) CLI only — impossible: `loctt set`
+   cannot write number/boolean/multi-enum custom fields (G2); (b) CLI
+   for everything it can do, `loctt mcp` `update_task` for those three
+   typed values. (b) chosen; still "the real CLI binary".
+3. *Format-version guard.* (a) Import `CURRENT_SCHEMA_VERSION` from core
+   — couples the guard to core's export shape, which B41 changes to
+   semver; (b) parse `loctt info`'s prose; (c) `loctt init` a scratch
+   tracker and compare its `.schema-version` file with the seed's. (c)
+   chosen: file-to-file, survives B41 unchanged, no core import.
+4. *Per-checkout files.* `.loctt/.gitignore` ignores `.current-user` and
+   `users/*/settings.yaml`, and the repo ignores `.loctt/local/`. (a)
+   check them in anyway (git would drop them); (b) strip them from the
+   seed and have the runner write `.current-user` from
+   `seed-index.json`. (b) chosen, so a local run equals a CI checkout.
+5. *"Nothing changed".* (a) every file under `.loctt/`; (b) everything
+   except `local/`. (b) chosen: `local/` is a rebuildable cache that a
+   read may write (and is absent on a fresh seed copy).
+6. *Doctor gate.* Findings = doctor's non-✓ lines; a step fails on any
+   line not in the pristine seed's output (the seed's only baseline line
+   is "key index: no index on disk", which a checkout always has).
+7. *Known product bugs.* (a) leave the suite red; (b) skip the cases;
+   (c) `known_bug: {cli?, mcp?}` → `it.fails` (turns red when fixed),
+   plus `known_doctor_findings: [{match, bug}]` for a doctor finding a
+   known bug causes, which must match at least once per case or the case
+   fails ("remove the entry"). (c) chosen: the gate stays green without
+   hiding the bug, and neither list can rot.
+8. *Case-format extensions beyond K144's list.* `setup_files` (a file to
+   attach), `setup_patch` (text edit of the seed copy — the only way to
+   make a one-sided link for the repair cases), captures (`new_task`,
+   `new_comment`, `entity`, `output` regex), `output` checks with an
+   optional `surface` (CLI prints text, MCP JSON), `field: body`.
+   Validated by zod; strict objects; a failing union is re-checked
+   against the intended member so the error names the real key.
+9. *Automatic bilateral check.* After every step, every task whose
+   stored relationships changed must pass the bilateral check — "touched
+   links" read as "tasks whose relationships array changed".
+10. *Rank order in checks.* `relationship_order` sorts by `rank`,
+    unranked after ranked, then stored order (schema-reference.md). B41
+    ranks every link; the rule still holds.
+11. *Runner wiring.* One vitest file generating one test per case per
+    surface (`<id> [surface] #tags`, so `-t` filters by id, surface or
+    tag); cases run concurrently (`maxConcurrency: 4`); a
+    `pretest:runthrough` build hook like integration/e2e/ui. A failing
+    test keeps its temp tracker and prints the path.
+12. *`tests/llm` / `llm:verify`.* Not reused: its verify scripts import
+    `@loctt/core` (K144 forbids that for checks), it runs on an empty
+    tracker set up by hand, and it has no pre-checks, doctor or
+    unchanged check. Left untouched; any future agent-driven check
+    belongs there (Ken, below).
+
+**Decided.** As chosen in 1–12.
+
+**Why.** Each keeps K144's two load-bearing properties — checks that do
+not trust core, and a seed that stays at the code's format through the
+tracker's own upgrade path — while keeping the gate green-but-honest
+about bugs the harness found (G2–G7 in known-gaps.md).
+
+**Ken's rulings relayed mid-build (his; record in § 9, not revertible
+here).**
+- *"always run cli version first before mcp"*: for each case the CLI
+  run completes before the scripted MCP run starts (never interleaved);
+  if the CLI run fails, MCP still runs and its failure is marked
+  `AFTER CLI FAILURE`. Reason documented: the CLI is the simplest
+  deterministic path over the same core, so it separates core bugs from
+  MCP ones.
+- *Drop agent mode entirely*: no `AGENT.md`, no `runthrough:agent`
+  helper, no `mcp.prompt` field; any future agent-driven check belongs
+  in `tests/llm` / `llm:verify`.
+
+**To revert.**
+1. Seed ids: add a clock/id override to core, then make
+   `tests/runthrough/seed/build-seed.ts` set it; `seed-index.json` can
+   stay.
+2. Generator surface: `build-seed.ts` `typed` list / `withMcp` block.
+3. Version guard: `checkSeedVersion` / `codeFormatVersion` in
+   `tests/runthrough/lib/seed.ts`.
+4. Stripping: the "Strip what a checkout cannot carry" block in
+   `build-seed.ts` and `upgrade-seed.ts`; `freshTracker` in `seed.ts`.
+5. Unchanged scope: `EXCLUDED` in `tests/runthrough/lib/snapshot.ts`.
+6. Doctor gate: `doctorFindings` in `lib/surfaces.ts`, the baseline in
+   `runthrough.test.ts`, the filter at the end of `verifyStep` in
+   `lib/execute.ts`.
+7. Known bugs: `known_bug` / `known_doctor_findings` in
+   `lib/schema.ts`, `it.fails` in `runthrough.test.ts`, `finish` in
+   `execute.ts`; the entries in the case files.
+8. Extensions: the corresponding schema members in `lib/schema.ts`,
+   `applyCapture` and `prepare` in `execute.ts`, `runCheck` in
+   `lib/checks.ts`.
+9. Automatic bilateral: the `touchedLinkTaskIds` loop in `verifyStep`.
+10. Rank order: `orderedTargets` in `lib/checks.ts`.
+11. Wiring: `tests/vitest.runthrough.config.ts`, `pretest:runthrough`
+    in `package.json`.
+12. llm: nothing to revert.
+
+### A357 · `create --parent` links properly; comprehensive relationship repair; ordered relationships on every surface (B39)
+
+#### A357 · B39 implementation calls (create --parent, relationship repair, ordering)
+
+**Date:** 2026-09-28 · **Agent-made** (under K140, K141).
+
+**Context.** B39 implements K141's rulings. Several calls the rulings did
+not settle had to be made to build it.
+
+**Decisions.**
+1. **Shared link checks.** `linkTask`'s checks (self-link, archived
+   target, cycle, target `relationships` readable) moved into lock-free
+   `checkLinkTarget` in `task/relationships.ts`. `createTask` uses it via
+   `prepareParentLink` (runs **before** the new task is written) and
+   `commitParentLink` (writes the parent's inverse after). Writes share
+   `persistRelationships`. `createTask`'s callers already hold the state
+   lock (not re-entrant), so nothing new takes it.
+2. **Missing parent error.** `RelationshipError` (code
+   `validation_failed`, `field: "parent"`, `data_state: not_saved`) with
+   `TaskNotFoundError`'s exact sentence (`Task not found: "<ref>"`), so
+   CLI/MCP print `link`'s text and the web returns 400 at the field
+   (K141 6). Archived and cycle refusals carry `field: "parent"` too.
+3. **Key counter on refusal.** Unchanged by construction: `allocateKey`
+   only changes in-memory state and every caller saves state after
+   `createTask` returns, and all parent checks run before `writeTask`.
+4. **No rank on the new edges** (K141 7): `link` assigns none either.
+5. **ID rewrite and duplicate merge write no history entry.** No
+   existing kind says "same link, stored correctly"; a `link_removed` +
+   `link_added` pair would tell the activity feed a link was removed and
+   re-added, which did not happen. The added missing side gets
+   `link_added` (K141 5). `updated_at` is bumped on every repaired task,
+   as `link` does.
+6. **All identical duplicates are merged**, not only those a rewrite
+   creates (REL-26 duplicates from hand-edits too). First stored position
+   kept; its rank, else the first rank among the copies. doctor now
+   reports a stored duplicate as a finding so the repair never does
+   something doctor did not report.
+7. **Unresolvable targets.** `missing` (no task), `ambiguous` (a key held
+   by more than one task, current or former), `self` (the key is the
+   task's own) are reported and kept. A target naming an on-disk but
+   unreadable task is treated as an id, not a key.
+8. **Tasks with unreadable `relationships`** (any `health` on the field)
+   are skipped as sources and as receivers of a missing side, reported as
+   `target_unreadable` refusals.
+9. **Links of an unknown type are not completed**: which side is missing
+   is not knowable without the definition.
+10. **`--fix` = rebuild-index + repair-relationships** (core
+    `SAFE_FIXES`). `restore-missing` is excluded: it writes default
+    config in place of a missing file (a missing `workflow.yaml` comes
+    back as the shipped default; a missing `state.yaml` restarts counters
+    at 1), a guess about the user's setup, which is why the web confirms
+    it. It stays its own step (`init --repair`, MCP `restore_missing`,
+    its button). Repairs requested on doctor run **before** the checks
+    and are skipped when the schema version check fails.
+11. **Web "Fix all" shows only when more than one safe fix can act**;
+    with one it would be a second button doing the same thing. Repair
+    relationships and Fix all both confirm first (they write task files).
+12. **Shared order.** `task/relationship-order.ts` (browser-safe, core
+    subpath export) holds `orderRelationships` and `compareRankedEdges`;
+    the web's `orderRows` uses the comparator, CLI `show` and MCP
+    `get_task` use `orderRelationships`. `resolveRelationships` stays in
+    stored order (the web zips it with the stored array by position) and
+    now carries `rank`.
+13. **Pre-existing lint errors fixed** to meet the 0/0 gate:
+    `tools/screenshots/` (plain Node scripts in no tsconfig) added to
+    eslint ignores; `BodyRenderedView.test.tsx` import order and one
+    justified `unbound-method` disable.
+
+**Alternatives considered.** A per-edge lock-taking repair (rejected: one
+lock per pass is simpler and the pass is small); a new history kind
+(rejected: contract change for a one-off repair); including
+`restore-missing` in `--fix` (rejected, above).
+
+**To revert.** (1–3) restore `createTask`'s parent block to push the raw
+ref (the bug) or change `prepareParentLink`'s error wrapping; (5) add
+entries in `repairRelationships`; (6) restrict merging to pairs a rewrite
+produced in `planRelationshipRepair` and drop the duplicate finding in
+`relationshipFindings`; (10) edit `SAFE_FIXES` in
+`diagnostics/doctor.ts` and the web's copy in `DiagnosticsPanel.tsx`
+plus `fix-all` in `server.ts`; (11) change `canFixAll`; (12) delete the
+module and inline the comparator back into `group.ts`; (13) revert the
+two lint edits.
+
+**Follow-up.** `docs/dev/known-gaps.md` G1: a link stored as an
+ambiguous key still can't be unlinked from any surface.
 
 ### A356 · Wave-4 review fixes (UI rebuild instructions, missing-client refusal test, lightbox focus, docs)
 

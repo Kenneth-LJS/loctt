@@ -1,0 +1,26 @@
+- timestamp: 2026-09-28T01:20:24.380Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJK9VMZ0D2A3MHZ65VQG8
+      key: WEB-10
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Build search index
+      created_at: 2026-09-28T01:20:24.380Z
+      updated_at: 2026-09-28T01:20:24.380Z
+      status: backlog
+      task_type: task
+      priority: medium
+      labels:
+        - 01M3JSJ7V0JT57NNCCSGH9XV73
+        - 01M3JSJ84E9HFQPW32EER1RWTQ
+      assignee: 01M3JSJ6CXR6KBVE6HJQ1BDAN5
+      estimate: "8"
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:45.213Z
+  kind: link_added
+  meta:
+    type: parent
+    target: 01M3JSJJ80QX63TEXX6JT7G02Q
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

@@ -221,6 +221,9 @@ export type EditCommentRequest = z.infer<typeof EditCommentRequestSchema>;
  * "repair all" (core has no such action).
  */
 export const DoctorRepairRequestSchema = z.object({
-  action: z.enum(["rebuild-index", "restore-missing"]),
+  // K141: "repair-relationships" is the relationship repair; "fix-all"
+  // runs every safe repair (rebuild-index + repair-relationships), the
+  // web's `loctt doctor --fix`.
+  action: z.enum(["rebuild-index", "restore-missing", "repair-relationships", "fix-all"]),
 }).strict();
 export type DoctorRepairRequest = z.infer<typeof DoctorRepairRequestSchema>;

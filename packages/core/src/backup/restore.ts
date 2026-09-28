@@ -54,10 +54,11 @@ import {
   getUserDir,
   isPathContained,
 } from "../paths/index.js";
-import { CURRENT_SCHEMA_VERSION, SchemaTooNewError } from "../schema/version.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION, SchemaTooNewError } from "../schema/version.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { withStateLock } from "../state/lock.js";
 import { stagedSwap, type StagedWrite } from "../state/staged-swap.js";
+import { fillMissingRanks } from "../task/edge-rank.js";
 import { assembleTaskFile, parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
 import { type BackupRecord } from "./format.js";
 import { BackupFormatError, type BadLine, readBackupPart, resolveBackupSet } from "./read.js";
@@ -318,9 +319,9 @@ async function assertNotMidOperation(locttDir: string): Promise<void> {
   const migrating = getSchemaMigrationInProgressPath(locttDir);
   if (await stat(migrating).then(() => true, () => false)) {
     throw new RestoreRefusedError(
-      `${migrating} is present: a schema migration is in progress here. `
-      + `Run 'loctt migrate' to finish it, then restore again. `
-      + `Nothing has been restored.`,
+      `${migrating} is present: a schema migration is running here or was interrupted. `
+      + `If one is running, wait for it to finish. If not, restore .loctt/ from the backup `
+      + `that file names and remove the file. Then restore again. Nothing has been restored.`,
     );
   }
 }
@@ -334,7 +335,19 @@ async function assertNotMidOperation(locttDir: string): Promise<void> {
 function toTask(record: BackupRecord & { kind: "task" }): Task {
   const { rawYaml, body } = splitTaskFile(record.raw);
   const { frontmatter, health } = parseFrontmatter(rawYaml);
-  return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
+  // K143: every link a restore writes carries a rank. A backup from this
+  // format already has them; a hand-edited one may not, and its unranked
+  // links are ranked at the end of their group in the order they are
+  // listed. A `relationships` value that could not be read is left as
+  // it came (§ 11.4).
+  const relsReadable = !health.some(h => h.field === "relationships" || h.field.startsWith("relationships["));
+  const rels = frontmatter.relationships;
+  const ranked = relsReadable && rels !== undefined ? fillMissingRanks(rels) : rels;
+  return {
+    frontmatter: ranked === rels ? frontmatter : { ...frontmatter, relationships: [...(ranked ?? [])] },
+    body,
+    ...(health.length > 0 ? { health } : {}),
+  };
 }
 
 /**
@@ -356,19 +369,25 @@ export async function restoreBackup(
   // Version first: refuse a newer-schema backup after one line rather
   // than after parsing the whole file (BAK-C21).
   const { header } = await resolveBackupSet(paths);
-  if (header.schema_version > CURRENT_SCHEMA_VERSION) {
-    throw new SchemaTooNewError(header.schema_version, CURRENT_SCHEMA_VERSION);
+  // K142: the header records the tracker's format version. A backup
+  // written by loctt 0.2.x or earlier records the old integer (1), which
+  // is older than every format this build reads.
+  const taken = header.schema_version;
+  if (typeof taken === "string" && compareFormatVersions(taken, CURRENT_SCHEMA_VERSION) > 0) {
+    throw new SchemaTooNewError(taken, CURRENT_SCHEMA_VERSION);
   }
   // An older backup is refused rather than migrated: the migration
   // framework operates on a `.loctt/` directory, not on a backup file,
   // and inventing a second migration path here is how the two drift.
   // Recorded in decisions.md § 8 with a revert path.
-  if (header.schema_version < CURRENT_SCHEMA_VERSION) {
+  if (typeof taken === "number" || compareFormatVersions(taken, CURRENT_SCHEMA_VERSION) < 0) {
+    const takenAt = typeof taken === "number"
+      ? `format ${String(taken)} (loctt 0.2.x or earlier)`
+      : `format ${taken}`;
     throw new BackupFormatError(
-      `this backup was taken at schema v${String(header.schema_version)} and this `
-      + `LocTT uses schema v${String(CURRENT_SCHEMA_VERSION)}. Restore it with the `
-      + `matching LocTT version and migrate afterwards, or migrate a copy of the `
-      + `original tracker. Nothing has been restored.`,
+      `this backup was taken at ${takenAt} and this loctt reads format `
+      + `${CURRENT_SCHEMA_VERSION}. Restore it with the loctt it was taken with, then `
+      + `open the tracker with this loctt to upgrade it. Nothing has been restored.`,
     );
   }
 

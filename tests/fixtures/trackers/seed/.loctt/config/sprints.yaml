@@ -1,0 +1,13 @@
+sprints:
+  - id: 01M3JSJA7B45F8KE7TZVWD7W19
+    name: Sprint 1
+    start_date: 2026-08-03
+    end_date: 2026-08-16
+    state: completed
+    goal: Ship the cart
+  - id: 01M3JSJAHPD03QD0VBZFHQ4ZR2
+    name: Sprint 2
+    start_date: 2026-08-17
+    end_date: 2026-08-30
+    state: active
+    goal: Payments end to end

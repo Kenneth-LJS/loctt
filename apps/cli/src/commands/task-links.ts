@@ -131,6 +131,9 @@ export async function unlink(args: string[], root: string): Promise<void> {
     taskId: task.frontmatter.id,
     type: relType,
     target: targetId,
+    // G1: a link stored as a key more than one task has held resolves
+    // to some other task's id; core then removes it by the text stored.
+    storedTarget: target,
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
   });
   // The target's key, when it still has one. A dangling edge has no

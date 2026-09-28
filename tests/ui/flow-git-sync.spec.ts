@@ -29,7 +29,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defined } from "./fixtures/defined.ts";
-import { expect, forcePushRewriteRemote, publishFromOtherClone,test } from "./fixtures/git-tracker.ts";
+import { expect, forcePushRewriteRemote, publishFromOtherClone, SYNC_SETTLE_MS, test } from "./fixtures/git-tracker.ts";
 
 function syncYamlPath(root: string): string {
   return path.join(root, ".loctt", "local", "sync.yaml");
@@ -202,7 +202,7 @@ test("GIT-3: sync writes the remote's new tasks to disk and advances last_synced
   // Sync is a real git pull — wait for the result element to render
   // before asserting its attribute, or a slow pull under load fails
   // with element-not-found rather than a wrong value.
-  await expect(result).toBeVisible();
+  await expect(result).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await expect(result).toHaveAttribute("data-git-sync", "updated");
   await expect(result).toContainText("Synced");
 
@@ -228,7 +228,7 @@ test("GIT-3: sync writes the remote's new tasks to disk and advances last_synced
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const noop = page.getByTestId("git-sync-result");
-  await expect(noop).toHaveAttribute("data-git-sync", "no-op");
+  await expect(noop).toHaveAttribute("data-git-sync", "no-op", { timeout: SYNC_SETTLE_MS });
   await expect(noop).toContainText("Already up to date");
 
   expect(errors).toEqual([]);
@@ -263,7 +263,7 @@ test("GIT-21: a force-pushed rewrite is refused, names the missing commit, and o
 
   // The dedicated refusal renders — NOT the generic sync-error/ErrorState.
   const refusal = page.getByTestId("git-sync-history-rewritten");
-  await expect(refusal).toBeVisible();
+  await expect(refusal).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await expect(refusal).toHaveAttribute("data-git-refusal", "history-rewritten");
   // It names the branch history was rewritten. That it is not an ordinary
   // conflict is the dedicated refusal itself (the data attribute above);
@@ -579,7 +579,7 @@ test("GIT-30: sync against an unreachable remote names it, keeps local untouched
 
   await page.getByTestId("git-sync").click();
   const result = page.getByTestId("git-sync-result");
-  await expect(result).toBeVisible();
+  await expect(result).toBeVisible({ timeout: SYNC_SETTLE_MS });
   // A success-shaped result (no-op against the local branch copy), NOT the
   // hard-error block — this is the "not a permanent error state" bullet.
   await expect(result).toHaveAttribute("data-fetch-failure", "unreachable");
@@ -637,7 +637,7 @@ test("GIT-23: a many-task sync summarises with counts + expand, and the list ref
 
   await page.getByTestId("git-sync").click();
   const result = page.getByTestId("git-sync-result");
-  await expect(result).toBeVisible();
+  await expect(result).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await expect(result).toHaveAttribute("data-git-sync", "updated");
 
   // Bullet 2: the summary states counts and does NOT enumerate every key

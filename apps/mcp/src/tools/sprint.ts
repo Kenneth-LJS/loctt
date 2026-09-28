@@ -25,6 +25,7 @@ import { z } from "zod";
 import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
+import { named } from "../runtime/names.js";
 import type { ToolDef } from "../types.js";
 
 export const TOOLS: readonly ToolDef[] = [
@@ -125,7 +126,8 @@ export const TOOLS: readonly ToolDef[] = [
         ...(args["state"] !== undefined ? { state: args["state"] as "active" | "completed" | "future" } : {}),
         ...("goal" in args ? { goal: goal ?? null } : {}),
       });
-      return text(`Updated sprint ${id}`);
+      // K148: name and ID.
+      return text(`Updated sprint ${named((args["name"] as string | undefined) ?? cfg.sprints.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -150,7 +152,7 @@ export const TOOLS: readonly ToolDef[] = [
         hard: true,
         ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
       });
-      return text(JSON.stringify({ id, ...result }, null, 2));
+      return text(JSON.stringify({ id, name: cfg.sprints.find(e => e.id === id)?.name, ...result }, null, 2));
     },
   },
   {
@@ -161,7 +163,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadSprintsConfig(locttDir);
       const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
       await archiveSprint(locttDir, id);
-      return text(`Archived sprint ${id}`);
+      return text(`Archived sprint ${named(cfg.sprints.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -172,7 +174,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadSprintsConfig(locttDir);
       const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
       await unarchiveSprint(locttDir, id);
-      return text(`Unarchived sprint ${id}`);
+      return text(`Unarchived sprint ${named(cfg.sprints.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -185,7 +187,9 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadSprintsConfig(locttDir);
       const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
       const series = await readBurndownSeries(locttDir, id);
-      return text(JSON.stringify(series, null, 2));
+      // K148: the sprint's name beside `sprintId`.
+      const sprintName = cfg.sprints.find(e => e.id === id)?.name;
+      return text(JSON.stringify({ ...series, ...(sprintName !== undefined ? { sprintName } : {}) }, null, 2));
     },
   },
 ];

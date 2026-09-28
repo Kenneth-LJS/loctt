@@ -48,7 +48,7 @@ import {
   PutWorkflowRequestSchema,
   ValidateQueryRequestSchema,
 } from "@loctt/contracts";
-import type { ListOptions } from "@loctt/core";
+import type { ListOptions, RelationshipRepairPlan } from "@loctt/core";
 import {
   abandonReconcile,
   appendTaskBody,
@@ -112,6 +112,7 @@ import {
   editMilestone,
   editProject,
   editSprint,
+  editTaskFields,
   editView,
   enableGit,
   exportBackup,
@@ -191,8 +192,10 @@ import {
   reorderBoardRank,
   ReorderError,
   reorderRelationship,
+  repairRelationships,
   requireSupportedSchema,
   resolveCommentMentionsContext,
+  resolveEntityNamesContext,
   resolveLocttDir,
   resolveProjectIdForUser,
   resolveUserRef,
@@ -240,7 +243,6 @@ import {
   validateQuery,
   validHistory,
   ViewError,
-  ViewNameTakenError,
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
@@ -599,9 +601,10 @@ function gitErrorResponse(err: unknown): {
         data_state: "not_saved",
         recovery: { kind: "none" },
         schema_remote_newer: {
-          remote_version: Number.isNaN(err.remoteVersion) ? null : err.remoteVersion,
+          remote_version: err.remoteVersion,
           local_version: err.localVersion,
           branch: err.branch,
+          ...(err.raw !== undefined ? { remote_raw: err.raw } : {}),
         },
       },
     };
@@ -1730,15 +1733,43 @@ export function createWebApp(options: WebAppOptions) {
     //    index (stale/orphan/target-missing). Idempotent, cache-only.
     //  - "restore-missing" → initLoctt({repair:true}): recreates missing
     //    core config/state files with defaults; never overwrites survivors.
-    // Deliberately NOT a blanket "repair all" — core has no such function
-    // and ~85% of findings need a human decision or hand-edit.
+    //  - "repair-relationships" → repairRelationships (K141): key-valued
+    //    link targets to ids, missing sides added, duplicates merged,
+    //    links without a rank ranked at the end of their group (K143).
+    //  - "fix-all" → every SAFE repair (rebuild-index + repair-relationships),
+    //    the web's `loctt doctor --fix`. restore-missing is not in it: it
+    //    writes default config, which is a guess (see SAFE_FIXES in core).
     const r = await parseJsonBodyWithSchema(req, res, DoctorRepairRequestSchema);
     if (r === undefined) return;
+    const relationshipsSummary = (plan: RelationshipRepairPlan): NonNullable<DoctorRepairResponse["relationships"]> => ({
+      rewritten: plan.rewrites.length,
+      added: plan.inverses.length,
+      merged: plan.merges.length,
+      ranked: plan.ranked.reduce((n, r) => n + r.count, 0),
+    });
     try {
       if (r.action === "rebuild-index") {
         const index = await rebuildKeyIndex(locttDir);
         const entries = Object.keys(index.entries).length;
         json(res, { action: r.action, entries } satisfies DoctorRepairResponse);
+        return;
+      }
+      // K141: the relationship repair, and "fix all" = every safe repair
+      // (core's SAFE_FIXES: rebuild-index, then repair-relationships),
+      // the same set `loctt doctor --fix` and MCP `doctor {fix:true}` run.
+      if (r.action === "repair-relationships") {
+        const plan = await repairRelationships(locttDir);
+        json(res, { action: r.action, relationships: relationshipsSummary(plan) } satisfies DoctorRepairResponse);
+        return;
+      }
+      if (r.action === "fix-all") {
+        const index = await rebuildKeyIndex(locttDir);
+        const plan = await repairRelationships(locttDir);
+        json(res, {
+          action: r.action,
+          entries: Object.keys(index.entries).length,
+          relationships: relationshipsSummary(plan),
+        } satisfies DoctorRepairResponse);
         return;
       }
       // restore-missing: gap-fill only. `initLoctt` with repair recreates
@@ -1898,7 +1929,7 @@ export function createWebApp(options: WebAppOptions) {
       // duplicate name), so it is the headline verbatim per ERR-6.
       if (err instanceof ViewError) {
         // B21: a taken name points at the name field, not the filters.
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err.field ?? "filters" });
         return;
       }
       throw err;
@@ -1933,7 +1964,7 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       if (err instanceof ViewError) {
         // B21: a taken name points at the name field, not the filters.
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err.field ?? "filters" });
         return;
       }
       throw err;
@@ -3430,6 +3461,13 @@ export function createWebApp(options: WebAppOptions) {
         });
         return;
       }
+      // A refusal that names its own field (an ID-shaped project name,
+      // K148) is placed at that field, not the prefix.
+      if (err instanceof LocttError && err.field !== undefined) {
+        const env = err.toEnvelope();
+        error(res, env.message, statusForCode(err.code), env);
+        return;
+      }
       // What remains is genuine input validation (empty prefix, empty
       // project name, an invalid timezone) or an already-healthy tracker
       // — the cases where blaming the request body reads correctly.
@@ -4217,9 +4255,10 @@ export function createWebApp(options: WebAppOptions) {
     const listViewQuery = view !== undefined && queriesConfig !== undefined
       ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
       : [];
-    const listCtx = await resolveCommentMentionsContext(
+    // K148: names in a typed query resolve to the IDs the tasks store.
+    const listCtx = await resolveEntityNamesContext(locttDir, await resolveCommentMentionsContext(
       locttDir, tasks, buildListContext(tasks), [effectiveQuery, ...listViewQuery],
-    );
+    ), [effectiveQuery, ...listViewQuery]);
 
     let result;
     try {
@@ -5084,14 +5123,24 @@ export function createWebApp(options: WebAppOptions) {
     }
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
     try {
-      const updated = await setField({
-        locttDir,
-        taskId: task.frontmatter.id,
-        field: request.field,
-        value: request.value,
-        workflowConfig: wfConfig,
-        archivedGuard,
-      });
+      // K150: the picker's "Create 'x'" row on an open choice field sends
+      // `create_missing`; core creates the value and sets it in one write.
+      const updated = request.create_missing === true
+        ? (await editTaskFields({
+            locttDir,
+            taskId: task.frontmatter.id,
+            set: [{ field: request.field, value: request.value }],
+            createMissing: true,
+            archivedGuard,
+          })).task
+        : await setField({
+            locttDir,
+            taskId: task.frontmatter.id,
+            field: request.field,
+            value: request.value,
+            workflowConfig: wfConfig,
+            archivedGuard,
+          });
       json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
       // A rejected single-field write is the path ERR-14 and ERR-18 are
@@ -5358,7 +5407,9 @@ export function createWebApp(options: WebAppOptions) {
     // `RelationshipError`, which is a `LocttError`, and the route
     // wrapper turns those into a 400 carrying core's own sentence
     // ("relationship blocks -> <id> does not exist on task <id>").
-    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: targetId, workflowConfig: wfConfig });
+    // G1: `storedTarget` lets core remove an edge stored as a key more
+    // than one task has held, which resolves to some other task's id.
+    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: targetId, storedTarget: request.target, workflowConfig: wfConfig });
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
@@ -5612,6 +5663,7 @@ export function createWebApp(options: WebAppOptions) {
           to: st.to,
           description: st.description,
           ...(st.risky === true ? { risky: true } : {}),
+          ...(st.changes !== undefined ? { changes: st.changes } : {}),
         })),
         taskCount: tasks.length,
       } satisfies MigrationPlanResponse);
@@ -5663,6 +5715,7 @@ export function createWebApp(options: WebAppOptions) {
           to: st.to,
           description: st.description,
           ...(st.risky === true ? { risky: true } : {}),
+          ...(st.changes !== undefined ? { changes: st.changes } : {}),
         })),
         ...(result.backupPath !== undefined ? { backupPath: result.backupPath } : {}),
       } satisfies MigrateResponse);
@@ -5671,10 +5724,28 @@ export function createWebApp(options: WebAppOptions) {
       // when no migration applies, but a failure partway through a
       // multi-step run cannot say how far it got — ERR-4 wants `unknown`
       // rather than a guess. The backup is the user's way to check.
+      // A state migrate cannot fix (no readable version, an interrupted
+      // run, a version newer than this build) nothing ran, and naming
+      // `loctt migrate` would send the user to the same refusal. Each
+      // carries its own remedy, sent as `detail` like the guard does.
+      if (err instanceof SchemaUnmigratableError || err instanceof SchemaTooNewError) {
+        error(res, err.message, 409, {
+          code: "schema_mismatch",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+          ...(err instanceof SchemaUnmigratableError ? { detail: err.remedy } : {}),
+        });
+        return;
+      }
+      // A step failed after the backup: the sentinel names the backup,
+      // and `schema_status` (kind `interrupted`) carries it to the
+      // Upgrade banner, which shows where to restore from (K154).
+      const schemaStatus = await computeSchemaStatus(locttDir).catch(() => undefined);
       error(res, (err as Error).message, 409, {
         code: "schema_mismatch",
         data_state: "unknown",
         recovery: { kind: "command", command: "loctt migrate" },
+        ...(schemaStatus !== undefined ? { schema_status: schemaStatus } : {}),
       });
     }
   };
@@ -5836,6 +5907,11 @@ export function createWebApp(options: WebAppOptions) {
         (await trackerDirExists(locttDir))
       ) {
         try {
+          // K154: an older tracker is refused (409, `schema_mismatch`,
+          // kind `outdated`) and nothing is written; the app shows the
+          // Upgrade banner, whose button calls `/api/migrate`. Upgrading
+          // is the user's deliberate step, never a side effect of a
+          // request.
           await requireSupportedSchema(locttDir);
         } catch (err) {
           if (err instanceof SchemaVersionError || err instanceof SchemaTooNewError) {

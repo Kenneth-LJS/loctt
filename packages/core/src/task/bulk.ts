@@ -10,10 +10,10 @@ import { stagedSwap } from "../state/staged-swap.js";
 import { assembleTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
 import { assertWriteSafe, readTask } from "./io.js";
-import { applyArchiveState } from "./lifecycle.js";
+import { afterDelete, applyArchiveState } from "./lifecycle.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
 import { clearLookupCaches } from "./lookup-cache.js";
-import { linkTask } from "./relationships.js";
+import { deleteWithLinks, linkTask, loadLinkSnapshot } from "./relationships.js";
 import {
   assertChangesWritable,
   type DeferredFieldWrite,
@@ -249,9 +249,10 @@ export interface BulkDeleteOptions {
  *
  * The whole directory goes — `task.md`, `_history.yaml`, `_comments.yaml`,
  * attachments — so there is nothing to undo afterwards and no history
- * entry to write (the file it would live in is being deleted). That is
- * what distinguishes this from `bulkArchive`, which is reversible and
- * does record one.
+ * entry to write on the deleted task (the file it would live in is being
+ * deleted). That is what distinguishes this from `bulkArchive`, which is
+ * reversible and does record one. Each partner a deleted task linked to
+ * loses its side of the link and records a `link_removed` (K147).
  *
  * The removal is inlined rather than delegating to `deleteTask`:
  * `deleteTask` takes the state lock itself and `withStateLock` is not
@@ -264,13 +265,25 @@ export async function bulkDelete(opts: BulkDeleteOptions): Promise<BulkResult> {
   return withStateLock(opts.locttDir, async () => {
     const succeeded: string[] = [];
     const failed: { taskId: string; error: string }[] = [];
+    const now = new Date().toISOString();
+    // One scan for the batch (K147): each task's partners, the one-sided
+    // ones included, are found in it, and it is kept current as tasks
+    // are rewritten and deleted.
+    const snapshot = await loadLinkSnapshot(opts.locttDir);
     for (const ref of opts.taskRefs) {
       try {
         // Resolve before removing: a ref may be a key, and the key
         // index is what maps it to the id whose directory we delete.
         const looked = await lookupTask(opts.locttDir, ref);
         const id = looked.frontmatter.id;
-        await rm(getTaskDir(opts.locttDir, id), { recursive: true, force: true });
+        // All or nothing per task; the batch is partial like every bulk
+        // edit (K153): a task that can't be deleted is reported and the
+        // rest still go.
+        await deleteWithLinks(
+          opts.locttDir, looked, snapshot,
+          () => rm(getTaskDir(opts.locttDir, id), { recursive: true, force: true }),
+          now, bulkOpId,
+        );
         succeeded.push(id);
       } catch (err) {
         if (err instanceof TaskNotFoundError) {
@@ -280,12 +293,7 @@ export async function bulkDelete(opts: BulkDeleteOptions): Promise<BulkResult> {
         }
       }
     }
-    // Mirrors what `deleteTask` does after a single removal. The cache
-    // is negative-only today, so a deletion cannot leave a stale *hit*
-    // and no test can distinguish this line from its absence — it is
-    // here so bulk and single delete stay the same shape if the cache
-    // ever gains a positive side.
-    if (succeeded.length > 0) clearLookupCaches(opts.locttDir);
+    if (succeeded.length > 0) await afterDelete(opts.locttDir, succeeded);
     return { bulk_op_id: bulkOpId, succeeded, failed };
   });
 }

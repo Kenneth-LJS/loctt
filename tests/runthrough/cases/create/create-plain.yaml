@@ -1,0 +1,20 @@
+id: create-plain
+name: Create a task with only a title
+description: >
+  A bare create lands in the workspace default project with the default
+  status, takes the next key, and advances that project's counter.
+tags: [create]
+pre:
+  - task_absent: WEB-26
+cli: create "Write the release notes"
+mcp:
+  call: { tool: create_task, args: { title: Write the release notes } }
+capture:
+  t: { new_task: { title: Write the release notes } }
+post:
+  - field: { task: "${var.t.id}", field: key, equals: WEB-26 }
+  - field: { task: WEB-26, field: project, equals: "${project.web_app.id}" }
+  - field: { task: WEB-26, field: status, equals: backlog }
+  - field: { task: WEB-26, field: relationships, absent: true }
+  - yaml: { file: state.yaml, path: "keys.${project.web_app.id}.next_number", equals: 27 }
+  - count: { where: { project: "${project.web_app.id}" }, archived: include, equals: 25 }

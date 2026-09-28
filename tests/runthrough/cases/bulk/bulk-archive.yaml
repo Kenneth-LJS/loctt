@@ -1,0 +1,13 @@
+id: bulk-archive
+name: Archive several tasks at once
+description: Each task gets archived true and an archived_at stamp; links stay intact.
+tags: [bulk, archive]
+pre:
+  - count: { where: {}, archived: only, equals: 2 }
+cli: archive ${task.theme_tokens.key},${task.perf_budget.key},${task.mob_tablet.key}
+mcp:
+  call: { tool: archive_task, args: { refs: ["${task.theme_tokens.key}", "${task.perf_budget.key}", "${task.mob_tablet.key}"] } }
+post:
+  - count: { where: {}, archived: only, equals: 5 }
+  - field: { task: "${task.theme_tokens.key}", field: archived_at, matches: "^\\d{4}-" }
+  - relationship: { task: "${task.dark_mode.key}", type: relates_to, target: "${task.theme_tokens.key}" }

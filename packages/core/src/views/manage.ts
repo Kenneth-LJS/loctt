@@ -10,11 +10,15 @@ import { loadWorkflowConfig } from "../config/workflow.js";
 import { filtersToNode, normalizeFilters } from "../query/filters.js";
 import { validateQuery } from "../query/validate.js";
 import { withStateLock } from "../state/index.js";
+import { assertNameNotIdShaped } from "../utils/entity-ref.js";
 
 export class ViewError extends Error {
-  constructor(message: string) {
+  /** The input the error is about, when it is one field (`name`). */
+  readonly field: string | undefined;
+  constructor(message: string, field?: string) {
     super(message);
     this.name = "ViewError";
+    this.field = field;
   }
 }
 
@@ -25,7 +29,7 @@ export class ViewError extends Error {
  */
 export class ViewNameTakenError extends ViewError {
   constructor() {
-    super(VIEW_NAME_TAKEN_MESSAGE);
+    super(VIEW_NAME_TAKEN_MESSAGE, "name");
     this.name = "ViewNameTakenError";
   }
 }
@@ -208,6 +212,7 @@ export async function createView(
   locttDir: string,
   input: CreateViewInput,
 ): Promise<SavedQuery> {
+  assertNameNotIdShaped(input.name, m => new ViewError(m, "name"));
   await assertFiltersValid(locttDir, input.filters);
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
@@ -259,6 +264,7 @@ export async function editView(
   ref: string,
   changes: EditViewInput,
 ): Promise<SavedQuery> {
+  assertNameNotIdShaped(changes.name, m => new ViewError(m, "name"));
   if (changes.filters !== undefined) {
     await assertFiltersValid(locttDir, changes.filters);
   }

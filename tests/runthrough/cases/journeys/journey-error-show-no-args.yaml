@@ -1,0 +1,9 @@
+id: journey-error-show-no-args
+name: "Journey: show with no task prints usage"
+description: Folded in from tests/e2e/10 (B43, K145).
+tags: [journey, error, b43]
+surfaces: [cli]
+seed: empty
+cli: show
+expect_error:
+  cli: { exit_code: 2, message: "Usage" }

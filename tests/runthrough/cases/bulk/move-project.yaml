@@ -1,0 +1,19 @@
+id: move-project
+name: Move a linked task to another project
+description: >
+  The task gets the next key in the new project, its old key goes to
+  key_history and still resolves, and every link — stored by id — still
+  points at it from both sides.
+tags: [bulk, move, links]
+cli: move ${task.api_keys.key} "Platform Ops"
+mcp:
+  call: { tool: move_task, args: { refs: ["${task.api_keys.key}"], project: Platform Ops } }
+post:
+  - field: { task: "${task.api_keys.id}", field: key, equals: OPS-8 }
+  - field: { task: "${task.api_keys.id}", field: project, equals: "${project.platform_ops.id}" }
+  - field: { task: "${task.api_keys.id}", field: key_history, equals: ["${task.api_keys.key}"] }
+  - relationship: { task: OPS-8, type: blocks, target: "${task.rate_limit.key}" }
+  - relationship: { task: "${task.ops_postgres.key}", type: blocks, target: OPS-8 }
+  - bilateral: OPS-8
+  - yaml: { file: state.yaml, path: "keys.${project.platform_ops.id}.next_number", equals: 9 }
+check_script: move-project.check.ts

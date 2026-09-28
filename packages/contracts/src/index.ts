@@ -36,6 +36,7 @@ export {
   isEmojiPresentation,
   isSingleGrapheme,
 } from "./icon.js";
+export { ID_SHAPE, ID_SHAPED_NAME_MESSAGE, isIdShaped } from "./id-shape.js";
 export type { LabelDef, LabelsConfig } from "./labels.js";
 export {
   LabelDefSchema,
@@ -289,6 +290,7 @@ export type {
   WorkflowConfig,
 } from "./workflow.js";
 export {
+  allowsNewValues,
   BoardColumnDefSchema,
   BoardsConfigSchema,
   CliConfigSchema,
@@ -298,6 +300,7 @@ export {
   CustomFieldTypeSchema,
   CustomFieldValueDefSchema,
   defaultStatus,
+  deriveValueKey,
   effectiveInverseKey,
   effectiveInverseLabel,
   EstimationConfigSchema,
@@ -312,6 +315,7 @@ export {
   RelationshipGraphSchema,
   RelationshipKindSchema,
   relationshipTypeKeys,
+  RETIRED_RELATIONSHIP_KEYS,
   StatusCategorySchema,
   StatusDefSchema,
   TaskTypeDefSchema,

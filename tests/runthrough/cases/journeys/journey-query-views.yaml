@@ -1,0 +1,77 @@
+id: journey-query-views
+name: "Journey: seed twenty tasks, then query and use a saved view"
+description: >
+  Folded in from tests/e2e/06 (B43, K145): status, priority and title
+  queries, the shipped recent-open view, and --limit.
+tags: [journey, queries, b43]
+surfaces: [cli]
+seed: empty
+steps:
+  - name: seed the tasks
+    cli:
+      - create "fix login crash"
+      - set T-1 status in_progress
+      - set T-1 priority high
+      - create "improve login UX"
+      - set T-2 status in_progress
+      - set T-2 priority high
+      - create "logout flow"
+      - set T-3 status in_progress
+      - set T-3 priority medium
+      - create "in-progress 4"
+      - set T-4 status in_progress
+      - set T-4 priority low
+      - create "in-progress 5"
+      - set T-5 status in_progress
+      - set T-5 priority medium
+      - create "in-progress 6"
+      - set T-6 status in_progress
+      - create "in-progress 7"
+      - set T-7 status in_progress
+      - create "in-progress 8"
+      - set T-8 status in_progress
+      - set T-8 priority high
+      - create "wont-do 1"
+      - set T-9 status wont_do
+      - set T-9 priority high
+      - create "wont-do 2"
+      - set T-10 status wont_do
+      - create "wont-do 3"
+      - set T-11 status wont_do
+      - create "wont-do 4"
+      - set T-12 status wont_do
+      - set T-12 priority medium
+      - create "wont-do 5"
+      - set T-13 status wont_do
+      - create "done 1"
+      - set T-14 status done
+      - create "done 2"
+      - set T-15 status done
+      - set T-15 priority high
+      - create "done 3"
+      - set T-16 status done
+      - create "done 4"
+      - set T-17 status done
+      - create "todo login revamp"
+      - create "todo 2"
+      - create "todo 3"
+  - name: status = in_progress
+    cli: list --query "status = in_progress"
+    post:
+      - output: { contains: ["fix login crash", "logout flow"], not_contains: ["wont-do 1", "done 1"] }
+  - name: priority = high and status = in_progress
+    cli: list --query "priority = high and status = in_progress"
+    post:
+      - output: { contains: ["fix login crash", "improve login UX", "in-progress 8"], not_contains: ["wont-do 1", "logout flow"] }
+  - name: title contains login
+    cli: list --query 'title ~ "login"'
+    post:
+      - output: { contains: ["fix login crash", "improve login UX", "todo login revamp"], not_contains: ["logout flow", "done 1"] }
+  - name: the recent-open view
+    cli: list --view recent-open
+    post:
+      - output: { contains: ["fix login crash", "wont-do 1", "todo 2"], not_contains: ["done 1"] }
+  - name: --limit 5
+    cli: list --limit 5
+    post:
+      - output: { line_count: { matches: "^T-\\d+\\s", equals: 5 } }

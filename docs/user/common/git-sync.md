@@ -22,7 +22,7 @@ When two people change **different** tasks (or different fields of the same task
 
 Two practical notes:
 
-- **Everyone needs the same LocTT version's schema.** If a teammate on an older LocTT tries to sync a branch a newer one migrated, the sync is refused until they upgrade — see [Upgrading & migrations](upgrading.md).
+- **Everyone needs a LocTT that reads the branch's format.** If a teammate on an older LocTT tries to sync a branch a newer one upgraded, the sync is refused, naming the release to install — see [Upgrading](upgrading.md).
 - **Branch access is your access control.** LocTT has no accounts of its own; whoever can push to the `loctt` branch can change the tasks. It's as private as the repo it lives in.
 
 ## What to do when sync pauses
@@ -95,9 +95,20 @@ Per file, sync:
 - **stops with a conflict** when both sides changed the same file and there
   is no rule for it
 
-`.schema-version` is never taken from the branch. Schema changes travel
-through `loctt migrate`, so a machine running a newer LocTT cannot push a
-version bump onto one running an older release.
+`.schema-version` is never taken from the branch. Format upgrades happen
+on each machine, when its user runs `loctt migrate` (or the web Upgrade
+button), so a machine
+running a newer LocTT cannot push a version bump onto one running an older
+release. A branch whose `.schema-version` is newer than this `loctt`
+reads, or is not a format version at all (the old `1` included), is
+refused and nothing is written.
+
+A link the branch brings in without a rank (a hand-edit on the branch, or
+one published by a `loctt` that did not rank links) is ranked as the sync
+applies it: after the links of its kind that already have one, in the
+order the file lists them. Ranks the branch already carries are kept, so
+a reorder made on another machine arrives as it was made. The next
+publish carries the new ranks to the branch.
 
 ### Merging and conflicts
 

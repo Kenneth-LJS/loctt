@@ -4,6 +4,123 @@ All notable changes to LocTT are documented here. The format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+This release changes the tracker format (to `0.3.0`). **Before you use it
+on a tracker made by `loctt` 0.2.x or earlier, change
+`.loctt/.schema-version` from `1` to `0.1.0` once** (on every machine and
+clone), then run `loctt migrate` (or press **Upgrade** in the web UI) to
+upgrade the tracker, which backs it up first.
+See [Upgrading](docs/user/common/upgrading.md).
+
+### Breaking
+
+- `.loctt/.schema-version` now holds a format version, the `loctt`
+  release that introduced the format (`0.3.0`), instead of a counter. A
+  file holding `1`, anything else that is not a format version, or
+  nothing is refused with a message saying what it must contain. A
+  tracker in a newer format is refused with "This tracker needs loctt
+  <version> or newer."
+- The `ranked` setting on relationships is gone: every kind of link is
+  ordered. `loctt relationship add/edit` no longer take `--ranked`, MCP
+  `edit_workflow_entity` ignores `fields.ranked`, and the setting is gone
+  from Settings → Relationships. A `ranked:` line left in
+  `workflow.yaml` is ignored and reported by `loctt doctor`.
+- A backup written by `loctt` 0.2.x or earlier can't be restored by this
+  release; restore it with the release that wrote it, then open the
+  tracker with this one.
+
+### Fixed
+
+- `loctt rerank … --after`/`--before` (and MCP `reorder_relationship`, and
+  dragging on the task page) put the link in the wrong place among
+  siblings that had never been reordered; every link now keeps its place,
+  so a move lands exactly where asked, on every kind of link.
+
+- `loctt create --parent` (and MCP `create_task` with a parent) stored the
+  parent's key instead of linking properly; `loctt doctor --fix` repairs
+  trackers affected by it. A create with a parent now stores the parent's
+  id and adds the child link on the parent, exactly as `loctt link` does,
+  and a parent that doesn't exist or is archived is refused with nothing
+  created.
+- Deleting a task left every task it was linked to with a link pointing at
+  nothing. Delete now removes the other side of each link in the same
+  operation and records it in that task's history.
+- A link stored as a task key that more than one task has held could not
+  be removed; `unlink` (CLI, MCP and the web) now removes it by that key.
+- `loctt set` could not write number, boolean or multi-value custom
+  fields, or change a task's labels: it now converts the value by the
+  field's type, takes comma-separated lists, and accepts `fields.<key>`.
+- `loctt show` printed the assignee and reporter as IDs; it prints names.
+- `loctt doctor` warned about the key index after an ordinary create or
+  delete; both now keep it in sync.
+- A query naming a label, user, milestone, sprint or project
+  (`labels = urgent`) matched nothing; names now resolve on every
+  surface, and a name that matches nothing, or several things, is an
+  error rather than an empty result.
+
+- `loctt init --repair` over a tracker that had lost `config/` made a new
+  project, so every surviving task pointed at a project that no longer
+  existed; it now rebuilds `projects.yaml` with the ids the tasks and
+  `state.yaml` still use.
+- `loctt doctor` said a task file that won't parse was missing from the
+  key index and told you to rebuild it, which could not help; that file
+  is reported once, as unreadable.
+- On a tracker you can't write to, every change waited about four seconds
+  before saying so; it now says at once that it's a permission problem.
+- Dropping a card on a sprint deleted elsewhere showed the sprint's
+  internal ID; the sprints board now says the sprint no longer exists.
+
+### Changed
+
+- Git sync refuses a branch whose `.schema-version` is `1` (or anything
+  else that isn't a format version), and ranks links that arrive without
+  a place, so `loctt doctor` has nothing left to report after a sync.
+- A value that isn't shaped like an ID is only ever read as a name; it is
+  no longer tried as an exact ID when no name matches.
+- Every link keeps its place: a new link goes to the end of its kind's
+  list, and `loctt show`, MCP `get_task` and the task page list links in
+  that order until you move them. Every group on the task page (except
+  the Children tree) has drag handles, `Relates to` included.
+- `loctt doctor` reports a link with no stored place (a hand-edit), and
+  `--repair-relationships` gives it one.
+- Names and IDs are told apart by shape: a value shaped like an ID is an
+  ID, anything else is a name. Creating or renaming a label, user,
+  milestone, sprint, project or saved view with an ID-shaped name is
+  refused. An ambiguous name is refused listing each match with its ID.
+- The CLI prints names (`log`, `sprint burndown`, edit confirmations);
+  MCP results add names beside the IDs they return (`assignee_name`,
+  `label_names`, `actor_name`, …) without changing existing fields.
+
+### Added
+
+- Intentional format upgrades: a tracker in an older format is refused on
+  every surface with "This tracker needs upgrading from 0.1.0 to 0.3.0.
+  Run `loctt migrate` (a backup is made first)." and nothing is written
+  until you upgrade it. `loctt migrate` shows a preview (each step in
+  plain words and where the backup goes) and asks before upgrading
+  (`--yes` for scripts, `--dry-run` to preview only; without a terminal
+  and without `--yes` it refuses). The web UI shows an **Upgrade** screen
+  in place of the app, whose button backs up, upgrades and reloads. MCP
+  tools return the same message, and the MCP instructions tell agents to
+  ask you before calling `migrate_schema`. `loctt doctor` and `info` (and
+  MCP `doctor`/`info`) report the pending upgrade and write nothing;
+  doctor's repairs are skipped until the tracker is upgraded.
+- `loctt doctor --repair-relationships` (MCP `doctor` with
+  `repair_relationships`, and a **Repair relationships** button in
+  Settings → Diagnostics): changes links stored as a task key to the
+  task's id, adds the missing side of one-sided links (refusing one that
+  would create a loop), and merges duplicate links. It never removes a
+  link.
+- `loctt doctor --fix` (MCP `doctor` with `fix`, and **Fix all** in
+  Diagnostics) runs every safe repair, then reports what is left.
+- `loctt show` and MCP `get_task` list relationships in the same order as
+  the web task page, and MCP returns each link's `rank`.
+- `loctt set WEB-1,WEB-2 labels --add urgent` (and `--remove`,
+  `--create`), and MCP `bulk_update_tasks` with `add` / `remove` /
+  `create_missing`: one list edit on many tasks, reported like bulk set.
+  Every task that can change does, and each one that can't is listed.
+
 ## [0.1.0] — Initial release
 
 First public release of LocTT — a local-first, single-user task tracker

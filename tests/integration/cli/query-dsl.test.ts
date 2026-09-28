@@ -330,9 +330,10 @@ describe("comment_mentions end-to-end (spawned binary)", () => {
       expect(mine.stdout).toContain("mentioned task");
       expect(mine.stdout).not.toContain("quiet task");
 
-      // A different id matches nothing.
+      // A different id matches nothing. ID-shaped (K148): a value that
+      // isn't is a name, and a name that matches no user is refused.
       const other = await runCli(
-        ["list", "--query", 'comment_mentions = "01HXNOSUCHUSERXXXXXXXXXXXXX"'],
+        ["list", "--query", 'comment_mentions = "01M3JSJ9ADABA1DAAX7Z2PCXME"'],
         { cwd: root },
       );
       expect(other.exitCode).toBe(0);

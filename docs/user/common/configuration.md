@@ -106,13 +106,11 @@ relationships:
     inverse: is_blocked_by
     inverse_label: Is blocked by
     graph: acyclic
-    ranked: true
   - key: parent
     label: Parent
     inverse: child
     inverse_label: Child
     graph: tree
-    ranked: true
   - key: clones
     label: Clones
     inverse: is_cloned_by
@@ -140,7 +138,7 @@ Each relationship defines a forward key/label and an inverse. When you `link T-1
 | `acyclic` | Cycles are rejected when linking. |
 | `tree` | Cycles are rejected **and** this relationship may be drawn as a tree axis. |
 
-So the default `parent` is a `tree` axis and `blocks` is `acyclic`. Any number of relationships may be `tree`; views pick which axis to draw rather than the config deciding for them. `ranked: true` lets a relationship's targets be ordered relative to each other (see `loctt rerank`).
+So the default `parent` is a `tree` axis and `blocks` is `acyclic`. Any number of relationships may be `tree`; views pick which axis to draw rather than the config deciding for them. Every relationship's links are ordered: each new link goes to the end of its kind's list, and `loctt rerank` (or dragging on the task page) moves it. There is no setting for it; a `ranked:` line left from before 0.3.0 is ignored, and `loctt doctor` reports it so you can remove it.
 
 Symmetric relationships are never `tree`: a symmetric edge is a
 two-node cycle by definition.

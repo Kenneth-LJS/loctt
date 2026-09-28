@@ -1,0 +1,11 @@
+id: archive-task
+name: Archive a task
+description: archived true plus an archived_at stamp; the task stays on disk.
+tags: [archive]
+cli: archive ${task.search_typo.key}
+mcp:
+  call: { tool: archive_task, args: { refs: ["${task.search_typo.key}"] } }
+post:
+  - field: { task: "${task.search_typo.key}", field: archived, equals: true }
+  - field: { task: "${task.search_typo.key}", field: archived_at, matches: "^\\d{4}-" }
+  - relationship: { task: "${task.epic_search.key}", type: child, target: "${task.search_typo.key}" }

@@ -1,0 +1,10 @@
+id: user-create
+name: Register a user
+description: A new profile is written under users/; the current user does not change.
+tags: [users]
+cli: user create Dee --email dee@example.com --timezone Asia/Singapore
+mcp:
+  call: { tool: create_user, args: { name: Dee, email: dee@example.com, timezone: Asia/Singapore } }
+post:
+  - entity: { kind: user, name: Dee, fields: { email: dee@example.com, timezone: Asia/Singapore } }
+  - file_unchanged: .current-user

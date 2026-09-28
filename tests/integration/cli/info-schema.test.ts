@@ -20,25 +20,35 @@ describe("loctt info reports schema status", () => {
     await withTmpLoctt(async ({ root }) => {
       const res = await runCli(["info"], { cwd: root });
       expect(res.exitCode).toBe(0);
-      expect(res.stdout).toMatch(/schema/i);
-      expect(res.stdout).toMatch(/\b1\b/);
+      expect(res.stdout).toMatch(/Schema: 0\.3\.0 \(current\)/);
     });
   });
 
   it("names the mismatch rather than printing a bare number", async () => {
     await withTmpLoctt(async ({ root }) => {
-      // 99 is above current. (0 is not "outdated" — readSchemaVersion
-      // rejects it as invalid, so it exercises the parse guard rather
-      // than the comparison.) Current is 1, so there is no on-disk
-      // version below it to test the outdated branch with.
-      await writeFile(path.join(root, ".loctt/.schema-version"), "99\n", "utf-8");
+      // K142: newer is refused naming the release to install.
+      await writeFile(path.join(root, ".loctt/.schema-version"), "9.9.9\n", "utf-8");
 
       const res = await runCli(["info"], { cwd: root });
       const out = `${res.stdout}${res.stderr}`;
-      expect(out).toMatch(/schema/i);
-      expect(out).toMatch(/99/);
+      expect(out).toMatch(/Schema: 9\.9\.9, this build reads 0\.3\.0/);
       // Not just the number: what to do about it.
-      expect(out).toMatch(/update LocTT/i);
+      expect(out).toMatch(/This tracker needs loctt 9\.9\.9 or newer/);
+    });
+  });
+
+  // K154 (was K143's "the next command upgrades it", the superseded
+  // rule): info describes and never writes, and says what to run.
+  it("reports an older tracker as needing an upgrade, and leaves it as it is", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await writeFile(path.join(root, ".loctt/.schema-version"), "0.1.0\n", "utf-8");
+      const res = await runCli(["info"], { cwd: root });
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toContain(
+        "Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)",
+      );
+      const { readFile } = await import("node:fs/promises");
+      expect((await readFile(path.join(root, ".loctt/.schema-version"), "utf-8")).trim()).toBe("0.1.0");
     });
   });
 

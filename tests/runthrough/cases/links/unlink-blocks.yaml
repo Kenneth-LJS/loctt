@@ -1,0 +1,14 @@
+id: unlink-blocks
+name: Remove a blocks link
+description: Unlinking removes both sides; the rest of the chain is untouched.
+tags: [links]
+pre:
+  - relationship: { task: "${task.api_keys.key}", type: blocks, target: "${task.rate_limit.key}" }
+cli: unlink ${task.api_keys.key} blocks ${task.rate_limit.key}
+mcp:
+  call: { tool: unlink_tasks, args: { ref: "${task.api_keys.key}", type: blocks, target: "${task.rate_limit.key}" } }
+post:
+  - relationship: { task: "${task.api_keys.key}", type: blocks, target: "${task.rate_limit.key}", present: false }
+  - relationship: { task: "${task.rate_limit.key}", type: is_blocked_by, target: "${task.api_keys.key}", present: false }
+  - relationship: { task: "${task.rate_limit.key}", type: blocks, target: "${task.public_docs.key}" }
+  - relationship: { task: "${task.ops_postgres.key}", type: blocks, target: "${task.api_keys.key}" }

@@ -36,7 +36,7 @@ two ways.
 | Git-backed sync | ✅ | ✅ | ✅ |
 | Backup and restore | ✅ | ✅ | ✅ |
 | Diagnostics | ✅ | ✅ | ✅ |
-| Schema migration | ✅ | ✅ | ❌ |
+| Format upgrade | ✅ | ✅ | ✅ |
 
 ✅ full support · *read* = read-only · — presented differently (a board and
 timeline are UI views over the same tasks the CLI and MCP list) · ❌ not
@@ -48,8 +48,10 @@ Two things the table is telling you:
   the working calendar (timezone, working days, holidays), but changing it
   happens in the web UI (Settings → Calendar). Everything else — including
   the workflow config — is fully writable from every interface.
-- **Schema migration is CLI/MCP-only.** Upgrading the on-disk schema
-  (`loctt migrate` / `migrate_schema`) is deliberately not a UI action.
+- **Format upgrades are always deliberate.** An older tracker is refused
+  everywhere until you upgrade it: `loctt migrate` (with a preview and a
+  question), the **Upgrade** button in the web UI, or `migrate_schema`
+  from an agent you asked to. See [Upgrading](common/upgrading.md).
 
 ## Where each capability is documented
 

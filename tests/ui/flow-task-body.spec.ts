@@ -361,9 +361,38 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
     // One word typed at the end, in rich mode.
+    //
+    // The caret is placed deterministically. Entering edit focuses the
+    // rich surface one animation frame later (BodyEditor's rAF focus),
+    // and that focus can land after a click, putting the caret back at
+    // the start: under load " Appended." was typed at the top of the
+    // document. So: wait for that focus to have happened, then put the
+    // selection at the end of the last paragraph, and check it is there
+    // before typing.
     await enterEdit(page);
-    await page.getByTestId("body-editor").getByTestId("rich-editor").getByText("Last paragraph.").click();
-    await page.keyboard.press("End");
+    const rich = page.getByTestId("body-editor").getByTestId("rich-editor");
+    await expect(rich).toBeFocused();
+    const caretAtEnd = (): Promise<boolean> => rich.evaluate((el: HTMLElement) => {
+      const sel = window.getSelection();
+      if (sel === null || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+      const node = sel.anchorNode;
+      return node !== null && el.contains(node) && node.textContent === "Last paragraph."
+        && sel.anchorOffset === node.textContent.length && document.activeElement === el;
+    });
+    await rich.evaluate((el: HTMLElement) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let last: Text | null = null;
+      for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) last = n as Text;
+      if (last === null) throw new Error("the editor holds no text");
+      const range = document.createRange();
+      range.setStart(last, last.length);
+      range.collapse(true);
+      el.focus();
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    });
+    await expect.poll(caretAtEnd).toBe(true);
     await page.keyboard.type(" Appended.");
 
     await saveAndClose(page);

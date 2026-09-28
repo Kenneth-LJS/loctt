@@ -1,0 +1,10 @@
+id: create-invalid-priority
+name: Create with an unknown priority is refused
+description: Enum values are validated against workflow.yaml before anything is written.
+tags: [create, error]
+cli: create "Nice to have" --priority someday
+mcp:
+  call: { tool: create_task, args: { title: Nice to have, priority: someday } }
+expect_error:
+  cli: { exit_code: 2, message: "someday" }
+  mcp: { message: "someday" }

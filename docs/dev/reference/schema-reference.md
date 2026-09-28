@@ -11,7 +11,7 @@ All YAML files are written atomically (via `writeFileAtomically` / `writeYamlAto
   .gitignore                  # appended with ".loctt.backup-*"
   .loctt/
     .gitignore                # ignores .current-user and users/*/settings.yaml
-    .schema-version           # current schema version (positive integer)
+    .schema-version           # format version, semver (e.g. 0.3.0), K142
     .schema-migration-in-progress  # sentinel, present only mid-migration
     .current-user             # per-checkout active user id (gitignored)
     state.yaml                # key allocation counters
@@ -155,7 +155,7 @@ relationships:
 |---|---|---|---|
 | `type` | string | yes | Relationship type key (must be defined in workflow.yaml) |
 | `target` | string | yes | Target task ID (ULID) |
-| `rank` | string | no | Lexorank string. Only set when the relationship type is configured `ranked: true`. Targets without rank sort below ranked ones |
+| `rank` | string | no in the schema, always written | Lexorank string ordering the targets of one type on one task. Since format 0.3.0 (K143) every write that creates an edge sets it, at the end of that type's group (`task/edge-rank.ts`). An edge without one (a hand-edit, a merge from an old branch) still loads, sorts below the ranked ones, is reported by doctor and ranked by the relationship repair |
 
 ### Custom Fields
 
@@ -236,7 +236,6 @@ relationships:
     label: Blocks
     inverse: is_blocked_by
     inverse_label: Is blocked by
-    ranked: true
   - key: relates_to
     label: Relates to
     kind: symmetric
@@ -337,7 +336,7 @@ estimation:
 | `inverse` | string | for directional | Inverse relationship key. Required unless `kind: symmetric`. Setting it equal to `key` is rejected — use `kind: symmetric` |
 | `inverse_label` | string | for directional | Inverse display label |
 | `graph` | `"none"` \| `"acyclic"` \| `"tree"` | no | Graph-shape constraint. `none` (default when omitted) imposes nothing; `acyclic` rejects cycles at link time; `tree` rejects cycles **and** marks the relationship drawable as a tree axis |
-| `ranked` | boolean | no | When `true`, edges of this type carry a `rank` lexorank string for ordering |
+| ~~`ranked`~~ | — | — | **Retired (K143).** Every kind is ordered. A `ranked:` key left in a user's file is dropped on read (never a parse failure), reported by doctor as a `warn` (`workflow.yaml retired settings`), removed by the 0.1.0 → 0.3.0 upgrade, and dropped by any workflow write |
 
 > **`graph` gates cycle detection and marks the tree axis separately.**
 > Cycle detection is per relationship (`acyclic` or `tree`). Which axis a
@@ -358,6 +357,7 @@ estimation:
 | `multi` | boolean | yes | Whether the field accepts multiple values |
 | `searchable` | boolean | yes | Whether the field is exposed to the query DSL |
 | `values` | array | no | Required for `type: enum`. Each entry has `key`, `label`, optional numeric `value` for sorting |
+| `allow_new_values` | boolean | no | Enum fields only (K150). When `true`, a value not in `values` may be created while setting a task (web picker "Create 'x'", CLI `--create`, MCP `create_missing: true`); it is appended to `values` with a key derived from its label. Absent (the default) = closed: listed values only. Written only when `true`. Refused by the create/edit commands on a non-enum field; a hand-written one on a non-enum field is ignored |
 | `task_types` | string[] | no | Allowlist of `task_types[].key`s this field is scoped to. When **absent**, the field is global — it shows for every task type (the backward-compatible default; existing fields need no migration). When present, the field is editable only on a task whose `task_type` is in the list. An empty list scopes the field to no type. Scope is a **display** concern: a value stored in a field now out of scope for the task's type (a field that became scoped, or a task whose type changed) is **kept on disk** and shown read-only — it is never silently hidden or auto-deleted, and no validation rejects storing an out-of-scope value |
 
 ### `estimation`
@@ -1024,27 +1024,40 @@ Every other key is passed through unchanged and survives a load → save round t
 
 ## .schema-version
 
-Located at `.loctt/.schema-version`. A single positive integer (newline-terminated) recording the schema version this tracker is on. Bumped whenever any on-disk schema changes. Migrations (in `packages/core/src/schema/migrations.ts`) run sequentially to bring an older tracker up to `CURRENT_SCHEMA_VERSION` (currently `1`).
+Located at `.loctt/.schema-version`. The tracker's **format version**
+(K142): the semver of the `loctt` release that introduced the format this
+tracker is written in, newline-terminated. `CURRENT_SCHEMA_VERSION`
+(`packages/core/src/schema/version.ts`) is `0.3.0`, the release that made
+every link ordered (K143). `0.1.0` is the format of every tracker made
+before it. A build writes the highest format-changing release at or below
+its own version; the constant is set to the release a format change ships
+in and never changed once published.
 
 ```
-1
+0.3.0
 ```
 
 | Constraint | Rule |
 |---|---|
-| Format | Integer text with optional trailing newline |
-| Value | Positive integer (`>= 1`) |
-| Empty file | Rejected with `SchemaVersionError` |
+| Format | `MAJOR.MINOR.PATCH`, whole numbers without leading zeros, optional trailing newline. No pre-release tags |
+| Compared | As semver: `0.10.0` is newer than `0.3.0` |
+| Not a format version (incl. `1`, the counter 0.2.x wrote) | `SchemaUnmigratableError`: "`.schema-version` must hold a format version such as 0.3.0 (three whole numbers separated by dots). Got: …", remedy: write `0.1.0` for a tracker from 0.2.x or earlier. No compatibility for `1` (K142: Ken edits his trackers by hand) |
+| Empty file | `SchemaUnmigratableError`: "`.schema-version` is empty. It must hold a format version such as 0.3.0." |
 | Missing | Returns `null` (treated as legacy / fresh directory) |
-| Larger than `CURRENT_SCHEMA_VERSION` | Throws `SchemaTooNewError`; the user must update LocTT |
+| Newer than `CURRENT_SCHEMA_VERSION` | `SchemaTooNewError`: "This tracker needs loctt <version> or newer." |
+| Older | `SchemaUpgradeRequiredError`: "This tracker needs upgrading from X to Y. Run `loctt migrate` (a backup is made first)." on every surface, nothing written, risky step or not (K154). Upgraded only by `loctt migrate`, MCP `migrate_schema` or the web Upgrade button |
 
-`CURRENT_SCHEMA_VERSION` is `1`, so no migration has run yet and no
-real migration exists to exercise. The acceptance cases that describe
-behaviour *during or after* a schema migration (SET-15, SET-31, SET-37,
-XS-36, XS-38, XS-48) therefore have nothing to run against; they become
-testable for free the moment `CURRENT_SCHEMA_VERSION` first advances past
-1. This is a natural unblock at the first version bump, not a separate
-work item.
+Upgrade steps (`packages/core/src/schema/migrations.ts`) are keyed by
+semver `from`/`to`. The first is **0.1.0 → 0.3.0** (not marked risky,
+`schema/steps/rank-every-link.ts`): every link gets a rank in the order
+0.1.0 showed it, each type's links are stored in that order, and the
+retired `ranked` keys are removed from `workflow.yaml`.
+
+The backup header's `schema_version` records this value (a string); a
+backup written by 0.2.x records the old integer, which restore refuses by
+name. A git branch's published `.schema-version` is read (never
+mirrored): a newer format refuses sync/publish; 0.2.x's integer is older
+and proceeds.
 
 ---
 

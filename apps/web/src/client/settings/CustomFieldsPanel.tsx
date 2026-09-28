@@ -350,6 +350,14 @@ function FieldRow({
         >
           {field.searchable ? "searchable" : "not searchable"}
         </span>
+        {field.type === "enum" && field.allow_new_values === true && (
+          <span
+            data-testid={`custom-field-allow-new-${field.key}`}
+            className="text-[0.8571rem] text-text-tertiary"
+          >
+            new values allowed
+          </span>
+        )}
 
         <span className="ml-auto">
           <RowActions

@@ -1,0 +1,12 @@
+id: create-archived-assignee
+name: Create assigned to an archived user is refused
+description: Cy is archived; a new task cannot be assigned to them, and nothing is written.
+tags: [create, users, error]
+pre:
+  - entity: { kind: user, name: Cy, fields: { archived: true } }
+cli: create "Pairing session" --assignee Cy
+mcp:
+  call: { tool: create_task, args: { title: Pairing session, assignee: Cy } }
+expect_error:
+  cli: { exit_code: 1, message: "archived user" }
+  mcp: { message: "archived user" }

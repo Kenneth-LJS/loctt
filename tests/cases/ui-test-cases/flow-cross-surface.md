@@ -288,11 +288,11 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### Schema version drift
 
 ### XS-33 · M1 · blocker · P4 P7
-**`.schema-version` missing: the UI says the tracker is unrecognized and points at `loctt migrate`.** Delete `.schema-version` and load the UI.
+**`.schema-version` missing: the UI says the tracker is unrecognized and says to write the file.** Delete `.schema-version` and load the UI.
 
 - The server refuses to serve tracker data (`requireSupportedSchema` fails) and the UI shows the schema banner with the **`missing`** kind rather than an empty list. `missing` and `unknown` are distinct kinds in `SchemaStatusResponse`: `unknown` is an unreadable/unparseable version (SHL-38), not an absent one.
 - The banner names the missing file by path and says the tracker's layout cannot be confirmed.
-- It offers a concrete next step, not a generic retry: run `loctt migrate` to stamp and upgrade.
+- It offers a concrete next step, not a generic retry: write the tracker's format version into `.loctt/.schema-version` (`loctt doctor` says which), then reload. It does not offer `loctt migrate`, which refuses a tracker with no recorded version (A366).
 - **It does not offer `loctt init` or reinitialize.** A `.loctt/` holding tasks but no version file is a *damaged* tracker, not an empty one; reinitializing is the one path that can destroy real data. Only a wholly absent or empty `.loctt/` routes to onboarding (ONB-1/ONB-16).
 - The app does not route to `/init` — the directory is not uninitialized.
 - No "Migrate now" button is offered for this kind in M4; migration is not the mechanical fix for a missing file.
@@ -306,20 +306,24 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - The app shell and navigation still render; the banner is always visible. Every `/api/` request returns 409 while the mismatch stands (`server.ts` schema guard), so data views show an explained error rather than a spinner, an empty list, or partial content.
 
 ### XS-35 · M1 · blocker · P4 P7
-**Recorded version less than current: run `loctt migrate`.** Write a `.schema-version` below `CURRENT_SCHEMA_VERSION` and load the UI.
+**Recorded version less than current: the Upgrade screen, and nothing else.** Write a `.schema-version` below `CURRENT_SCHEMA_VERSION` and load the UI.
 
-- The banner shows the `outdated` kind and states both numbers.
-- Through M1–M3 the banner tells the user to run `loctt migrate` in the terminal, quoting the exact command — the M1.1 banner is read-only by design.
-- The command shown is copyable, and the message says a backup of `.loctt/` is taken automatically so the user knows the risk profile before running it.
-- The app shell and navigation still render under the banner; gating is enforced server-side, not by the client. Every `/api/` request returns 409 while the mismatch stands, so the UI never reads tasks against a schema it does not understand — and never silently shows partial data either.
+- The Upgrade screen shows the `outdated` kind and states both numbers.
+- The server's refusal (409, kind `outdated`) carries "This tracker needs upgrading from <from> to <to>. Run `loctt migrate` (a backup is made first)." and the `loctt migrate` command. The screen adapts it to its Upgrade button.
+- The screen says a backup is made first, so the user knows the risk profile before upgrading.
+- The shell does not render: the Upgrade screen replaces it (K154). Gating is still enforced server-side, not by the client. Every `/api/` request returns 409 while the mismatch stands, so the UI never reads tasks against a schema it does not understand — and never silently shows partial data either.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). Nothing works until the tracker is upgraded, so the shell no longer renders under a banner, and no request upgrades it on its own.
 
 ### XS-36 · M4 · blocker · P4 P7
-**The M4 "Migrate now" button runs the real migration and clears the banner.** With an `outdated` schema in M4, click Migrate now.
+**The Upgrade button runs the real migration and reloads the app.** With an `outdated` schema, click Upgrade.
 
 - The button calls `POST /api/migrate` (core `migrateToCurrent`), shows a busy state, and is not double-clickable.
-- Before running, the UI states what will happen: a backup copy of `.loctt/` is written to a sibling directory and the schema is stepped up to the current version.
-- On success the banner clears, `schema_status` reports `current`, and `loctt schema` / `loctt info` agree from the terminal.
+- Before running, the screen states what will happen: the versions, that a backup is made first, and the steps in plain words.
+- On success the app reloads into the shell, `schema_status` reports `current`, and `loctt info` agrees from the terminal.
 - On failure the message names the step that failed and the backup directory path, and tells the user the tracker was left mid-migration and needs investigation — it does not offer "try again" as the only option.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). The two-step Migrate now / Run migration control became one Upgrade button on the Upgrade screen, which reloads on success.
 
 ### XS-37 · M1 · blocker · P4 P5 P7
 **The `.schema-migration-in-progress` sentinel blocks every boot and must not be one-click "fixed".** Create the sentinel file and load the UI.

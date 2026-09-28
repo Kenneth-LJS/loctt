@@ -6,7 +6,9 @@ import { EXIT } from "../runtime/errors.js";
 /**
  * `loctt doctor` — diagnostic checks. With `--rebuild-index`,
  * rebuilds the key-lookup cache after out-of-band frontmatter
- * edits (the one drift case LocTT can't auto-detect).
+ * edits (the one drift case LocTT can't auto-detect). With
+ * `--repair-relationships`, repairs links (K141). With `--fix`, runs
+ * every safe repair, then reports what is left.
  *
  * Exit code is EXIT.RUNTIME (1) if any check is `error`; warnings
  * still exit 0 so CI can treat them as informational.
@@ -21,12 +23,21 @@ import { EXIT } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--rebuild-index"];
+const ACCEPTED_FLAGS: readonly string[] = ["--rebuild-index", "--repair-relationships", "--fix"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const rebuildIndex = hasFlag(args, "--rebuild-index");
-  const checks = await runDoctor(root, { rebuildIndex });
+  // K141 4a. `--repair-relationships` runs the relationship repair;
+  // `--fix` runs every safe repair (core's SAFE_FIXES). Both run before
+  // the checks, so what is printed after them is what is left.
+  const repairRelationships = hasFlag(args, "--repair-relationships");
+  const fix = hasFlag(args, "--fix");
+  const checks = await runDoctor(root, {
+    rebuildIndex,
+    ...(repairRelationships ? { repairRelationships: true } : {}),
+    ...(fix ? { fix: true } : {}),
+  });
   for (const check of checks) {
     const icon = check.status === "ok" ? "✓" : check.status === "warn" ? "!" : "✗";
     console.log(`  ${icon} ${check.name}: ${check.message}`);

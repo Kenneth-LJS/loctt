@@ -1,0 +1,3 @@
+# Per-checkout pointers and per-user UI settings — do not commit.
+.current-user
+users/*/settings.yaml

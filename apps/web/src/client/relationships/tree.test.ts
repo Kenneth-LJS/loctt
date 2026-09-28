@@ -19,7 +19,7 @@ import { buildTaskIndex, buildTree, hasCycle, MAX_TREE_DEPTH } from "./tree.ts";
 
 function fm(
   id: string,
-  edges: readonly { type: string; target: string }[] = [],
+  edges: readonly { type: string; target: string; rank?: string }[] = [],
 ): TaskFrontmatterPublic {
   return {
     id,
@@ -184,3 +184,22 @@ describe("buildTree", () => {
     expect(nodes[0]?.missing).toBe(false);
   });
 });
+
+describe("buildTree nested order (B40)", () => {
+  // @verifies REL-5 REL-13
+  it("sorts each nested level by rank, unranked after ranked in stored order", () => {
+    // b's children are stored d, c, e, f; ranked c < d, e and f unranked.
+    const index = buildTaskIndex([
+      fm("b", [
+        { type: "child", target: "d", rank: "m" },
+        { type: "child", target: "e" },
+        { type: "child", target: "c", rank: "a" },
+        { type: "child", target: "f" },
+      ]),
+      fm("c"), fm("d"), fm("e"), fm("f"),
+    ]);
+    const [b] = buildTree([row("b")], "child", index, "root");
+    expect(b?.children.map(n => n.target)).toEqual(["c", "d", "e", "f"]);
+  });
+});
+

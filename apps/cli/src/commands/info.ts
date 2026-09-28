@@ -1,5 +1,4 @@
-import type { TrackerInfo } from "@loctt/core";
-import { getTrackerInfo, loadProjectsConfig, resolveLocttDir } from "@loctt/core";
+import { describeSchemaStatus, getTrackerInfo, loadProjectsConfig, resolveLocttDir } from "@loctt/core";
 
 import { rejectUnknownFlags } from "../runtime/args.js";
 
@@ -13,39 +12,6 @@ const ACCEPTED_FLAGS: readonly string[] = [];
  * read of `projects.yaml`; missing-file is a no-op (fresh
  * tracker), but parse / permission errors surface.
  */
-/**
- * One line for each schema state, in the wording the UI banner uses so
- * a user who sees both is not left comparing two descriptions of one
- * condition.
- */
-function describeSchema(status: TrackerInfo["schemaStatus"]): string {
-  switch (status.kind) {
-    case "current":
-      return `${String(status.version)} (current)`;
-    case "outdated":
-      return `${String(status.on_disk)}, this build expects ${String(status.current)}`
-        + `. Run 'loctt migrate'`;
-    case "future":
-      return `${String(status.on_disk)}, this build supports ${String(status.current)}`
-        + `. Update LocTT`;
-    case "missing":
-      return `not recorded. This tracker predates schema versioning`;
-    case "interrupted": {
-      // The backup path is the recovery, so it leads. Everything else
-      // here is context for it.
-      const versions = status.from !== undefined && status.to !== undefined
-        ? ` (v${String(status.from)} → v${String(status.to)})`
-        : "";
-      const backup = status.backup !== undefined
-        ? ` Restore from ${status.backup}, remove ${status.sentinel_path}, then re-run.`
-        : ` The sentinel at ${status.sentinel_path} names the backup to restore from.`;
-      return `a migration${versions} was interrupted and did not finish.${backup}`;
-    }
-    case "unknown":
-      return `unreadable: ${status.message}`;
-  }
-}
-
 export async function run(args: string[], root: string): Promise<void> {
   // Accepts no flags. Without this an unknown one was dropped and the
   // command exited 0, reporting success for something it never did —
@@ -71,7 +37,7 @@ export async function run(args: string[], root: string): Promise<void> {
   // getTrackerInfo has always computed this and no surface printed it,
   // so the one command whose job is "what is this tracker" omitted the
   // fact that decides whether any other command will run (ONB-C5).
-  console.log(`Schema: ${describeSchema(info.schemaStatus)}`);
+  console.log(`Schema: ${describeSchemaStatus(info.schemaStatus)}`);
   if (info.workflowConfig) {
     console.log(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
   }

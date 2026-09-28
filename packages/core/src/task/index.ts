@@ -80,6 +80,15 @@ export {
   writeTaskBody,
 } from "./io.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
+export type {
+  BulkEditTaskFieldsOptions,
+  BulkEditTaskFieldsResult,
+  CreatedValue,
+  EditTaskFieldsOptions,
+  EditTaskFieldsResult,
+  ListEdit,
+} from "./list-edit.js";
+export { bulkEditTaskFields, editTaskFields, UnknownFieldValueError } from "./list-edit.js";
 export { listTaskIds } from "./list-ids.js";
 export { loadAllTasks, loadAllTasksDetailed, type UnreadableTask } from "./load-all.js";
 export { lookupById, lookupByKey, lookupTask, TaskNotFoundError, UnreadableTaskError } from "./lookup.js";

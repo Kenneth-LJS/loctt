@@ -54,7 +54,7 @@ function routeFetch(path: string): { body: unknown; status: number } {
         taskCount: 0,
         keyPrefix: "WEB-",
         nextKey: "WEB-1",
-        schemaStatus: { kind: "current", version: 3 },
+        schemaStatus: { kind: "current", version: "0.3.0" },
         cwd: "~/PDev/loctt",
         today: "2026-08-14",
         timezone: "UTC",

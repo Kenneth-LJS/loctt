@@ -1,0 +1,14 @@
+projects:
+  - id: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+    name: Web App
+    slug: web-app
+    prefix: WEB
+  - id: 01M3JSJ6ZTZ3MMREPGX5GRGCS2
+    name: Mobile
+    slug: mobile
+    prefix: MOB
+  - id: 01M3JSJ7938VBX3QQAD1AMW8MA
+    name: Platform Ops
+    slug: platform-ops
+    prefix: OPS
+default: 01M3JSJ5RKZ3TYC3J48FTRA6PV

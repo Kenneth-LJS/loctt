@@ -11,6 +11,7 @@ import {
 } from "../config/calendar.js";
 import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
 import { getTrackerInfo } from "../diagnostics/info.js";
+import { LocttError } from "../errors.js";
 import {
   getDocsDir,
   getQueriesConfigPath,
@@ -21,7 +22,12 @@ import {
 } from "../paths/index.js";
 import { assertValidPrefix } from "../projects/prefix.js";
 import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
+import { knownFormats } from "../schema/migrations.js";
+import { isProvablyRanked } from "../schema/steps/rank-every-link.js";
+import { loadState } from "../state/state.js";
+import { loadAllTasks } from "../task/load-all.js";
 import { ensureDefaultUser } from "../users/index.js";
+import { assertNameNotIdShaped } from "../utils/entity-ref.js";
 import { fileExists } from "../utils/fs.js";
 import { missingCoreFiles } from "./core-files.js";
 import {
@@ -29,6 +35,7 @@ import {
   defaultQueriesYaml,
   defaultStateYaml,
   defaultWorkflowYaml,
+  recoveredProjectsYaml,
 } from "./defaults.js";
 
 export interface InitOptions {
@@ -113,6 +120,12 @@ async function repairLoctt(
   // project by id (P-2), so minting a new one would orphan every task.
   let projectId = opts.projectId;
   let prefix = opts.prefix;
+  // With projects.yaml itself gone, the ids are still named by what
+  // survived — state.yaml's counters and the tasks' `project` field — and
+  // the recreated file must carry those, or every surviving task points
+  // at a project that no longer exists and the next create reissues
+  // `T-1` under a fresh id with no counter (A365).
+  let recovered: readonly RecoveredProject[] = [];
   if (await fileExists(getProjectsConfigPath(locttDir))) {
     try {
       const cfg = await loadProjectsConfig(locttDir);
@@ -125,6 +138,13 @@ async function repairLoctt(
       // Unreadable projects.yaml: fall through to the generated id
       // rather than failing the repair outright.
     }
+  } else {
+    recovered = await recoverProjectIdentities(locttDir);
+    const first = recovered[0];
+    if (first) {
+      projectId = first.id;
+      prefix = first.prefix;
+    }
   }
 
   const writes: [string, string, string][] = [
@@ -136,7 +156,9 @@ async function repairLoctt(
       working_days: [1, 2, 3, 4, 5],
       holidays: [],
     }), "config/calendar.yaml"],
-    [getProjectsConfigPath(locttDir), defaultProjectsYaml(projectId, opts.projectName, prefix), "config/projects.yaml"],
+    [getProjectsConfigPath(locttDir), recovered.length > 1
+      ? recoveredProjectsYaml(recovered)
+      : defaultProjectsYaml(projectId, opts.projectName, prefix), "config/projects.yaml"],
   ];
   for (const [path, content, label] of writes) {
     if (await fileExists(path)) continue;
@@ -154,11 +176,53 @@ async function repairLoctt(
 
   const schemaPath = join(locttDir, ".schema-version");
   if (!(await fileExists(schemaPath))) {
-    await writeFile(schemaPath, `${String(CURRENT_SCHEMA_VERSION)}\n`, "utf-8");
+    // The version was lost with the file, and the tasks that survive may
+    // be from before 0.3.0. Stamping the current format over them would
+    // skip the upgrade that ranks their links. Stamp current only when
+    // the data provably is current (every link ranked, no retired
+    // `ranked` setting); otherwise the first format, so `loctt migrate`
+    // upgrades from there (A366, K154).
+    const stamp = (await isProvablyRanked(locttDir)) ? CURRENT_SCHEMA_VERSION : (knownFormats()[0] ?? CURRENT_SCHEMA_VERSION);
+    await writeFile(schemaPath, `${stamp}\n`, "utf-8");
     created.push(".schema-version");
   }
 
   return { locttDir, created };
+}
+
+interface RecoveredProject {
+  readonly id: string;
+  readonly prefix: string;
+}
+
+/**
+ * The projects the surviving data names, when projects.yaml is gone:
+ * state.yaml's `keys.<id>.prefix` first (its order is the order the
+ * projects were made), then any project id a task holds that state.yaml
+ * does not, with the prefix read off the task's key. Unreadable sources
+ * are skipped: this is a best-effort recovery inside a repair.
+ */
+async function recoverProjectIdentities(locttDir: string): Promise<RecoveredProject[]> {
+  const out = new Map<string, string>();
+  try {
+    const state = await loadState(locttDir);
+    for (const [id, entry] of Object.entries(state.keys)) {
+      if (typeof entry.prefix === "string" && entry.prefix.length > 0) out.set(id, entry.prefix);
+    }
+  } catch {
+    // Absent or unreadable: the tasks may still name the projects.
+  }
+  try {
+    for (const task of await loadAllTasks(locttDir)) {
+      const id = task.frontmatter.project;
+      if (typeof id !== "string" || out.has(id)) continue;
+      const dash = task.frontmatter.key.lastIndexOf("-");
+      if (dash > 0) out.set(id, task.frontmatter.key.slice(0, dash));
+    }
+  } catch {
+    // No readable tasks: nothing more to recover.
+  }
+  return [...out].map(([id, prefix]) => ({ id, prefix }));
 }
 
 /**
@@ -188,6 +252,10 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   if (projectName.length === 0) {
     throw new Error(`project name must be non-empty`);
   }
+  // K148: a name may not look like an ID, on every surface that names a
+  // project, the starting one included.
+  assertNameNotIdShaped(projectName, message =>
+    new LocttError("validation_failed", message, { field: "projectLabel", dataState: "not_saved" }));
 
   // Generate the initial project's id up front so projects.yaml and
   // state.yaml agree on the same ULID.

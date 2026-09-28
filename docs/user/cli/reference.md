@@ -30,10 +30,33 @@ repeats these tables.
   runtime or domain error (validation, I/O, not found, schema mismatch);
   `2` a usage error (bad arguments or flags). Set `LOCTT_DEBUG=1` for
   stack traces.
-- **Schema guard.** Most commands refuse to run against a tracker whose
-  on-disk schema is older than this `loctt` and point you to
-  `loctt migrate`. `init`, `migrate`, `doctor`, `info`, `mcp`, `ui`,
-  `help` and `--version` are exempt.
+- **Format versions and upgrades.** `.loctt/.schema-version` holds the
+  tracker's format version, the `loctt` release that introduced it
+  (`0.3.0`). Upgrading a tracker is always deliberate: on a tracker in an
+  older format every command refuses with `This tracker needs upgrading
+  from 0.1.0 to 0.3.0. Run \`loctt migrate\` (a backup is made first).`
+  (exit 1) and writes nothing, whether or not a step is risky, until you
+  run `loctt migrate`. A tracker in a newer format is refused with `This
+  tracker needs loctt <version> or newer.`; a file holding anything but a
+  format version (including 0.2.x's `1`) is refused, saying what it must
+  hold. A version between two formats stands for the older one (`0.2.1`
+  is format `0.1.0` and is upgraded like it); one below `0.1.0` is not a
+  LocTT format and is refused. `init`, `migrate`, `doctor`, `info`,
+  `help` and `--version` are not refused (`doctor` and `info` report the
+  pending upgrade and write nothing); `mcp` and `ui` start and refuse
+  each request the same way. See [Upgrading](../common/upgrading.md).
+- **Names and IDs.** Wherever a command takes a label, user, milestone,
+  sprint or project, it takes its name or its ID, and so does
+  `--query` (`labels = urgent`). A value shaped like an ID
+  (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`) is an ID; anything else is a name (a
+  project's slug counts as a name, and a user may also be named by a
+  unique prefix). A name several entities share is refused, listing each
+  with its ID (`'urgent' matches 2 labels: urgent (01…), urgent (01…).
+  Use the ID.`); a name that matches nothing is refused (`No label named
+  'nope'.`). Creating or renaming a label, user, milestone, sprint,
+  project or saved view with an ID-shaped name is refused: `That looks
+  like an ID; choose a different name.` Output names entities rather
+  than printing their IDs (`show`, `log`, `sprint burndown`).
 - **Machine-readable output.** `loctt init` accepts `--json` and
   `--quiet`. Elsewhere, use `loctt export --format json` and
   `loctt sprint burndown --format json`.
@@ -55,7 +78,7 @@ no extra flag or step.
 | `--project-label` | text | — | Name of the starting project. |
 | `--timezone` | IANA zone | this machine's zone | Workspace timezone. Decides what "today" means. |
 | `--no-docs` | — | docs written | Skip writing the helper docs into `.loctt/docs/`. |
-| `--repair` | — | off | Restore files missing from an existing `.loctt/` without touching the ones that survive. |
+| `--repair` | — | off | Restore files missing from an existing `.loctt/` without touching the ones that survive. A lost `projects.yaml` is rebuilt with the project ids your tasks and `state.yaml` still use, so no task loses its project; with more than one project, each is named after its prefix until you rename it. |
 | `--json` | — | off | Print a machine-readable summary instead of prose. |
 | `--quiet` | — | off | Suppress the guidance text. Errors still print. |
 
@@ -102,6 +125,15 @@ there is only one.
 `--status`, `--priority`, and `--type` are validated against the
 workflow; an unknown value is an error.
 
+`--parent` accepts the parent's key, a former key, or its id, and links
+exactly as `loctt link <new> parent <parent>` would: the new task stores
+the parent's id, and the parent lists the new task as a child. A parent
+that doesn't exist (`Task not found: "NOPE-99"`) or is archived
+(`Cannot link to archived task T-1. Unarchive it first.`) is refused, and
+nothing is created. (In 0.2.1 and earlier, `--parent` stored the key and left the
+parent without the child link; `loctt doctor --repair-relationships`
+repairs trackers made that way.)
+
 ```bash
 loctt create "Fix login crash" --priority high --type bug --label urgent
 ```
@@ -141,6 +173,12 @@ lists. An empty result prints `No tasks found.`
 Show one task in full: its fields, relationships (with child progress),
 attachments, any health warnings, and its body.
 
+Relationships are listed in the same order as the web task page: kinds
+in `workflow.yaml` order, and within each kind by rank. Every link gets a
+rank when it is written (at the end of its kind's list), so links list in
+the order they were added until you `rerank` them. A link without a rank
+(a hand-edit) is listed after the ranked ones.
+
 The body is printed **verbatim**, with no markdown rendering. Bodies
 written in the web editor may contain LocTT's markdown extensions, which
 therefore appear as their source spelling — `<ins>underlined</ins>`,
@@ -175,11 +213,85 @@ Set one field on a task. `<task>` may be a comma-separated list
 (`WEB-1,WEB-2`) to set the same field on several tasks at once. Enum
 fields (status, priority, type) are validated.
 
+The value is text on the command line and is converted to the field's
+type:
+
+- **`labels`** takes a comma-separated list of label names or IDs and
+  replaces the task's labels: `loctt set WEB-3 labels frontend,urgent`.
+  Use `loctt unset WEB-3 labels` to clear them.
+- **Custom fields** are named by key (`risk`) or as `fields.risk`. A
+  `number` field takes a number (`5`, `2.5`), a `boolean` field takes
+  `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`), and any `multi`
+  field (such as a multi-value enum) takes a comma-separated list
+  (`ios,android`). A value that isn't of the field's type is refused and
+  nothing is written: `risk takes a number, not "high".`
+- **`assignee`, `reporter`, `milestone`, `sprint`** take a name or an ID
+  (see [Names and IDs](#conventions)).
+
+A label or list item containing a comma can't be written this way; use
+the MCP `update_task` tool or the web app.
+
 ```bash
 loctt set WEB-3 status done
 ```
 ```
 Set status = done on WEB-3
+```
+
+#### Adding and removing values: `--add`, `--remove`
+
+```
+loctt set <task>[,<task>...] <field> [--add <value>...] [--remove <value>...] [--create]
+```
+
+For `labels` and any `multi` custom field, `--add` and `--remove` change
+the task's list as it is stored instead of replacing it. Each takes every
+word up to the next flag, may be repeated, and splits on commas like the
+replace form. Labels are named by name or ID; values of a choice field by
+key or label. The task stores label IDs and value keys.
+
+- Adding a value the task already has, or removing one it doesn't, changes
+  nothing: nothing is written and the command prints `No change to
+  <field> on <task>`.
+- A name that matches nothing is refused (`No label named 'x'. Pass
+  --create to create it.`), as is an ambiguous one; nothing is written.
+- `--add`/`--remove` can't be combined with a replace value (usage
+  error, exit 2).
+- Several tasks (`WEB-1,WEB-2`) take the same edit, each on its own list,
+  as one operation reported like the replace form on several tasks: every
+  task that can change does, under one `bulk_op_id`, and a task that
+  already had the values is counted as unchanged
+  (`Updated labels (added urgent) on 3 task(s) (1 already in that
+  state)`). A task that fails (not found, unreadable, a list it can't
+  read) is listed on stderr with its reason, and the command exits 1. An
+  unknown value without `--create` refuses the whole command.
+
+```bash
+loctt set WEB-3 labels --add urgent infra --remove docs
+loctt set MOB-1 platforms --add iOS
+```
+```
+Updated labels on WEB-3: added urgent, infra; removed docs
+Updated platforms on MOB-1: added iOS
+```
+
+#### Creating a value on the fly: `--create`
+
+An unknown label, or an unknown value of a choice field that **allows new
+values** (`loctt custom-field edit <key> --allow-new-values`), is created
+only with `--create`: a label is created as `loctt label create` would; a
+choice value is appended to the field's values with a key made from the
+label (`Windows Phone` → `windows_phone`; `_2`, `_3`… on a clash). A field
+that doesn't allow new values refuses even with `--create`. `--create`
+works with the replace form too (`loctt set WEB-3 area Billing --create`),
+on one task; with `--add` it works on several, creating the value once.
+
+```bash
+loctt set MOB-1 platforms --add "Windows Phone" --create
+```
+```
+Created platforms value Windows Phone (key windows_phone)
+Updated platforms on MOB-1: added Windows Phone
 ```
 
 ### `loctt unset <task> <field>`
@@ -217,7 +329,9 @@ must carry `--expect`.
 
 ### `loctt log <task>`
 
-Show a task's history, newest first.
+Show a task's history, newest first. Statuses, priorities and types
+print by label, and users, labels, milestones, sprints and projects by
+name; a value the tracker can no longer name prints as stored.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -263,6 +377,14 @@ Permanently delete one or more tasks. `<task>` may be a comma-separated
 list (`WEB-9,WEB-10`) to delete several at once, as a single operation.
 Destructive; it prompts for confirmation once for the whole set. To hide
 a task reversibly instead, use [`loctt archive`](#loctt-archive-tasktask--loctt-unarchive-tasktask).
+
+Every task holding a link to a deleted task loses that link in the same
+operation (a link with no edge back included), and its history
+(`loctt log`) records the removal, so no link is left pointing at a task
+that no longer exists. Those links are removed before the task is: if one
+of those tasks can't be written, that task is not deleted, the links
+already removed are put back, and the error says so. With several tasks,
+the others are still deleted and the failures are listed.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -315,8 +437,11 @@ both sides. The relationship type is validated against the workflow.
 `<task>` may be a comma-separated list of sources — each is linked to the
 one `<target>` with the same relationship type, as a single operation
 (reported per source; a bad source is reported without aborting the
-rest). `unlink` still works when the target has been deleted, and takes a
-single source.
+rest). `unlink` takes a single source, and still works when the target
+has been deleted out of band (pass the id the link stores). A link stored
+as a task key rather than an id (for example a key more than one task has
+held, which `loctt doctor` reports) is removed by passing that key:
+`loctt unlink WEB-3 relates_to WEB-9`.
 
 ```bash
 loctt link WEB-3 is_blocked_by WEB-5
@@ -348,7 +473,9 @@ Attached screenshot.png (48213 bytes) to WEB-3
 
 ### `loctt rerank <source> <relationship> <target>`
 
-Reorder a task among its siblings under a relationship.
+Reorder a task among its siblings under a relationship. Every kind of
+relationship is ordered, on either side (`child`, `blocks`,
+`is_blocked_by`, `relates_to`, …); the order is stored on `<source>` only.
 
 | Flag | Value | Description |
 |---|---|---|
@@ -356,7 +483,8 @@ Reorder a task among its siblings under a relationship.
 | `--after` | task | Place after this sibling. |
 
 `--before` and `--after` are mutually exclusive; with neither, the target
-moves to the end.
+moves to the end. The target lands exactly where asked; any sibling
+without a rank is ranked first, in the order it is listed.
 
 ### `loctt board-rerank <task>` · `loctt board-move <task>`
 
@@ -726,7 +854,7 @@ already have. Nothing new to install, no third-party sync service.
 | `disable` | `loctt git disable` | Turn it off. |
 | `status` | `loctt git status` | Show branch, remote, sync state, and pending changes. |
 | `publish` | `loctt git publish [--dry-run]` | Commit and push local state to the branch. `--dry-run` runs preflight only. |
-| `sync` | `loctt git sync` | Fetch and reconcile the branch into your workspace. |
+| `sync` | `loctt git sync` | Fetch and reconcile the branch into your workspace. Links that arrive without a rank are ranked as they are applied; a branch whose `.schema-version` is newer or not a format version is refused. |
 | `reconcile` | `loctt git reconcile <status\|apply\|abandon>` | Inspect, apply, or discard an in-progress reconcile. `apply` reads `--decisions <file.json>`. |
 
 ```bash
@@ -861,13 +989,15 @@ Rules that hold across every family:
 
 ### `loctt relationship`
 
-No `reorder` (relationships have no order).
+No `reorder` (the kinds themselves have no order to set; the links under
+a kind do, see `loctt rerank`). There is no `--ranked` flag: every kind is
+ordered since 0.3.0.
 
 | Subcommand | Usage | Notes |
 | --- | --- | --- |
 | `list` | `loctt relationship list` | |
-| `add` | `loctt relationship add <key> --label <text> [--kind <directional\|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none\|acyclic\|tree>] [--ranked] [--icon <s>] [--color <color>]` | |
-| `edit` | `loctt relationship edit <key> [--label] [--kind] [--inverse] [--inverse-label] [--graph] [--ranked] [--icon <s\|->] [--color <color\|->]` | |
+| `add` | `loctt relationship add <key> --label <text> [--kind <directional\|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none\|acyclic\|tree>] [--icon <s>] [--color <color>]` | |
+| `edit` | `loctt relationship edit <key> [--label] [--kind] [--inverse] [--inverse-label] [--graph] [--icon <s\|->] [--color <color\|->]` | |
 | `rm` | `loctt relationship rm <key> [--remap-to <key>] [--yes]` | |
 
 ### `loctt custom-field`
@@ -880,8 +1010,8 @@ be seeded with at least one value at creation via `--enum-value`
 | Subcommand | Usage | Notes |
 | --- | --- | --- |
 | `list` | `loctt custom-field list` | Fields and their enum values. |
-| `add` | `loctt custom-field add <key> --label <text> --type <string\|number\|date\|boolean\|enum> [--multi] [--searchable] [--task-types a,b] [--enum-value key=label]…` | `--enum-value` required (and only allowed) for `enum`. |
-| `edit` | `loctt custom-field edit <key> [--label] [--searchable[=true\|false]] [--task-types a,b\|-]` | No `--type` / `--multi` (immutable). `--task-types -` clears the scope. |
+| `add` | `loctt custom-field add <key> --label <text> --type <string\|number\|date\|boolean\|enum> [--multi] [--searchable] [--allow-new-values] [--task-types a,b] [--enum-value key=label]…` | `--enum-value` required (and only allowed) for `enum`. `--allow-new-values` (enum only) lets `loctt set … --create`, MCP `create_missing` and the web picker add values. |
+| `edit` | `loctt custom-field edit <key> [--label] [--searchable[=true\|false]] [--allow-new-values[=true\|false]] [--task-types a,b\|-]` | No `--type` / `--multi` (immutable). `--task-types -` clears the scope. `--allow-new-values` is refused on a non-enum field. |
 | `rm` | `loctt custom-field rm <key> [--yes]` | Clear-only. |
 | `value <field> add` | `loctt custom-field value <field> add <key> --label <text> [--icon <s>] [--color <color>]` | Enum values only. |
 | `value <field> edit` | `loctt custom-field value <field> edit <key> [--label] [--icon <s\|->] [--color <color\|->]` | |
@@ -980,9 +1110,9 @@ loctt restore tracker-backup.jsonl --dry-run
 | Command | Synopsis | Description |
 |---|---|---|
 | `info` | `loctt info` | A prose summary of the tracker. Safe to run before `init`. |
-| `doctor` | `loctt doctor [--rebuild-index]` | Run diagnostic checks. `--rebuild-index` rebuilds the key-lookup cache after out-of-band edits. |
+| `doctor` | `loctt doctor [--rebuild-index] [--repair-relationships] [--fix]` | Run diagnostic checks. `--rebuild-index` rebuilds the key-lookup cache after out-of-band edits. `--repair-relationships` repairs links (below). `--fix` runs every safe repair, then reports what is left. |
 | `schema` | `loctt schema` | Print the workflow config: prefix, statuses, priorities, types, relationships, custom fields. |
-| `migrate` | `loctt migrate [--dry-run] [--yes]` | Upgrade the tracker's schema. Backs up `.loctt/` first. |
+| `migrate` | `loctt migrate [--dry-run] [--yes]` | Upgrade the tracker's format, the only way it is upgraded from the terminal. Shows a preview (from → to, each step and what it changes, `[risky]` on a risky step, where the backup goes), then asks `Upgrade this tracker now? [y/N]`. Backs up `.loctt/` first. `--dry-run` shows the preview only. `--yes` skips the question; without a terminal and without `--yes` it refuses naming the flag (exit 2). Prints `This tracker is already at format 0.3.0. Nothing to do.` when current. |
 
 ```bash
 loctt doctor
@@ -995,6 +1125,48 @@ loctt doctor
 
 `doctor` exits `1` if any check is an error; warnings leave the exit code
 at `0`.
+
+`doctor` never writes to an older tracker; its `schema version` check
+says so (`needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a
+backup is made first)`), and any repair you ask for (`--fix`,
+`--rebuild-index`, `--repair-relationships`) is skipped with `skipped.
+This tracker needs upgrading first. Run loctt migrate, then run the
+repair again`. `info` prints `Schema: needs upgrading from 0.1.0 to
+0.3.0. Run \`loctt migrate\` (a backup is made first)`. A `ranked:`
+line left on a relationship in `workflow.yaml` is reported as a warning
+(`workflow.yaml retired settings`): it no longer does anything and can be
+removed.
+
+**Repairing links.** `doctor` reports a link that is stored with a task's
+key instead of its id, a link that only one of its two tasks lists, the
+same link stored twice, and a link with no rank (its place in the list is
+not stored; a hand-edit or a merge from a branch written before 0.3.0). `loctt doctor --repair-relationships` fixes
+them before running the checks, so what it prints afterwards is what is
+left:
+
+- a link stored as a key (or former key) is changed to the task's id;
+- a one-sided link gets its other side, unless that would create a loop,
+  which is reported instead;
+- identical links on one task are merged into one;
+- a link with no rank is ranked at the end of its kind's list, in the
+  order it is listed.
+
+It never removes a link. A link to a task that doesn't exist, to a key
+more than one task has had, or to the task itself stays reported for you
+to fix. Running it again does nothing.
+
+```bash
+loctt doctor --repair-relationships
+```
+```
+  ✓ relationship repair: repaired: 26 key(s) rewritten to ids, 26 missing side(s) added
+  …
+```
+
+**`--fix`** runs every safe repair in one go (the key-index rebuild and
+the relationship repair), then the checks, so you can fix what is left
+by hand. Restoring missing files is not included, because it writes
+default settings in place of yours; run `loctt init --repair` for that.
 
 ---
 

@@ -100,9 +100,9 @@ describe("applyReconcile", () => {
     const w2 = await readTask(locttDir, "w2");
     const w7 = await readTask(locttDir, "w7");
     // WEB-3 now points at WEB-7…
-    expect(w3.frontmatter.relationships).toEqual([{ type: "parent", target: "w7" }]);
+    expect(w3.frontmatter.relationships).toEqual([{ type: "parent", target: "w7", rank: "u" }]);
     // …WEB-7 gained the inverse child edge…
-    expect(w7.frontmatter.relationships).toEqual([{ type: "child", target: "w3" }]);
+    expect(w7.frontmatter.relationships).toEqual([{ type: "child", target: "w3", rank: "u" }]);
     // …and the losing parent WEB-2's child edge is GONE, not dangling.
     expect(w2.frontmatter.relationships ?? []).toEqual([]);
   });

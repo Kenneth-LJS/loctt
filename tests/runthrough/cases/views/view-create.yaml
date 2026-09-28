@@ -1,0 +1,27 @@
+id: view-create
+name: Create a saved view
+description: The view is stored with its ordered simple filters and sort, and it runs.
+tags: [views]
+cli:
+  - views create "Low priority backlog" --filter "priority = low" --filter "status = backlog" --sort updated_at:desc
+  - list --view "Low priority backlog"
+mcp:
+  call:
+    - tool: create_view
+      args:
+        name: Low priority backlog
+        filters:
+          - { kind: simple, field: priority, op: "=", values: [low] }
+          - { kind: simple, field: status, op: "=", values: [backlog] }
+        sort: [{ field: updated_at, direction: desc }]
+    - { tool: list_tasks, args: { view: Low priority backlog } }
+post:
+  - entity:
+      kind: view
+      name: Low priority backlog
+      fields:
+        filters:
+          - { kind: simple, field: priority, op: "=", values: [low] }
+          - { kind: simple, field: status, op: "=", values: [backlog] }
+        sort: [{ field: updated_at, direction: desc }]
+  - output: { keys: ["${task.dark_mode.key}", "${task.theme_tokens.key}", "${task.search_typo.key}", "${task.mob_dark.key}", "${task.mob_tablet.key}", "${task.ops_costs.key}"] }

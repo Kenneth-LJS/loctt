@@ -233,3 +233,351 @@ required, and SECURITY.md linked to a README anchor that did not exist.
 **Given** the security documentation, **when** its checkable claims are
 tested against the running server, **then** each holds.
 
+### ONB-C11 · blocker · P10 · CLI MCP UI
+**A format version is the `loctt` release that introduced it (K142).**
+`.loctt/.schema-version` holds a semver string, not a counter.
+
+- `loctt init` (and web/MCP init) writes this build's format version,
+  `0.3.0`, the release that introduced ordered links.
+- Versions compare as semver: `0.10.0` is newer than `0.3.0`.
+- No pre-release tags: `0.3.0-rc.1` is not a format version.
+- Upgrade steps are keyed by semver from/to (the first is 0.1.0 → 0.3.0).
+- `loctt info`, doctor, `loctt migrate`, MCP `migrate_schema`, the web
+  Upgrade screen and the backup header print format versions as written
+  (`0.1.0`), never `v1`.
+  → `packages/core/src/schema/version.test.ts`, `migrations.test.ts`,
+  `init/init.test.ts`, `tests/integration/cli/info-schema.test.ts`
+
+**Given** a fresh `loctt init`, **when** `.loctt/.schema-version` is
+read, **then** it holds `0.3.0`.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. This case only renames the web surface it lists (the Upgrade screen
+> replaced the schema banner for an older tracker).
+
+### ONB-C12 · blocker · P4 P7 · CLI MCP UI
+**A tracker the code cannot read is refused with what to do.** K142.
+
+- A tracker newer than the code is refused with "This tracker needs
+  loctt <its version> or newer." on every surface (CLI exit 1, MCP
+  `isError`, web 409 `schema_mismatch` with no command).
+- `.schema-version` holding anything that is not a format version —
+  the old `1`, garbage, or nothing — is refused with a message that
+  says what the file must contain ("must hold a format version such as
+  0.3.0 (three whole numbers separated by dots)"). For `1` the remedy
+  says to write `0.1.0` (a tracker made by loctt 0.2.x or earlier), then
+  run `loctt migrate`. There is no compatibility for `1` (Ken edits his
+  trackers by hand).
+- Nothing is written and no backup is made when refused.
+- A backup file recording a newer format is refused the same way; one
+  recording an older format (or 0.2.x's integer) is refused by name.
+- A git branch published in a newer format is refused on sync/publish,
+  naming the release to install; one holding 0.2.x's integer `1` is
+  refused with how to fix the branch (K151).
+  → `tests/integration/cli/format-upgrade.test.ts`,
+  `packages/core/src/schema/upgrade-0.3.0.test.ts`,
+  `backup/format.test.ts`, `git/schema-remote-newer.test.ts`,
+  `apps/web/src/server/schema-guard.test.ts`
+
+**Given** `.schema-version` = `9.9.9`, **when** any command runs,
+**then** it says "This tracker needs loctt 9.9.9 or newer." and writes
+nothing.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. Here: the remedy for `1`/garbage said "The next command upgrades the
+> tracker from there"; it now names `loctt migrate` as the step after
+> writing the file.
+
+### ONB-C13 · blocker · P1 P4 P10 · CLI MCP UI
+**An older tracker is refused on every surface until the user upgrades
+it on purpose.** K154.
+
+- Every CLI command (except the guard-exempt `init`, `migrate`,
+  `doctor`, `info`, help), every MCP tool (except `init`,
+  `migrate_schema`, `info`, `doctor`) and every web API route (except
+  `/api/init` and the two migrate routes) on an older tracker is refused
+  with "This tracker needs upgrading from <from> to <to>. Run `loctt
+  migrate` (a backup is made first)." (CLI exit 1 on stderr, MCP
+  `isError` text, web 409 `schema_mismatch` with kind `outdated`, both
+  versions, and the `loctt migrate` command). `<from>` is the version
+  as written (`0.2.1` stays `0.2.1`).
+- Nothing is written and no backup is made: the tracker's files are
+  byte-for-byte what they were.
+- A risky step does not change the trigger: every upgrade waits for the
+  user. Risk is shown in the preview (`[risky]`, `[RISKY]`, a Risky tag).
+- The upgrade runs only through `loctt migrate` (ONB-C21), MCP
+  `migrate_schema` with `confirm: true` (ONB-C22), or the web Upgrade
+  button (ONB-C17), each backing up `.loctt/` to a sibling
+  `.loctt.backup-v<from>-…` first, with the crash sentinel around each
+  step. The refused command then runs.
+  → `tests/integration/cli/format-upgrade.test.ts`,
+  `tests/integration/mcp/migrate.test.ts`, `apps/mcp/src/mcp.test.ts`,
+  `apps/cli/src/commands/migrate.test.ts`,
+  `apps/web/src/server/schema-guard.test.ts`,
+  `packages/core/src/schema/upgrade-0.3.0.test.ts`, runthrough
+  `upgrade/upgrade-intentional`
+
+**Given** a tracker at 0.1.0, **when** `loctt list` runs, **then** it
+exits 1 with "This tracker needs upgrading from 0.1.0 to 0.3.0. Run
+`loctt migrate` (a backup is made first)." and no file changes.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. This case was "An upgrade with no risky step runs automatically on
+> first use", with the one-line notice on each surface.
+
+### ONB-C14 · blocker · P1 P7 · CLI MCP UI
+**An upgrade that crashes part-way stops every surface until it is
+recovered.**
+
+- A throw inside a step leaves `.schema-migration-in-progress` naming
+  the step's from/to and the backup; the version is not advanced past
+  the last completed step.
+- The next start on any surface refuses with the recovery message
+  (restore from the named backup, remove the sentinel), and does not
+  re-run the upgrade.
+- While another process's upgrade holds the migration lock, its
+  sentinel is live, not a crash: a command says "This tracker is being
+  upgraded by another loctt process." and to wait.
+  → `packages/core/src/schema/upgrade-0.3.0.test.ts` (injected throw,
+  the held lock), `tests/integration/cli/format-upgrade.test.ts`
+
+**Given** an upgrade whose step throws, **when** any command runs next,
+**then** it refuses with "A schema migration was interrupted mid-run."
+and the restore instructions.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. Here: the upgrade that crashes is one the user started (`loctt
+> migrate`, `migrate_schema`, the Upgrade button), not a first use; the
+> live-lock bullet replaces K143's "the second opener waits".
+
+### ONB-C15 · major · P7 · CLI MCP UI
+**A retired `ranked` setting never breaks loading.** K143 removed
+`ranked` from the relationship schema.
+
+- A `ranked:` line on a relationship in `workflow.yaml` is dropped on
+  read: the kind loads and is not reported broken.
+- `loctt doctor` reports it as a warning ("'ranked' on <kind> no longer
+  does anything: every link is ordered since loctt 0.3.0. Remove that
+  line").
+- The 0.1.0 → 0.3.0 upgrade removes the lines, keeping the rest of the
+  file (comments included); any later write of `workflow.yaml` drops them.
+- `loctt relationship add/edit` no longer take `--ranked`, MCP
+  `edit_workflow_entity` no longer reads `fields.ranked`, and the
+  settings UI has no ranked control.
+  → `packages/core/src/config/retired-keys.test.ts`
+
+**Given** `ranked: true` on `blocks`, **when** doctor runs, **then** it
+warns naming `blocks`, and every surface still loads the kind.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. Unchanged in substance: the upgrade that removes the lines is the one
+> the user runs.
+
+### ONB-C16 · major · P1 · CLI MCP UI
+**Two upgrades started at once upgrade the tracker once.**
+
+- Under the migration lock, one upgrades; the other finds the tracker
+  current ("already at format 0.3.0. Nothing to do.") or, if it looks
+  while the first holds the lock, says the tracker is being upgraded by
+  another loctt process. Neither runs a step twice or reads the live
+  sentinel as a crash.
+- Exactly one backup is made.
+  → `packages/core/src/schema/upgrade-0.3.0.test.ts`,
+  `tests/integration/cli/format-upgrade.test.ts` (two `loctt migrate
+  --yes`)
+
+**Given** a 0.1.0 tracker, **when** two `loctt migrate --yes` start at
+once, **then** exactly one prints "Upgraded this tracker from 0.1.0 to
+0.3.0." and one backup exists.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. This case was "Two processes opening an old tracker at once upgrade
+> it once" (any two commands, the second waiting up to 60 s).
+
+### ONB-C17 · major · P4 · UI
+**The web shows an Upgrade screen, and only that, until the user
+upgrades.** K154 (Ken: *"get ui agent to design banner if needed"*).
+
+- On an older tracker the app renders the Upgrade screen in place of
+  the shell: a brand bar and one centered panel (`role="alert"`), no
+  sidebar, no routed page. Every API route refuses the tracker, so
+  nothing else could work.
+- The panel says "This tracker needs upgrading from <from> to <to>."
+  and "A backup is made first.", lists the steps in plain words in a
+  collapsed disclosure (a risky step tagged Risky), and has one primary
+  **Upgrade** button, focused on load, at least 24px tall. No em dashes.
+  It names no CLI command (the button is the web's remedy).
+- Upgrade POSTs `/api/migrate` once, even on a same-tick double click
+  (A333), shows the spinner while it runs, and reloads the app on
+  success.
+- A failure after the backup says the upgrade didn't finish, that the
+  tracker may be partly upgraded, and shows the backup path to restore
+  from, with Reload (not Upgrade). A refusal before anything ran says
+  why and "Nothing was changed.", and Upgrade stays.
+- Tokens only, so it works in both themes.
+  → `apps/web/src/client/shell/UpgradeRequired.test.tsx`,
+  `AppBootstrap.test.tsx`, `tests/ui/flow-schema-mismatch.spec.ts`
+
+**Given** a 0.1.0 tracker, **when** `loctt ui` opens it, **then** only
+the Upgrade screen shows, and clicking Upgrade loads the app with every
+link in the order 0.1.0 showed it.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. This case was "The web says it upgraded the tracker, once": a
+> dismissable `role="status"` notice after the server upgraded on the
+> first request (`/api/info.completedUpgrade`, now removed).
+
+### ONB-C18 · blocker · P1 · CLI MCP UI
+**The 0.1.0 → 0.3.0 step ranks every link in the order it was shown.**
+Not marked risky.
+
+- After the step every link has a rank, and each task's group of each
+  type lists (by rank) exactly as 0.1.0 showed it: a kind set `ranked:
+  true` by rank then unranked in stored order; any other kind in stored
+  order, ignoring stale ranks.
+- Only `relationships` changes (no `updated_at`, no history entry); a
+  task that cannot be read, or whose `relationships` cannot, is left.
+- Running it again changes nothing, and the result is doctor-clean.
+- The preview describes it in plain words: "Save the order of every
+  task's links" and what changes.
+  → `packages/core/src/schema/upgrade-0.3.0.test.ts` (frozen seed),
+  `schema/steps/rank-every-link.test.ts`, runthrough
+  `upgrade/upgrade-intentional`
+
+**Given** the frozen 0.1.0 seed, **when** it is upgraded, **then** every
+group lists as before, and a second run writes nothing.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. Here: "Not risky (K143)" meant it ran automatically; risk now only
+> marks a step in the preview.
+
+### ONB-C19 · blocker · P10 · CLI
+**The installed package refuses an old tracker until `loctt migrate
+--yes`, and refuses a newer one.**
+
+- The `loctt` installed from the packed tarball refuses a 0.1.0 tracker
+  with the upgrade message, exit 1, writing nothing; `loctt migrate
+  --yes` upgrades it (one backup), and the refused command then runs.
+- It refuses a tracker at 9.9.9 with "This tracker needs loctt 9.9.9 or
+  newer."
+  → `tests/packaging/install.test.ts` (`npm run test:packaging`)
+
+**Given** the installed package, **when** it opens a 0.1.0 tracker and a
+9.9.9 one, **then** the first is refused until `loctt migrate --yes`
+and the second refused.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
+> upgrade, telling the orchestrator not to follow the K143-era cases
+> blindly: *"these stories are ai-created so i wouldnt completely treat
+> is source of truth"*. On MCP a background agent would change the data
+> format without the user seeing it, and on a git-shared tracker whoever
+> runs the new version first forces everyone else to upgrade. Upgrades
+> are now intentional on every surface. This case was "The installed package upgrades an old tracker" on
+> first use, printing the line.
+
+### ONB-C20 · blocker · P1 P4 · CLI MCP UI
+**Doctor and info are read-only on every surface and say an upgrade is
+needed.** K154.
+
+- CLI `loctt info` / `loctt doctor`, MCP `info` / `doctor`, and web
+  `/api/info` / `/api/doctor` never write to an older tracker, repairs
+  requested or not.
+- CLI and MCP info print "Schema: needs upgrading from <from> to <to>.
+  Run `loctt migrate` (a backup is made first)". Doctor's schema check
+  is an error: "needs upgrading from <from> to <to>. Run loctt migrate
+  (a backup is made first)". On the web both routes answer the guard's
+  409 (kind `outdated`, the same message).
+- Every requested repair (`--fix`, `--rebuild-index`,
+  `--repair-relationships`; MCP `fix`, `rebuild_index`,
+  `repair_relationships`, `restore_missing`) is skipped with "skipped.
+  This tracker needs upgrading first. Run loctt migrate, then run the
+  repair again".
+  → `packages/core/src/schema/upgrade-0.3.0.test.ts`,
+  `apps/cli/src/commands/migrate.test.ts`, `apps/mcp/src/mcp.test.ts`,
+  `apps/web/src/server/schema-guard.test.ts`,
+  `tests/integration/cli/format-upgrade.test.ts`
+
+**Given** a 0.1.0 tracker, **when** `loctt doctor --fix` runs, **then**
+it reports the upgrade, skips the repairs saying why, and no file
+changes.
+
+### ONB-C21 · blocker · P1 P4 · CLI
+**`loctt migrate` previews, then asks.** K154.
+
+- It prints "This tracker needs upgrading from <from> to <to>.", each
+  step (from → to, a one-line description, what it changes in plain
+  words, `[risky]` on a risky step) and where the backup goes
+  (`<.loctt>.backup-v<from>-<date and time>`), then asks "Upgrade this
+  tracker now? [y/N]".
+- `y` upgrades and says "Upgraded this tracker from <from> to <to>."
+  with the backup path. Anything else: "Not upgraded. Nothing was
+  changed.", exit 0.
+- `--dry-run` prints the preview only: no prompt, nothing changed.
+- `--yes` skips the prompt.
+- Not at a terminal and no `--yes`: refused naming the flag ("Pass
+  --yes"), exit 2, nothing changed.
+- On a current tracker: "already at format 0.3.0. Nothing to do."
+  → `apps/cli/src/commands/migrate.test.ts`,
+  `tests/integration/cli/format-upgrade.test.ts`
+
+**Given** a 0.1.0 tracker and a script, **when** it runs `loctt
+migrate` without `--yes`, **then** it exits 2 naming `--yes` and the
+tracker is unchanged.
+
+### ONB-C22 · blocker · P1 · MCP
+**Agents ask the user before upgrading.** K154.
+
+- `migrate_schema`'s description and the server instructions
+  (`MCP_INSTRUCTIONS`) both say "Don't call migrate_schema unless the
+  user asked you to upgrade the tracker. Tell the user it needs
+  upgrading and ask."
+- `migrate_schema` keeps preview (`confirm` false or omitted: from → to,
+  each step and what it changes, `[RISKY]`, the backup location, and
+  "Show the user this plan") and apply (`confirm: true`: "Upgraded this
+  tracker from <from> to <to>." and the backup path). The preview writes
+  nothing.
+  → `apps/mcp/src/mcp.test.ts`, `tests/integration/mcp/migrate.test.ts`
+
+**Given** an agent connected to an older tracker, **when** it reads the
+tools, **then** the ask-first rule is in `migrate_schema` and in the
+server instructions.

@@ -187,10 +187,10 @@ export type { ValidationError } from "./config/validation.js";
 export { WorkflowConfigError } from "./config/workflow.js";
 export { formatIfZodError } from "./config/zod-error.js";
 export type { SchemaStatus, TrackerInfo } from "./diagnostics/index.js";
-export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
+export type { CheckStatus, DiagnosticCheck, DiagnosticFix, DoctorOptions } from "./diagnostics/index.js";
 export type { IntegrityFinding, IntegritySeverity, IntegritySummary } from "./diagnostics/index.js";
-export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
-export { blockingFindings, checkDataIntegrity, computeIntegritySummary, runDoctor, runDoctorStream } from "./diagnostics/index.js";
+export { computeSchemaStatus, describeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
+export { blockingFindings, checkDataIntegrity, computeIntegritySummary, describeRelationshipRepair, runDoctor, runDoctorStream, SAFE_FIXES } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
 export type { AppliedRekey, EnableGitOptions, EnableGitResult, FetchResult, FsProbe, FsProbeResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, MalformedSyncedTask, PreflightReport, PushResult, SyncFsAdvisory, SyncFsClass, SyncOutcome, SyncProgress } from "./git/index.js";
@@ -359,11 +359,13 @@ export { dslAtom, queryNodeToDsl } from "./query/index.js";
 // K102: a saved view stores an ordered filter list; these turn it into
 // something runnable (an in-memory AST), readable (a display summary),
 // or scannable, and normalize it for storage (spacing only).
+export type { EntityDirectory } from "./query/index.js";
 export { FilterError, filtersToNode, filtersToScannableText, filtersToSummary, filterToNode, filterToSummary, normalizeFilter, normalizeFilters } from "./query/index.js";
 export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
-export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, loadCommentMentions, queryReferencesCommentMentions, resolveCommentMentionsContext, resolveView } from "./query/index.js";
+export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, loadCommentMentions, queryReferencesCommentMentions, resolveCommentMentionsContext, resolveEntityNamesContext, resolveView } from "./query/index.js";
+export { loadEntityDirectory } from "./query/index.js";
 export type { BoardMoveOptions, BoardMoveResult } from "./rank/index.js";
 export type {
   ReorderBoardRankOptions,
@@ -383,8 +385,10 @@ export {
 export type { Migration, MigrationPlan, MigrationResult } from "./schema/index.js";
 export {
   backupLocttDir,
+  compareFormatVersions,
   CURRENT_SCHEMA_VERSION,
   findMigrationPath,
+  isFormatVersion,
   isMigrationLocked,
   listMigrations,
   migrateToCurrent,
@@ -393,7 +397,9 @@ export {
   requireSupportedSchema,
   SchemaTooNewError,
   SchemaUnmigratableError,
+  SchemaUpgradeRequiredError,
   SchemaVersionError,
+  upgradeRequiredMessage,
   withMigrationLock,
   writeSchemaVersion,
 } from "./schema/index.js";
@@ -452,6 +458,7 @@ export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./task/ind
 export type { ExportOptions } from "./task/index.js";
 export type { ReadHistoryOptions, ReadHistoryPage } from "./task/index.js";
 export type { SetFieldOptions, SetFieldsEntry, SetFieldsOptions } from "./task/index.js";
+export type { CreatedValue, EditTaskFieldsOptions, EditTaskFieldsResult, ListEdit } from "./task/index.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
 export type {
   BulkMoveTaskOptions,
@@ -462,6 +469,7 @@ export type {
 export type { MilestoneProgressOptions, MilestoneProgressResult, Progress, ProgressReport, ProgressUnavailable } from "./task/index.js";
 export type { BodyWriteOptions } from "./task/index.js";
 export type { CommentsPage } from "./task/index.js";
+export { bulkEditTaskFields, editTaskFields, UnknownFieldValueError } from "./task/index.js";
 export {
   buildMentionResolver,
   CommentError,
@@ -525,6 +533,17 @@ export {
   tallyStatusCategories,
 } from "./task/index.js";
 export { bodyToken, StaleBodyWriteError } from "./task/io.js";
+export type { OrderableEdge, RelationshipSide } from "./task/relationship-order.js";
+export { compareRankedEdges, orderRelationships, relationshipSides } from "./task/relationship-order.js";
+export type {
+  RelationshipInverseAdded,
+  RelationshipMerge,
+  RelationshipRefusal,
+  RelationshipRepairPlan,
+  RelationshipRewrite,
+  RelationshipUnresolved,
+} from "./task/relationship-repair.js";
+export { planRelationshipRepair, planRelationshipRepairOnDisk, repairActionCount, repairRelationships } from "./task/relationship-repair.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
 export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";

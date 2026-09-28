@@ -36,9 +36,15 @@ describe("CLI delete edge cases (spawned binary)", () => {
     });
   });
 
-  it("deleting a link target leaves a dangling edge on the source", async () => {
-    // Documents actual behavior: source's frontmatter still references the
-    // deleted target's ULID, and `show` renders it as `(deleted)`.
+  /**
+   * @verifies REL-C8
+   *
+   * K147 (G4). This test used to assert the bug: it documented that the
+   * source kept an edge to the deleted task and that `show` printed it as
+   * `(deleted)`. Delete now removes the partner's side of every link in
+   * the same operation and records it in the partner's history.
+   */
+  it("deleting a link target removes the source's edge and logs it there", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "first"], { cwd: root });
       await runCli(["create", "second"], { cwd: root });
@@ -49,9 +55,14 @@ describe("CLI delete edge cases (spawned binary)", () => {
 
       const show = await runCli(["show", "T-1"], { cwd: root });
       expect(show.exitCode).toBe(0);
-      expect(show.stdout).toContain("Relationships:");
-      expect(show.stdout).toContain("blocks");
-      expect(show.stdout).toContain("(deleted)");
+      expect(show.stdout).not.toContain("Relationships:");
+      expect(show.stdout).not.toContain("(deleted)");
+
+      const log = await runCli(["log", "T-1"], { cwd: root });
+      expect(log.stdout).toMatch(/link removed: blocks → 01[0-9A-Z]{24}/);
+
+      const doctor = await runCli(["doctor"], { cwd: root });
+      expect(doctor.stdout).not.toMatch(/relationships: \d+ issue/);
     });
   });
 });

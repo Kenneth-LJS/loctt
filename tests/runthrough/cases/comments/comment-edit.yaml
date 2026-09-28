@@ -1,0 +1,11 @@
+id: comment-edit
+name: Edit a comment
+description: The body is replaced and the comment is marked edited; the id is kept.
+tags: [comments]
+cli: comment-edit ${task.login_crash.key} ${comment.login_reply.id} "Fixed in review; will ship with the next release."
+mcp:
+  call: { tool: edit_comment, args: { ref: "${task.login_crash.key}", comment_id: "${comment.login_reply.id}", body: "Fixed in review; will ship with the next release." } }
+post:
+  - comment: { task: "${task.login_crash.key}", id: "${comment.login_reply.id}", contains: will ship with the next release, edited: true }
+  - comment: { task: "${task.login_crash.key}", id: "${comment.login_repro.id}", edited: false }
+  - comment_count: { task: "${task.login_crash.key}", equals: 2 }

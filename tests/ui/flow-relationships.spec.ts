@@ -524,21 +524,20 @@ test("REL-5: a structural kind renders as a tree with visible depth, collapsibly
 });
 
 // @verifies REL-6
-test("REL-6: only a ranked kind shows drag handles", async ({ page, tracker }) => {
+test("REL-6: every configured kind shows drag handles, relates_to included (K143)", async ({ page, tracker }) => {
   const [root, a, r] = await tracker.seed([{ title: "Root" }, { title: "A" }, { title: "R" }]);
   await tracker.run(["link", root ?? "", "blocks", a ?? ""]);
   await tracker.run(["link", root ?? "", "relates_to", r ?? ""]);
 
   await openTask(page, tracker, root ?? "");
-  // `blocks` is `ranked: true` in the shipped workflow; `relates_to` is
-  // not. One handle, and it is in the ranked group.
+  // `relates_to` had no `ranked: true` before K143 and showed no handle;
+  // every kind is ordered now, so both groups have one.
   await expect(page.locator('[data-group="blocks"] [data-testid="drag-handle"]')).toHaveCount(1);
-  await expect(page.locator('[data-group="relates_to"] [data-testid="drag-handle"]')).toHaveCount(0);
-  // The flag the render turns on is on the group itself, so a change
-  // that dropped handles everywhere is distinguishable from one that
-  // dropped the ranked flag.
+  await expect(page.locator('[data-group="relates_to"] [data-testid="drag-handle"]')).toHaveCount(1);
   await expect(page.locator('[data-group="blocks"]')).toHaveAttribute("data-ranked", "true");
-  await expect(page.locator('[data-group="relates_to"]')).toHaveAttribute("data-ranked", "false");
+  await expect(page.locator('[data-group="relates_to"]')).toHaveAttribute("data-ranked", "true");
+  // Every link was ranked when written.
+  for (const e of await edgesOf(tracker.root, root ?? "")) expect(e.rank).toBeDefined();
 });
 
 // @verifies REL-7
@@ -631,14 +630,17 @@ test("REL-9: adding a link writes the inverse edge on the other task, and both g
   await expect(groupRows(page, "blocks")).toHaveCount(1);
 
   // The far end, off disk. T-1 gains the forward edge...
+  // K143: every link written since 0.3.0 carries a rank, and the first
+  // link in an empty group takes the initial rank "u" (lexorank INITIAL).
+  // This assertion said `rank: undefined` before K143.
   expect(await edgesOf(tracker.root, t1 ?? "")).toEqual([
-    { type: "blocks", target: id2, rank: undefined },
+    { type: "blocks", target: id2, rank: "u" },
   ]);
   // ...and T-2 gains the inverse without the user touching it. This is
   // the assertion the case is actually about, and no amount of panel
   // repainting can satisfy it.
   expect(await edgesOf(tracker.root, t2 ?? "")).toEqual([
-    { type: "is_blocked_by", target: id1, rank: undefined },
+    { type: "is_blocked_by", target: id1, rank: "u" },
   ]);
 
   // Both tasks' `updated_at` advance.
@@ -829,6 +831,8 @@ test("REL-13: a reorder rewrites only the moved edge's rank, and the new rank so
   expect(before.every(e => e.rank !== undefined)).toBe(true);
   const rankOf = (edges: StoredEdge[], id: string): string | undefined =>
     edges.find(e => e.target === id)?.rank;
+  // The moved target's inverse edge, before (ranked when linked, K143).
+  const dInverseBefore = (await edgesOf(tracker.root, d ?? "")).map(e => e.rank);
 
   const ids = {
     a: await taskId(tracker.root, a ?? ""),
@@ -874,7 +878,7 @@ test("REL-13: a reorder rewrites only the moved edge's rank, and the new rank so
 
   // The reorder writes the source task only — the targets' inverse
   // edges are not re-ranked.
-  expect((await edgesOf(tracker.root, d ?? "")).map(e => e.rank)).toEqual([undefined]);
+  expect((await edgesOf(tracker.root, d ?? "")).map(e => e.rank)).toEqual(dInverseBefore);
 
   // And it survives a reload: the order is on disk, not in the tab.
   await page.reload();
@@ -951,8 +955,9 @@ test("REL-14: reordering into first and last position works, and renumbers no ot
   }
 
   // The reorder writes the source only — the targets' inverse edges are
-  // untouched (they carry no rank).
-  expect((await edgesOf(tracker.root, a ?? "")).map(e => e.rank)).toEqual([undefined]);
+  // untouched: A's is_blocked_by still has the rank it was linked with
+  // (K143: the first of its group).
+  expect((await edgesOf(tracker.root, a ?? "")).map(e => e.rank)).toEqual(["u"]);
 
   // On disk, not in the tab: a reload shows the same first and last.
   await page.reload();
@@ -1111,8 +1116,10 @@ test("REL-24: a dangling target renders as a broken row offering removal, distur
   await tracker.run(["link", root ?? "", "blocks", doomed ?? ""]);
   const goneId = await taskId(tracker.root, doomed ?? "");
 
-  // Deleted out of band, leaving the edge on root pointing at nothing.
-  await tracker.run(["delete", doomed ?? "", "--yes"]);
+  // Deleted out of band (a hand delete or a pull), leaving the edge on
+  // root pointing at nothing. Not `loctt delete`: that removes root's
+  // edge too (K147).
+  await rm(await taskDir(tracker.root, doomed ?? ""), { recursive: true, force: true });
 
   await openTask(page, tracker, root ?? "");
 
@@ -1210,11 +1217,15 @@ test("REL-27: a one-sided legacy edge renders on the side that has it, and re-ad
   await expect(page.getByTestId("link-picker")).toHaveCount(0);
   await expect(page.getByTestId("link-error")).toHaveCount(0);
 
+  // The hand-written forward edge is left as it was (re-adding an
+  // existing edge does not rewrite it), while the inverse the add fills
+  // in is a new link and so is ranked, "u" in its empty group (K143;
+  // this said `rank: undefined` before K143).
   expect(await edgesOf(tracker.root, t1 ?? "")).toEqual([
     { type: "blocks", target: id2, rank: undefined },
   ]);
   expect(await edgesOf(tracker.root, t2 ?? "")).toEqual([
-    { type: "is_blocked_by", target: id1, rank: undefined },
+    { type: "is_blocked_by", target: id1, rank: "u" },
   ]);
 });
 
@@ -1432,12 +1443,16 @@ test("REL-32: two tabs reordering the same ranked group converge, and the loser 
 });
 
 // @verifies REL-34
-test("REL-34: a ranked group with no ranks orders by array order, and dragging one assigns it a rank", async ({ page, tracker }) => {
+test("REL-34: a group whose links have no rank (a hand-edit) orders by array order, and dragging one ranks it", async ({ page, tracker }) => {
   const [root, a, b, c] = await tracker.seed([
     { title: "Root" }, { title: "A" }, { title: "B" }, { title: "C" },
   ]);
-  // Linked but never reordered, so no edge carries a rank.
   for (const t of [a, b, c]) await tracker.run(["link", root ?? "", "blocks", t ?? ""]);
+  // K143: every write ranks a link, so a group with no ranks is a
+  // hand-edit (or a merge from an old branch). Strip them by hand.
+  const rootId = await taskId(tracker.root, root ?? "");
+  const file = path.join(tracker.root, ".loctt", "tasks", rootId, "task.md");
+  await writeFile(file, (await readFile(file, "utf8")).replace(/^\s+rank: .*\n/gm, ""), "utf8");
   const before = await edgesOf(tracker.root, root ?? "");
   expect(before.every(e => e.rank === undefined)).toBe(true);
 
@@ -1453,66 +1468,42 @@ test("REL-34: a ranked group with no ranks orders by array order, and dragging o
   await expect(groupRows(page, "blocks").nth(1)).toHaveAttribute("data-target", ids.b);
   await expect(groupRows(page, "blocks").nth(2)).toHaveAttribute("data-target", ids.c);
 
-  // Dragging one assigns it a rank; it moves to the front of the
-  // ranked segment and the unranked rows stay below.
+  // Dragging C above B lands it exactly there. The reorder first ranks
+  // the siblings in the order they are listed (K143), so placement is
+  // exact rather than "ranked first, unranked below".
   await moveUp(page, "blocks", ids.c, 1);
 
-  await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", ids.c);
-  const after = await edgesOf(tracker.root, root ?? "");
-  expect(after.find(e => e.target === ids.c)?.rank).toBeDefined();
-  // The others were not given ranks as a side effect.
-  expect(after.find(e => e.target === ids.a)?.rank).toBeUndefined();
-  expect(after.find(e => e.target === ids.b)?.rank).toBeUndefined();
-  // And they remain below, in array order.
-  await expect(groupRows(page, "blocks").nth(1)).toHaveAttribute("data-target", ids.a);
+  await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", ids.a);
+  await expect(groupRows(page, "blocks").nth(1)).toHaveAttribute("data-target", ids.c);
   await expect(groupRows(page, "blocks").nth(2)).toHaveAttribute("data-target", ids.b);
+  const after = await edgesOf(tracker.root, root ?? "");
+  expect(after.every(e => e.rank !== undefined)).toBe(true);
 });
 
 // @verifies REL-33
-test("REL-33: a kind switched to ranked:false loses its handles on refresh, keeping the ranks already stored", async ({ page, tracker }) => {
+test("REL-33: a `ranked: false` left in workflow.yaml is ignored: handles stay and a reorder lands (K143)", async ({ page, tracker }) => {
   const [root, a, b] = await tracker.seed([{ title: "Root" }, { title: "A" }, { title: "B" }]);
   await tracker.run(["link", root ?? "", "blocks", a ?? ""]);
   await tracker.run(["link", root ?? "", "blocks", b ?? ""]);
-  await tracker.run(["rerank", root ?? "", "blocks", a ?? ""]);
-  await tracker.run(["rerank", root ?? "", "blocks", b ?? ""]);
   const before = await edgesOf(tracker.root, root ?? "");
   expect(before.every(e => e.rank !== undefined)).toBe(true);
 
-  await openTask(page, tracker, root ?? "");
-  // Positive baseline: with `ranked: true` the handles are there, so
-  // the absence asserted below is a change rather than a constant.
-  await expect(page.locator('[data-group="blocks"] [data-testid="drag-handle"]')).toHaveCount(2);
-  await expect(page.locator('[data-group="blocks"]')).toHaveAttribute("data-ranked", "true");
-
-  // Another process rewrites the config mid-session.
+  // Another process (or an old habit) writes the retired setting.
   const wf = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
   const text = await readFile(wf, "utf8");
-  await writeFile(
-    wf,
-    text.replace(
-      /(- key: blocks\n(?:.*\n)*?\s+)ranked: true/,
-      "$1ranked: false",
-    ),
-    "utf8",
-  );
-  // The rewrite hit `blocks` and only `blocks`. A bare
-  // `toContain("ranked: false")` would pass if the regex had matched
-  // `parent` instead, and the assertions below would then be about the
-  // wrong kind.
-  const rewritten = await readFile(wf, "utf8");
-  expect(/- key: blocks\n(?:.*\n)*?\s+ranked: false/.test(rewritten)).toBe(true);
-  expect(/- key: parent\n(?:.*\n)*?\s+ranked: true/.test(rewritten)).toBe(true);
+  const rewritten = text.replace(/(- key: blocks\n)/, "$1    ranked: false\n");
+  expect(rewritten).not.toBe(text);
+  await writeFile(wf, rewritten, "utf8");
 
-  // Drag handles disappear on the next refresh.
+  await openTask(page, tracker, root ?? "");
+  await expect(page.locator('[data-group="blocks"]')).toHaveAttribute("data-ranked", "true");
+  await expect(page.locator('[data-group="blocks"] [data-testid="drag-handle"]')).toHaveCount(2);
+
+  const ids = { a: await taskId(tracker.root, a ?? ""), b: await taskId(tracker.root, b ?? "") };
+  await moveUp(page, "blocks", ids.b, 1);
+  await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", ids.b);
   await page.reload();
-  await expect(page.locator('[data-group="blocks"]')).toHaveAttribute("data-ranked", "false");
-  await expect(page.locator('[data-group="blocks"] [data-testid="drag-handle"]')).toHaveCount(0);
-  // The rows are still there — the group did not vanish with its
-  // handles, which is what pairs this absence with a positive claim.
-  await expect(groupRows(page, "blocks")).toHaveCount(2);
-
-  // Existing `rank` values on the edges are not stripped by the change.
-  expect(await edgesOf(tracker.root, root ?? "")).toEqual(before);
+  await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", ids.b);
 });
 
 /* ------------------------------------------------------------------ *
@@ -1579,9 +1570,10 @@ test("REL-42: a failed inverse write is reported, and the panel shows the forwar
   await expect(err).toContainText("Add the link again");
 
   // The far end: the forward edge really is on disk and the inverse
-  // really is not. This is the half the case is about.
+  // really is not. This is the half the case is about. The forward edge
+  // is ranked like every new link (K143; `rank: undefined` before it).
   expect(await edgesOf(tracker.root, t1 ?? "")).toEqual([
-    { type: "blocks", target: id2, rank: undefined },
+    { type: "blocks", target: id2, rank: "u" },
   ]);
   expect(await edgesOf(tracker.root, t2 ?? "")).toEqual([]);
 

@@ -1,0 +1,11 @@
+id: attachment-remove
+name: Remove an attachment
+description: Detaching deletes the file from the task's attachments folder.
+tags: [attachments]
+pre:
+  - attachment: { task: "${task.login_crash.key}", name: repro-steps.txt }
+cli: detach ${task.login_crash.key} repro-steps.txt
+mcp:
+  call: { tool: detach_file, args: { ref: "${task.login_crash.key}", name: repro-steps.txt } }
+post:
+  - attachment: { task: "${task.login_crash.key}", name: repro-steps.txt, present: false }

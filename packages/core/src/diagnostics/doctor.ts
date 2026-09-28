@@ -6,20 +6,25 @@ import { loadListViewConfig } from "../config/list-view.js";
 import { getMilestonesConfigPath,loadMilestonesConfig } from "../config/milestones.js";
 import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
 import { loadQueriesConfig } from "../config/queries.js";
+import { findRetiredRelationshipKeys } from "../config/retired-keys.js";
 import { getSprintsConfigPath,loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow,validateWorkflowConfig } from "../config/validation.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
 import { readPrefixRenameState } from "../projects/prefix.js";
 import { isMigrationLocked } from "../schema/lock.js";
-import { CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/version.js";
+import { readRecordedFormat, type RecordedFormat } from "../schema/migrations.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION, SchemaTooNewError } from "../schema/version.js";
 import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { readReconcileState } from "../state/reconcile.js";
 import { loadState } from "../state/state.js";
+import { TaskParseError } from "../task/frontmatter.js";
 import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasks } from "../task/load-all.js";
-import { findStructuralCycles,validateRelationships } from "../task/traversal.js";
+import type { RelationshipRepairPlan } from "../task/relationship-repair.js";
+import { planRelationshipRepair, repairActionCount, repairRelationships } from "../task/relationship-repair.js";
+import { findStructuralCycles, relationshipFindings } from "../task/traversal.js";
 import { loadAllUsers } from "../users/profile.js";
 import { fileExists } from "../utils/fs.js";
 import { checkDataIntegrity } from "./integrity.js";
@@ -42,7 +47,25 @@ export type CheckStatus = "ok" | "warn" | "error";
  * instead of pattern-matching the human `message` (K-diagnostics-repair).
  * Absent for the ~85% of findings that need a human decision or hand-edit.
  */
-export type DiagnosticFix = "rebuild-index" | "restore-missing";
+export type DiagnosticFix = "rebuild-index" | "restore-missing" | "repair-relationships";
+
+/**
+ * The repairs `doctor --fix` runs in one go (K141 4a): the ones that
+ * never guess. `rebuild-index` rewrites a derived cache.
+ * `repair-relationships` only completes what the data already says
+ * (a key rewritten to its task's id, the missing side of a link, one
+ * copy of an identical link) and never deletes a link.
+ *
+ * `restore-missing` is **not** in the set: it writes default config in
+ * place of a missing file, so a missing `workflow.yaml` comes back as
+ * the shipped default rather than the user's statuses and kinds, and a
+ * missing `state.yaml` restarts key counters at 1. That is a guess about
+ * the user's setup, which is why the web asks before it runs; it stays
+ * its own step (`loctt init --repair`, MCP `restore_missing`, the
+ * Diagnostics button), and `--fix` leaves its findings in the report
+ * (A357).
+ */
+export const SAFE_FIXES: readonly DiagnosticFix[] = ["rebuild-index", "repair-relationships"];
 
 export interface DiagnosticCheck {
   readonly name: string;
@@ -61,6 +84,85 @@ export interface DoctorOptions {
    * key↔id mapping changed).
    */
   readonly rebuildIndex?: boolean;
+  /**
+   * When true, run the relationship repair (K141) **before** the checks,
+   * so the report shows what is left afterwards.
+   */
+  readonly repairRelationships?: boolean;
+  /**
+   * When true, run every repair in {@link SAFE_FIXES} before the checks,
+   * then report what is left (K141 4a).
+   */
+  readonly fix?: boolean;
+}
+
+/**
+ * One sentence for what the relationship repair did, or that there was
+ * nothing to do. What it could not do is left to the checks that follow.
+ */
+export function describeRelationshipRepair(plan: RelationshipRepairPlan): string {
+  const parts: string[] = [];
+  if (plan.rewrites.length > 0) parts.push(`${String(plan.rewrites.length)} key(s) rewritten to ids`);
+  if (plan.inverses.length > 0) parts.push(`${String(plan.inverses.length)} missing side(s) added`);
+  if (plan.merges.length > 0) parts.push(`${String(plan.merges.length)} duplicate link(s) merged`);
+  const ranked = plan.ranked.reduce((n, r) => n + r.count, 0);
+  if (ranked > 0) parts.push(`${String(ranked)} link(s) given a rank`);
+  if (parts.length === 0) return "nothing to repair";
+  return `repaired: ${parts.join(", ")}`;
+}
+
+/**
+ * Runs the requested repairs ahead of the checks. Skipped, with a line
+ * saying why, when the tracker's format is not the current one: a repair
+ * writes task files, and every other write refuses in that state too.
+ */
+async function* runRequestedRepairs(
+  locttDir: string,
+  options: DoctorOptions,
+  schema: SchemaCheckState,
+): AsyncGenerator<DiagnosticCheck> {
+  const wantIndex = options.fix === true;
+  const wantRelationships = options.fix === true || options.repairRelationships === true;
+  if (!wantIndex && !wantRelationships && options.rebuildIndex !== true) return;
+  if (!schema.ok) {
+    // K154: doctor never writes to a tracker that needs upgrading. The
+    // repairs would write task files in the old format, and upgrading
+    // is the user's deliberate step, never a side effect of doctor.
+    yield {
+      name: "repairs",
+      status: "error",
+      message: schema.upgradePending
+        ? "skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again"
+        : "skipped. Resolve the schema version problem above first",
+    };
+    return;
+  }
+  if (!wantIndex && !wantRelationships) return;
+  if (wantIndex && (await fileExists(getTasksDir(locttDir)))) {
+    try {
+      const rebuilt = await rebuildKeyIndex(locttDir);
+      yield {
+        name: "key index rebuild",
+        status: "ok",
+        message: `rebuilt with ${Object.keys(rebuilt.entries).length} entry/entries`,
+      };
+    } catch (err) {
+      yield { name: "key index rebuild", status: "error", message: `failed: ${(err as Error).message}` };
+    }
+  }
+  if (wantRelationships) {
+    try {
+      const config = await loadWorkflowConfig(locttDir);
+      const plan = await repairRelationships(locttDir, config);
+      yield { name: "relationship repair", status: "ok", message: describeRelationshipRepair(plan) };
+    } catch (err) {
+      yield {
+        name: "relationship repair",
+        status: "error",
+        message: `didn't finish: ${(err as Error).message}. Run doctor again to see what's left`,
+      };
+    }
+  }
 }
 
 /**
@@ -71,8 +173,16 @@ export interface DoctorOptions {
  * the others cannot run in — a tracker this build refuses to open is
  * exactly when someone runs `doctor`.
  */
+/** What the schema check found, for the repairs that follow it. */
+interface SchemaCheckState {
+  ok: boolean;
+  /** An upgrade is pending (the tracker is older than this build). */
+  upgradePending: boolean;
+}
+
 async function* checkSchemaVersion(
   locttDir: string,
+  state: SchemaCheckState,
 ): AsyncGenerator<DiagnosticCheck> {
   const name = "schema version";
 
@@ -90,57 +200,65 @@ async function* checkSchemaVersion(
     return;
   }
 
-  let onDisk: number | null;
+  let rf: RecordedFormat | null;
   try {
-    onDisk = await readSchemaVersion(locttDir);
+    rf = await readRecordedFormat(locttDir);
   } catch (err) {
+    if (err instanceof SchemaTooNewError) {
+      yield {
+        name,
+        status: "error",
+        message:
+          `on disk ${err.trackerVersion}, this build reads ${CURRENT_SCHEMA_VERSION}. `
+          + `This tracker needs loctt ${err.trackerVersion} or newer`,
+      };
+      return;
+    }
     yield {
       name,
       status: "error",
       // The reader's sentences end with a period already; appending
       // ". Expected" without stripping it printed "is empty.. Expected".
       message: `${(err as Error).message.replace(/\.$/, "")}. `
-        + `Expected ${String(CURRENT_SCHEMA_VERSION)}`,
+        + `Expected ${CURRENT_SCHEMA_VERSION}`,
     };
     return;
   }
 
-  if (onDisk === null) {
+  if (rf === null) {
     // Distinct from "outdated": there is no version to migrate *from*,
     // so `loctt migrate` is not the answer.
     yield {
       name,
       status: "error",
       message:
-        `no .schema-version file. This tracker predates schema versioning `
-        + `and must be re-initialized (expected ${String(CURRENT_SCHEMA_VERSION)})`,
+        `no .schema-version file. Write the tracker's format version into it `
+        + `(0.1.0 if you don't know it, expected ${CURRENT_SCHEMA_VERSION})`,
     };
     return;
   }
 
-  if (onDisk > CURRENT_SCHEMA_VERSION) {
+  // Too new is refused by `readRecordedFormat` (caught above). The
+  // recorded version stands for the highest known format at or below
+  // it (K142), so 0.2.1 reads as 0.1.0.
+  const onDisk = rf.recorded;
+  const cmp = compareFormatVersions(rf.format, CURRENT_SCHEMA_VERSION);
+
+  if (cmp < 0) {
+    // K154: doctor explains, it never writes, so it reports the upgrade
+    // rather than running it. Upgrading is always a deliberate step.
+    state.upgradePending = true;
     yield {
       name,
       status: "error",
       message:
-        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)}. `
-        + `Update LocTT rather than migrating down`,
+        `needs upgrading from ${onDisk} to ${CURRENT_SCHEMA_VERSION}. `
+        + `Run loctt migrate (a backup is made first)`,
     };
     return;
   }
 
-  if (onDisk < CURRENT_SCHEMA_VERSION) {
-    yield {
-      name,
-      status: "error",
-      message:
-        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)}. `
-        + `Run loctt migrate`,
-    };
-    return;
-  }
-
-  yield { name, status: "ok", message: `${String(onDisk)} (current)` };
+  yield { name, status: "ok", message: `${onDisk} (current)` };
 }
 
 /**
@@ -171,7 +289,15 @@ export async function* runDoctorStream(
   // Schema version. Doctor is exempt from the boot guard precisely so it
   // can report this: every other command refuses to run on a mismatch,
   // and the guard's message is all the user would otherwise see.
-  yield* checkSchemaVersion(locttDir);
+  const schema: SchemaCheckState = { ok: true, upgradePending: false };
+  for await (const check of checkSchemaVersion(locttDir, schema)) {
+    if (check.status === "error") schema.ok = false;
+    yield check;
+  }
+
+  // K141: requested repairs run before the checks, so what follows is
+  // the state after them — "run all at once, manually fix what's left".
+  yield* runRequestedRepairs(locttDir, options, schema);
 
   // Check config directory
   if (!(await fileExists(getConfigDir(locttDir)))) {
@@ -207,6 +333,18 @@ export async function* runDoctorStream(
       }
     } catch (err) {
       yield { name: "workflow.yaml", status: "error", message: `parse error: ${(err as Error).message}` };
+    }
+    // K143: `ranked` is ignored on read (every link is ordered now), so
+    // it never breaks loading; say so, so the line can go.
+    const retired = await findRetiredRelationshipKeys(locttDir);
+    if (retired.length > 0) {
+      const names = retired.map(r => `'${r.setting}' on ${r.relationship}`).join(", ");
+      yield {
+        name: "workflow.yaml retired settings",
+        status: "warn",
+        message: `${names} no longer does anything: every link is ordered since loctt 0.3.0. `
+          + `Remove ${retired.length === 1 ? "that line" : "those lines"}`,
+      };
     }
   }
 
@@ -379,15 +517,22 @@ export async function* runDoctorStream(
   // configs. Walk every task once and aggregate.
   if (workflowConfig) {
     try {
-      const relErrors = await validateRelationships(locttDir, workflowConfig);
+      const tasks = await loadAllTasks(locttDir);
+      const onDisk = new Set(await listTaskIds(locttDir));
+      const relErrors = relationshipFindings(tasks, workflowConfig, onDisk);
       if (relErrors.length > 0) {
+        // K141: say how many the relationship repair fixes, and tag the
+        // check with its `fix` so every surface can offer it.
+        const repairable = repairActionCount(planRelationshipRepair(tasks, workflowConfig, onDisk));
         yield ({
           name: "relationships",
           status: "warn",
-          message: `${relErrors.length} issue(s) found`,
+          message: repairable > 0
+            ? `${relErrors.length} issue(s) found. ${String(repairable)} can be fixed with loctt doctor --repair-relationships`
+            : `${relErrors.length} issue(s) found`,
+          ...(repairable > 0 ? { fix: "repair-relationships" as const } : {}),
         });
       }
-      const tasks = await loadAllTasks(locttDir);
       // Aggregate field-reference errors across tasks.
       const aux = {
         ...(projectsConfig !== undefined ? { projects: projectsConfig } : {}),
@@ -562,7 +707,21 @@ export async function* runDoctorStream(
             issues.push(`${indexedKey} → ${id} (unreadable)`);
           }
         }
-        const orphanIds = [...allTaskIds].filter(id => !indexedIds.has(id));
+        // A directory whose task.md will not parse cannot be indexed:
+        // its key is inside the part that failed, so `--rebuild-index`
+        // leaves it out again and this finding outlived the repair it
+        // prescribes. `data integrity` already names that file; it is
+        // not an index problem (A365).
+        const orphanIds: string[] = [];
+        for (const id of allTaskIds) {
+          if (indexedIds.has(id)) continue;
+          try {
+            await readTask(locttDir, id);
+          } catch (err) {
+            if (err instanceof TaskParseError) continue;
+          }
+          orphanIds.push(id);
+        }
         if (issues.length > 0 || orphanIds.length > 0) {
           const parts: string[] = [];
           if (issues.length > 0) {
@@ -627,7 +786,9 @@ export async function* runDoctorStream(
     });
   }
 
-  if (options.rebuildIndex) {
+  // `--fix` already rebuilt the index before the checks. Skipped (and
+  // said so above) when the schema is not current: it writes.
+  if (options.rebuildIndex && options.fix !== true && schema.ok) {
     try {
       const rebuilt = await rebuildKeyIndex(locttDir);
       yield ({

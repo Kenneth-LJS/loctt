@@ -1,0 +1,9 @@
+id: search-custom-field
+name: Query a multi-value custom field
+description: fields.<key> = value matches a task whose list contains the value.
+tags: [queries, custom-fields]
+cli: list --query "fields.platforms = ios"
+mcp:
+  call: { tool: list_tasks, args: { query: fields.platforms = ios } }
+post:
+  - output: { keys: ["${task.mob_offline.key}", "${task.mob_push.key}", "${task.mob_ios_crash.key}", "${task.deep_links.key}"] }

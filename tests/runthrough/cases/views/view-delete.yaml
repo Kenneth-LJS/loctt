@@ -1,0 +1,11 @@
+id: view-delete
+name: Delete a saved view
+description: The view is removed from queries.yaml; the others stay.
+tags: [views]
+cli: views delete "Hot list" --yes
+mcp:
+  call: { tool: delete_view, args: { view: Hot list, confirm: true } }
+post:
+  - entity: { kind: view, name: Hot list, present: false }
+  - entity: { kind: view, name: Open bugs }
+  - yaml: { file: config/queries.yaml, path: "queries[id=${view.hot_list.id}]", absent: true }

@@ -1,0 +1,56 @@
+- timestamp: 2026-09-28T01:20:23.297Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJJ80QX63TEXX6JT7G02Q
+      key: WEB-9
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Site search
+      created_at: 2026-09-28T01:20:23.297Z
+      updated_at: 2026-09-28T01:20:23.297Z
+      status: backlog
+      task_type: feature
+      priority: medium
+      labels:
+        - 01M3JSJ7V0JT57NNCCSGH9XV73
+      milestone: 01M3JSJ9XTVVQT0EBTXQNVH4T8
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:23.644Z
+  kind: custom_field_change
+  field: team
+  before: null
+  after: search
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:24.018Z
+  kind: custom_field_change
+  field: area
+  before: null
+  after: api
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:45.213Z
+  kind: link_added
+  meta:
+    type: child
+    target: 01M3JSJK9VMZ0D2A3MHZ65VQG8
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:45.550Z
+  kind: link_added
+  meta:
+    type: child
+    target: 01M3JSJKMMD9G0E1F7ZFN7MK88
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:45.872Z
+  kind: link_added
+  meta:
+    type: child
+    target: 01M3JSJKYYFWE9BBQWAVWFY6XA
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:50.294Z
+  kind: rank_changed
+  field: child
+  before: null
+  after: u
+  meta:
+    target: WEB-12
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

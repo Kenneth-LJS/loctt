@@ -12,4 +12,9 @@ in `decisions.md` and git history, not here. Process lessons live in
 
 ---
 
-Nothing is open.
+(G1–G7, found by the B42 runthrough, were fixed by B44.)
+
+(G8, unranked links from a git sync, was fixed by B46: sync ranks them as
+it applies the branch, K151. G9, the git specs' sync waits sitting on
+Playwright's 5 s default, was fixed by `SYNC_SETTLE_MS` in
+`tests/ui/fixtures/git-tracker.ts`, A365.)

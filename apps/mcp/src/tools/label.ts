@@ -22,6 +22,7 @@ import { COLOR_INPUT_DOC, colorInputSchema, nullableColorInputSchema } from "../
 import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
+import { named } from "../runtime/names.js";
 import type { ToolDef } from "../types.js";
 
 export const TOOLS: readonly ToolDef[] = [
@@ -80,7 +81,8 @@ export const TOOLS: readonly ToolDef[] = [
         ...(args["name"] !== undefined ? { name: args["name"] as string } : {}),
         ...("color" in args ? { color: colorArg ?? null } : {}),
       });
-      return text(`Updated label ${id}`);
+      // K148: name and ID.
+      return text(`Updated label ${named((args["name"] as string | undefined) ?? cfg.labels.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -105,7 +107,7 @@ export const TOOLS: readonly ToolDef[] = [
         hard: true,
         ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
       });
-      return text(JSON.stringify({ id, ...result }, null, 2));
+      return text(JSON.stringify({ id, name: cfg.labels.find(e => e.id === id)?.name, ...result }, null, 2));
     },
   },
   {
@@ -116,7 +118,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadLabelsConfig(locttDir);
       const id = resolveLabelIdFromInput(cfg, args["label"] as string, { includeArchived: true });
       await archiveLabel(locttDir, id);
-      return text(`Archived label ${id}`);
+      return text(`Archived label ${named(cfg.labels.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -127,7 +129,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadLabelsConfig(locttDir);
       const id = resolveLabelIdFromInput(cfg, args["label"] as string, { includeArchived: true });
       await unarchiveLabel(locttDir, id);
-      return text(`Unarchived label ${id}`);
+      return text(`Unarchived label ${named(cfg.labels.find(e => e.id === id)?.name, id)}`);
     },
   },
 ];

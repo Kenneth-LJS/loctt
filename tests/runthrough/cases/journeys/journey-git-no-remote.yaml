@@ -1,0 +1,36 @@
+id: journey-git-no-remote
+name: "Journey: git-backed mode without a remote"
+description: >
+  Folded in from tests/e2e/07 (B43, K145): enable, create, publish, a
+  second publish advances the branch, sync with no remote, disable.
+tags: [journey, git, b43]
+surfaces: [cli]
+seed: empty
+git: local
+steps:
+  - name: enable
+    cli: [git enable, git status]
+    post:
+      - output: { contains: ["Enabled: true", "Branch: loctt"] }
+  - name: create two tasks and publish
+    cli:
+      - create first
+      - create second
+      - git publish
+    capture:
+      first: { new_task: { title: first } }
+      sha1: { git_rev: loctt }
+    post:
+      - output: { contains: ["Published"] }
+      - count: { where: {}, equals: 2 }
+      - git_show: { spec: "loctt:tasks/${var.first.id}/task.md", contains: "title: first" }
+  - name: a change and a second publish advance the branch
+    cli: [set T-1 status in_progress, git publish]
+    post:
+      - git: { ref: loctt, not_equals: "${var.sha1}" }
+  - name: sync with no remote is a no-op
+    cli: git sync
+  - name: disable
+    cli: [git disable, git status]
+    post:
+      - output: { contains: ["Enabled: false"] }

@@ -1,0 +1,10 @@
+id: user-archive
+name: Archive a user
+description: The profile is marked archived; tasks keep pointing at the user.
+tags: [users, archive]
+cli: user archive Bea
+mcp:
+  call: { tool: archive_user, args: { ref: Bea } }
+post:
+  - entity: { kind: user, name: Bea, fields: { archived: true } }
+  - field: { task: "${task.login_crash.key}", field: assignee, equals: "${user.bea.id}" }

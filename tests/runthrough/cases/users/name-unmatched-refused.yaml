@@ -1,0 +1,12 @@
+id: name-unmatched-refused
+name: A name matching no user is refused
+description: >
+  K148: a name that matches nothing says so, naming the kind of entity,
+  and nothing is written.
+tags: [users, edit, k148]
+expect_error:
+  cli: { message: "No user named 'Nobody'." }
+  mcp: { message: "No user named 'Nobody'." }
+cli: set ${task.perf_budget.key} assignee Nobody
+mcp:
+  call: { tool: update_task, args: { ref: "${task.perf_budget.key}", field: assignee, value: Nobody } }

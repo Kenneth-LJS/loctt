@@ -61,7 +61,7 @@ describe("buildStatus (SET-46)", () => {
 describe("validateNewRelationship (SET-48)", () => {
   it("requires an inverse for a directional relationship", () => {
     const problems = validateNewRelationship(
-      { key: "blocks", label: "Blocks", symmetric: false, inverse: "", inverse_label: "", graph: "none", ranked: false },
+      { key: "blocks", label: "Blocks", symmetric: false, inverse: "", inverse_label: "", graph: "none" },
       [],
     );
     // The schema's superRefine rejects a directional rel with no inverse;
@@ -72,7 +72,7 @@ describe("validateNewRelationship (SET-48)", () => {
 
   it("does not require an inverse for a symmetric relationship", () => {
     const problems = validateNewRelationship(
-      { key: "relates", label: "Relates to", symmetric: true, inverse: "", inverse_label: "", graph: "none", ranked: false },
+      { key: "relates", label: "Relates to", symmetric: true, inverse: "", inverse_label: "", graph: "none" },
       [],
     );
     expect(problems.inverse).toBeUndefined();
@@ -83,7 +83,7 @@ describe("validateNewRelationship (SET-48)", () => {
 describe("buildRelationship (SET-48)", () => {
   it("drops inverse fields and writes kind:symmetric when symmetric", () => {
     const r = buildRelationship(
-      { key: "relates", label: "Relates to", symmetric: true, inverse: "x", inverse_label: "y", graph: "none", ranked: false },
+      { key: "relates", label: "Relates to", symmetric: true, inverse: "x", inverse_label: "y", graph: "none" },
     );
     expect(r.kind).toBe("symmetric");
     expect("inverse" in r).toBe(false);
@@ -92,13 +92,14 @@ describe("buildRelationship (SET-48)", () => {
 
   it("keeps the inverse pair when directional", () => {
     const r = buildRelationship(
-      { key: "blocks", label: "Blocks", symmetric: false, inverse: "blocked_by", inverse_label: "Blocked by", graph: "acyclic", ranked: true },
+      { key: "blocks", label: "Blocks", symmetric: false, inverse: "blocked_by", inverse_label: "Blocked by", graph: "acyclic" },
     );
     expect(r.kind).toBe("directional");
     expect(r.inverse).toBe("blocked_by");
     expect(r.inverse_label).toBe("Blocked by");
     expect(r.graph).toBe("acyclic");
-    expect(r.ranked).toBe(true);
+    // K143: there is no `ranked` setting to write.
+    expect("ranked" in r).toBe(false);
   });
 });
 
@@ -159,5 +160,22 @@ describe("entryChangedOnDisk (SET-28)", () => {
 
   it("is true when the entry vanished from the file", () => {
     expect(entryChangedOnDisk(base, [])).toBe(true);
+  });
+});
+
+// K150: the Settings → Custom fields "Allow new values" toggle reaches the
+// stored row for an enum field, and never for any other type.
+// @verifies CFG-C6
+describe("buildCustomField allow_new_values (K150)", () => {
+  const base = {
+    key: "area", label: "Area", multi: false, searchable: false,
+    values: [{ key: "ui", label: "UI" }],
+  };
+  it("carries allow_new_values on an enum field when on, and omits it when off", () => {
+    expect(buildCustomField({ ...base, type: "enum", allow_new_values: true }).allow_new_values).toBe(true);
+    expect("allow_new_values" in buildCustomField({ ...base, type: "enum", allow_new_values: false })).toBe(false);
+  });
+  it("never stores it on a non-enum field", () => {
+    expect("allow_new_values" in buildCustomField({ ...base, type: "string", allow_new_values: true })).toBe(false);
   });
 });

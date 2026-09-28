@@ -1,0 +1,12 @@
+id: label-add-to-task
+name: Change a task's labels
+description: >
+  Labels are stored as a list of label ids. `loctt set <task> labels`
+  takes a comma-separated list of names or IDs and replaces the task's
+  labels (G3).
+tags: [labels, edit]
+cli: set ${task.perf_budget.key} labels frontend,infra
+mcp:
+  call: { tool: update_task, args: { ref: "${task.perf_budget.key}", field: labels, value: [frontend, infra] } }
+post:
+  - field: { task: "${task.perf_budget.key}", field: labels, equals: ["${label.frontend.id}", "${label.infra.id}"] }

@@ -19,8 +19,8 @@ export function InterruptedMigration({
   backup,
   sentinelPath,
 }: {
-  readonly from?: number | undefined;
-  readonly to?: number | undefined;
+  readonly from?: string | undefined;
+  readonly to?: string | undefined;
   readonly backup?: string | undefined;
   readonly sentinelPath: string;
 }) {
@@ -44,7 +44,7 @@ export function InterruptedMigration({
             <>
               <dt className="text-text-tertiary">Migrating</dt>
               <dd className="text-text-primary">
-                v{from} → v{to}
+                {from} → {to}
               </dd>
             </>
           ) : null}

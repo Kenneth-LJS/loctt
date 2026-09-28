@@ -1,0 +1,9 @@
+id: search-text
+name: Full-text search
+description: text ~ matches titles, bodies and searchable custom fields, case-insensitively.
+tags: [queries, search]
+cli: list --query 'text ~ "crash"'
+mcp:
+  call: { tool: list_tasks, args: { query: 'text ~ "crash"' } }
+post:
+  - output: { keys: ["${task.login_crash.key}", "${task.login_crash_dup.key}", "${task.mob_ios_crash.key}"] }

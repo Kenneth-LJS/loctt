@@ -10,12 +10,28 @@ import { isMigrationLocked } from "../schema/lock.js";
 import { SchemaVersionError } from "../schema/version.js";
 import { rethrowFsError } from "../utils/fs-errors.js";
 
-/** Shared lock settings, so the two acquire sites cannot drift apart. */
+/**
+ * Lock settings. `proper-lockfile` gets no retries of its own: its retry
+ * loop retries *every* error, so an unwritable `.loctt/` sat through the
+ * whole backoff (about 3.75 s) before the user was told it was a
+ * permission problem that no amount of waiting fixes. `acquireStateLock`
+ * retries contention only, on the same schedule (A365).
+ */
 const LOCK_OPTIONS = {
-  retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 },
+  retries: 0,
   stale: 10_000,
   realpath: false,
 } as const;
+
+/** Backoff for a held lock: 50, 100, 200, 400, then 500 ms, ten tries. */
+const CONTENTION_RETRIES = { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 } as const;
+
+function contentionDelay(attempt: number): number {
+  return Math.min(
+    CONTENTION_RETRIES.maxTimeout,
+    CONTENTION_RETRIES.minTimeout * CONTENTION_RETRIES.factor ** attempt,
+  );
+}
 
 /**
  * Acquires the state lock, naming filesystem failures the user can fix.
@@ -27,10 +43,10 @@ const LOCK_OPTIONS = {
  * ERR-11's complaint and ERR-31's prohibition.
  *
  * `proper-lockfile` preserves the underlying errno, so the shared
- * mapper recognises it unchanged. Retrying is pointless for these —
- * a permission or a full disk will not clear between attempts — but the
- * backoff is bounded and the alternative is inspecting errnos before
- * deciding to retry, which would duplicate the mapper's job.
+ * mapper recognises it unchanged. Only contention (`ELOCKED`) is
+ * retried: a permission or a full disk will not clear between attempts,
+ * and retrying them made the user wait out the whole backoff for an
+ * answer that was known on the first try (A365).
  */
 /**
  * Another LocTT process is writing, and the retries did not outlast it.
@@ -82,13 +98,16 @@ function isLocked(err: unknown): boolean {
 }
 
 async function acquireStateLock(target: string): Promise<() => Promise<void>> {
-  try {
-    return await lockfile.lock(target, LOCK_OPTIONS);
-  } catch (err) {
-    if (isLocked(err)) {
-      throw new StateLockedError(err instanceof Error ? err.message : String(err));
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await lockfile.lock(target, LOCK_OPTIONS);
+    } catch (err) {
+      if (!isLocked(err)) rethrowFsError(err, target);
+      if (attempt >= CONTENTION_RETRIES.retries) {
+        throw new StateLockedError(err instanceof Error ? err.message : String(err));
+      }
+      await new Promise(resolve => setTimeout(resolve, contentionDelay(attempt)));
     }
-    rethrowFsError(err, target);
   }
 }
 

@@ -1,0 +1,15 @@
+id: delete-linked-task
+name: Deleting a linked task removes the partner's link too
+description: >
+  After deleting ${task.flaky_checkout_test.key}, its relates_to partner
+  must not keep an edge to a task that no longer exists: delete removes
+  the partner's side of every link in the same operation (K147, G4), and
+  the deleted keys leave the on-disk key index (G5), so doctor stays
+  clean.
+tags: [bulk, delete, links]
+cli: delete ${task.flaky_checkout_test.key} --yes
+mcp:
+  call: { tool: delete_task, args: { refs: ["${task.flaky_checkout_test.key}"], confirm: true } }
+post:
+  - task_absent: "${task.flaky_checkout_test.id}"
+  - relationship: { task: "${task.checkout_payment.key}", type: relates_to, target: "${task.flaky_checkout_test.id}", present: false }

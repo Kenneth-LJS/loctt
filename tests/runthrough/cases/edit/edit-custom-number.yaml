@@ -1,0 +1,9 @@
+id: edit-custom-number
+name: Edit a number custom field
+description: A number custom field is stored as a YAML number; the CLI converts the text by the field's type (G2).
+tags: [edit, custom-fields]
+cli: set ${task.rate_limit.key} risk 5
+mcp:
+  call: { tool: update_task, args: { ref: "${task.rate_limit.key}", field: risk, value: 5 } }
+post:
+  - field: { task: "${task.rate_limit.key}", field: fields.risk, equals: 5 }

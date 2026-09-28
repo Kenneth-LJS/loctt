@@ -262,11 +262,14 @@ describe("resolveLabelByName / resolveLabelIdFromInput", () => {
   });
 
   it("returns ambiguous for duplicate names", async () => {
-    await createLabel(locttDir, { name: "Twin" });
-    await createLabel(locttDir, { name: "Twin" });
+    const a = await createLabel(locttDir, { name: "Twin" });
+    const b = await createLabel(locttDir, { name: "Twin" });
     const cfg = await loadLabelsConfig(locttDir);
     expect(resolveLabelByName(cfg, "Twin").kind).toBe("ambiguous");
-    expect(() => resolveLabelIdFromInput(cfg, "Twin")).toThrow(/ambiguous/);
+    // K148: refused, listing each match with its ID.
+    expect(() => resolveLabelIdFromInput(cfg, "Twin")).toThrow(
+      `'Twin' matches 2 labels: Twin (${a.id}), Twin (${b.id}). Use the ID.`,
+    );
   });
 });
 

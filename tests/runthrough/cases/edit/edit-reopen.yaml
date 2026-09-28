@@ -1,0 +1,12 @@
+id: edit-reopen
+name: Reopen a done task
+description: Leaving a completed status clears completed_date.
+tags: [edit]
+pre:
+  - field: { task: "${task.a11y_audit.key}", field: completed_date, matches: "^\\d{4}-" }
+cli: set ${task.a11y_audit.key} status in_progress
+mcp:
+  call: { tool: update_task, args: { ref: "${task.a11y_audit.key}", field: status, value: in_progress } }
+post:
+  - field: { task: "${task.a11y_audit.key}", field: status, equals: in_progress }
+  - field: { task: "${task.a11y_audit.key}", field: completed_date, absent: true }

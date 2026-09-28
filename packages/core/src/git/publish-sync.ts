@@ -10,7 +10,8 @@ import { loadWorkflowConfig } from "../config/workflow.js";
 import type { IntegrityFinding } from "../diagnostics/integrity.js";
 import { blockingFindings, checkDataIntegrity } from "../diagnostics/integrity.js";
 import { getLocalDir, getTaskFilePath } from "../paths/index.js";
-import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION, isFormatVersion } from "../schema/index.js";
+import { legacyRankedTypesIn, rankLinksInShownOrder, rankUnrankedLinks } from "../schema/steps/rank-every-link.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { appendKeyHistory } from "../state/keys.js";
 import { clearReconcileState, readReconcileState, saveReconcileState } from "../state/reconcile.js";
@@ -276,27 +277,50 @@ export class GitHistoryRewrittenError extends GitSyncError {
  * READS the remote's value to refuse, and never writes it anywhere.
  */
 export class GitRemoteSchemaNewerError extends GitSyncError {
-  /** The `.schema-version` value read from the branch. */
-  readonly remoteVersion: number;
+  /**
+   * The format version read from the branch (K142), or null when it is
+   * not a format version at all (unknown, so treated as ahead).
+   */
+  readonly remoteVersion: string | null;
   /** This build's `CURRENT_SCHEMA_VERSION`. */
-  readonly localVersion: number;
+  readonly localVersion: string;
   /** The branch whose schema is newer. */
   readonly branch: string;
+  /** What the branch's file holds, when it is not a format version. */
+  readonly raw?: string;
   constructor(opts: {
-    remoteVersion: number;
-    localVersion: number;
+    remoteVersion: string | null;
+    localVersion: string;
     branch: string;
+    /** What the branch's file holds, when it is not a format version. */
+    raw?: string;
   }) {
     super(
-      `Sync aborted: the ${opts.branch} branch was written by a newer version of `
-      + `LocTT (schema v${opts.remoteVersion}), but this installation only understands `
-      + `up to schema v${opts.localVersion}. Applying it could corrupt or drop data, so `
-      + `nothing was written. Your local files are untouched.\n\n`
-      + `Upgrade LocTT to a version that supports schema v${opts.remoteVersion} or newer, `
-      + `then sync again.`,
+      opts.remoteVersion === null && opts.raw !== undefined && /^\d+$/.test(opts.raw)
+        // The old integer counter (`1`) is what loctt 0.2.x and earlier
+        // wrote, so the branch is older, not newer, and upgrading loctt
+        // cannot help. Publish never writes the branch's .schema-version
+        // (LOCAL_OWNED), so re-publishing cannot fix it either: the file
+        // on the branch has to be changed (K151, A366).
+        ? `Sync aborted: the ${opts.branch} branch's .schema-version holds ${opts.raw}, `
+          + `the old version number loctt 0.2.x and earlier wrote. It is not a format version, `
+          + `so nothing was written. Your local files are untouched.\n\n`
+          + `On the ${opts.branch} branch, change .schema-version to 0.1.0 and commit it, then sync again.`
+        : opts.remoteVersion !== null
+        ? `Sync aborted: the ${opts.branch} branch was written in format `
+          + `${opts.remoteVersion}, and this loctt reads format ${opts.localVersion}. `
+          + `Applying it could corrupt or drop data, so nothing was written. Your local `
+          + `files are untouched.\n\n`
+          + `This tracker needs loctt ${opts.remoteVersion} or newer. Upgrade loctt, then sync again.`
+        : `Sync aborted: the ${opts.branch} branch's .schema-version is not a format `
+          + `version this loctt recognises, so it may have been written by a newer loctt. `
+          + `Applying it could corrupt or drop data, so nothing was written. Your local `
+          + `files are untouched.\n\n`
+          + `Upgrade loctt, then sync again.`,
     );
     this.name = "GitRemoteSchemaNewerError";
     this.remoteVersion = opts.remoteVersion;
+    if (opts.raw !== undefined) this.raw = opts.raw;
     this.localVersion = opts.localVersion;
     this.branch = opts.branch;
   }
@@ -476,13 +500,14 @@ function addWorktreeOrNameMissing(
  *  - **absent** — a legacy/older remote that predates `.schema-version`.
  *    An absent version is the normal migrate-forward direction, NOT newer;
  *    do not refuse, proceed as today.
- *  - **malformed** (non-numeric / non-positive-integer) — a version that
- *    cannot be proven ≤ local. We CANNOT prove the branch is safe to read,
- *    and silently syncing unknown-version data is the exact hazard this
- *    guard exists to prevent, so we refuse with a clear message rather than
- *    proceed. Reported as `remoteVersion: NaN` so the message still names
- *    "a newer LocTT" (the honest posture: unknown ⇒ treat as ahead).
- *  - **equal or older** — proceed unchanged.
+ *  - **malformed** (not a format version, the old integer `1`
+ *    included: K151 removed A361's exception for it) — a
+ *    version that cannot be proven ≤ local. We CANNOT prove the branch is
+ *    safe to read, and silently syncing unknown-version data is the exact
+ *    hazard this guard exists to prevent, so we refuse with a clear message
+ *    rather than proceed. Reported as `remoteVersion: null` (the honest
+ *    posture: unknown ⇒ treat as ahead).
+ *  - **equal or older** — proceed unchanged. Compared as semver.
  *
  * A blob that cannot be read at all (git error) reads as absent and
  * proceeds — the surrounding code already handles a broken git invocation,
@@ -502,25 +527,39 @@ function assertRemoteSchemaNotNewer(
   // and a legacy publish that touched but did not populate it must not brick
   // every future sync.
   if (trimmed === "") return;
-  const parsed = Number(trimmed);
   // Malformed: cannot be proven ≤ local, so refuse (safe posture, K94).
-  if (!Number.isInteger(parsed) || parsed < 1) {
+  if (!isFormatVersion(trimmed)) {
     throw new GitRemoteSchemaNewerError({
-      remoteVersion: Number.NaN,
+      remoteVersion: null,
       localVersion: CURRENT_SCHEMA_VERSION,
       branch,
+      raw: trimmed,
     });
   }
-  // Strictly greater than what this build understands: refuse (K94).
-  if (parsed > CURRENT_SCHEMA_VERSION) {
+  // Strictly newer than what this build reads: refuse (K94).
+  if (compareFormatVersions(trimmed, CURRENT_SCHEMA_VERSION) > 0) {
     throw new GitRemoteSchemaNewerError({
-      remoteVersion: parsed,
+      remoteVersion: trimmed,
       localVersion: CURRENT_SCHEMA_VERSION,
       branch,
     });
   }
   // Equal or older: proceed unchanged.
 }
+
+/**
+ * Whether the branch records a format older than 0.3.0 (the format that
+ * ranks every link). No version, or one that is not a format version
+ * (refused earlier by `assertRemoteSchemaNotNewer`), reads as not older.
+ */
+function branchPredatesRanks(root: string, remoteHead: string): boolean {
+  const raw = readTreeFile(root, remoteHead, ".schema-version")?.trim();
+  if (raw === undefined || raw === "" || !isFormatVersion(raw)) return false;
+  return compareFormatVersions(raw, RANKED_FORMAT) < 0;
+}
+
+/** The format in which every link carries a rank (K143). */
+const RANKED_FORMAT = "0.3.0";
 
 /**
  * The commit the *remote* branch head points at, for the ancestry check
@@ -2120,6 +2159,28 @@ export async function pullFromLocttBranch(
     // After applyPlan: the merged content must win over whatever the
     // plan copied for that path.
     await applyResolution(resolution, locttDir);
+
+    // K151 (B46): a link published by a loctt that did not rank links
+    // (0.2.x, or a hand-edit on the branch) arrives unranked. Rank it the
+    // way the 0.1.0 → 0.3.0 upgrade does, on the tasks this sync wrote,
+    // so the listing is ordered and doctor finds nothing left over. The
+    // ranks are local edits from here on, and the next publish carries
+    // them to the branch.
+    //
+    // A branch whose `.schema-version` says it is older than 0.3.0 was
+    // written by a loctt whose shown order was 0.1.0's rule, so its links
+    // get the upgrade step's full ranking under the branch's own
+    // workflow.yaml (A366). Otherwise (0.3.0 or later, or no version on
+    // the branch, which is what publish leaves since it never mirrors
+    // the file) only the fill: a group whose ranks disagree with stored
+    // order there is one someone reordered (A365 call 5).
+    const touched = taskIdsTouchedBy(activePlan, resolution.merged.map(m => m.path));
+    if (branchPredatesRanks(root, remoteHead)) {
+      const workflowRaw = readTreeFile(root, remoteHead, "config/workflow.yaml");
+      await rankLinksInShownOrder(locttDir, touched, legacyRankedTypesIn(workflowRaw ?? ""));
+    } else {
+      await rankUnrankedLinks(locttDir, touched);
+    }
 
     // NORMALISE. Merging can leave two projects sharing a prefix (two
     // independently-init'ed trackers both mint `T-`), and tasks sharing

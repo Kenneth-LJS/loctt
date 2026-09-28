@@ -1,0 +1,11 @@
+id: attachment-add
+name: Attach a file to a task
+description: The file is copied into the task's attachments folder byte for byte.
+tags: [attachments]
+setup_files:
+  notes/pager-rota.txt: "Week 1: Ada\nWeek 2: Bea\n"
+cli: attach ${task.ops_runbook.key} notes/pager-rota.txt
+mcp:
+  call: { tool: attach_file, args: { ref: "${task.ops_runbook.key}", source_path: "${root}/notes/pager-rota.txt" } }
+post:
+  - attachment: { task: "${task.ops_runbook.key}", name: pager-rota.txt, content: "Week 1: Ada\nWeek 2: Bea\n" }

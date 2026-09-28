@@ -10,6 +10,9 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
  * MCP `migrate_schema` (C1). Migration was CLI-only, so an agent that
  * detected a schema mismatch could only tell the user to go and run a
  * terminal command.
+ *
+ * @verifies ONB-C13
+ * @verifies ONB-C22
  */
 describe("MCP migrate_schema (stdio)", () => {
   const versionPath = (root: string) => path.join(root, ".loctt/.schema-version");
@@ -44,12 +47,12 @@ describe("MCP migrate_schema (stdio)", () => {
 
   it("errors clearly when the tracker is newer than this build", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await writeFile(versionPath(root), "9999\n");
+      await writeFile(versionPath(root), "9.9.9\n");
       const client = await startMcpClient(root);
       try {
         const res = await client.callTool("migrate_schema", {});
         expect(res.isError).toBe(true);
-        expect(res.content[0]?.text ?? "").toMatch(/newer|9999/i);
+        expect(res.content[0]?.text ?? "").toContain("This tracker needs loctt 9.9.9 or newer.");
       } finally {
         await client.close();
       }
@@ -57,37 +60,39 @@ describe("MCP migrate_schema (stdio)", () => {
   });
 
   it("migrate_schema is exempt from the schema-version boot guard", async () => {
-    // The exemption that makes the tool useful: a mismatched tracker
-    // must still reach the one tool that fixes it.
-    //
-    // HONEST LIMIT. At CURRENT_SCHEMA_VERSION === 1 the guard and
-    // planMigration raise the SAME error for every reachable bad
-    // version, so removing `exemptFromSchemaGuard` does not change any
-    // observable output and this test would not catch it. What is
-    // asserted is that other tools ARE blocked on a damaged tracker,
-    // which pins the guard's behaviour, plus that migrate_schema
-    // answers from its own handler on a healthy one.
-    //
-    // When a v2 lands, assert the real case: at version 1, list_tasks
-    // is blocked while migrate_schema previews and then migrates.
+    // The exemption that makes the tool useful: every other tool
+    // refuses a 0.1.0 tracker with the upgrade message (K154), so a
+    // guarded migrate_schema could never run. Exempt, it shows the plan
+    // and changes nothing; a confirm (after the user agrees) upgrades.
+    await withTmpLoctt(async ({ root }) => {
+      await writeFile(versionPath(root), "0.1.0\n");
+      const client = await startMcpClient(root);
+      try {
+        const plan = await client.callTool("migrate_schema", {});
+        expect(plan.isError).toBeFalsy();
+        expect(plan.content[0]?.text ?? "").toContain("This tracker needs upgrading from 0.1.0 to 0.3.0 (1 step(s)).");
+        const refused = await client.callTool("list_tasks", {});
+        expect(refused.isError).toBe(true);
+        expect(refused.content[0]?.text ?? "").toBe(
+          "Error: This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+        );
+        expect((await readFile(versionPath(root), "utf8")).trim()).toBe("0.1.0");
+
+        const done = await client.callTool("migrate_schema", { confirm: true });
+        expect(done.content[0]?.text ?? "").toContain("Upgraded this tracker from 0.1.0 to 0.3.0.");
+        expect((await readFile(versionPath(root), "utf8")).trim()).toBe("0.3.0");
+      } finally {
+        await client.close();
+      }
+    });
+
+    // A damaged tracker still blocks the other tools.
     await withTmpLoctt(async ({ root }) => {
       await rm(versionPath(root));
       const client = await startMcpClient(root);
       try {
         const blocked = await client.callTool("list_tasks", {});
         expect(blocked.isError).toBe(true);
-      } finally {
-        await client.close();
-      }
-    });
-
-    await withTmpLoctt(async ({ root }) => {
-      const client = await startMcpClient(root);
-      try {
-        // Distinctive handler output — the guard never says this.
-        const res = await client.callTool("migrate_schema", {});
-        expect(res.isError).toBeFalsy();
-        expect(res.content[0]?.text ?? "").toContain("Nothing to migrate");
       } finally {
         await client.close();
       }

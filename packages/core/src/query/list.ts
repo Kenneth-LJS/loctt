@@ -4,6 +4,7 @@ import { DEFAULT_ARCHIVED_SCOPE } from "@loctt/contracts";
 import { QueriesConfigError } from "../config/queries.js";
 import { listComments } from "../task/comments.js";
 import { readField } from "../task/mutable.js";
+import { type EntityDirectory, loadEntityDirectory, resolveQueryEntities } from "./entities.js";
 import type { EvalContext } from "./evaluator.js";
 import { evaluateQuery } from "./evaluator.js";
 import { filtersToNode } from "./filters.js";
@@ -119,6 +120,13 @@ export interface ListContext {
    * passes to `listTasks`.
    */
   readonly getCommentMentions?: (taskId: string) => readonly string[] | undefined;
+  /**
+   * K148: the labels, users, milestones, sprints and projects a query may
+   * name, so `labels = urgent` is resolved to the ID the tasks store.
+   * Loaded by {@link resolveEntityNamesContext}; absent means names in a
+   * query are compared as written (the pre-K148 behaviour).
+   */
+  readonly entities?: EntityDirectory;
 }
 
 /**
@@ -293,6 +301,9 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   if (queryStr) {
     queryNode = parseQuery(tokenize(queryStr));
     validateQuery(queryNode, validateOpts);
+    // K148: names become the IDs the tasks store; an unknown or
+    // ambiguous name is refused like any other mistake in the query.
+    if (ctx.entities !== undefined) queryNode = resolveQueryEntities(queryNode, ctx.entities);
   }
 
   // The view's composed AST validates leniently (warn, don't throw).
@@ -302,6 +313,17 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     } catch (err) {
       if (!(err instanceof QueryValidationError)) throw err;
       opts.onWarning?.(err);
+    }
+    // A saved view naming an entity since renamed or deleted keeps
+    // running, as a view referencing a deleted field does: warn, and
+    // compare the name as written.
+    if (ctx.entities !== undefined) {
+      try {
+        viewNode = resolveQueryEntities(viewNode, ctx.entities);
+      } catch (err) {
+        if (!(err instanceof QueryValidationError)) throw err;
+        opts.onWarning?.(err);
+      }
     }
   }
 
@@ -505,6 +527,21 @@ export async function resolveCommentMentionsContext(
   if (!referenced) return base;
   const byTask = await loadCommentMentions(locttDir, tasks);
   return { ...base, getCommentMentions: (id: string) => byTask.get(id) };
+}
+
+/**
+ * K148: returns `base` with the entity directory a query's names resolve
+ * against, loaded only when the call runs a query or a view. Shared by
+ * the CLI, MCP and web list and export paths, so a name means the same
+ * thing on each.
+ */
+export async function resolveEntityNamesContext(
+  locttDir: string,
+  base: ListContext,
+  queries: readonly (string | undefined)[],
+): Promise<ListContext> {
+  if (!queries.some(q => q !== undefined && q !== "")) return base;
+  return { ...base, entities: await loadEntityDirectory(locttDir) };
 }
 
 function buildPriorityMap(

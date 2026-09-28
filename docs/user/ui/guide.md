@@ -7,6 +7,21 @@ with `loctt ui`; it serves on `http://localhost:<port>` and reads the same
 Screenshots below are marked with placeholders and captured against a
 representative tracker.
 
+## A tracker that needs upgrading
+
+When a new `loctt` changes the tracker's data format, the web UI does not
+upgrade it for you. Opening an older tracker shows one screen instead of
+the app: the two versions ("This tracker needs upgrading from 0.1.0 to
+0.3.0."), "A backup is made first.", the steps under **What changes**
+(click to open), and an **Upgrade** button. Nothing else works until the
+tracker is upgraded, because every part of the app would be refused.
+
+**Upgrade** copies `.loctt/` to a backup beside it, upgrades the tracker
+and reloads the app. If the upgrade stops part-way, the screen shows the
+backup to restore from and a **Reload** button, which opens the recovery
+screen. `loctt migrate` in a terminal does the same upgrade. See
+[Upgrading](../common/upgrading.md).
+
 ## The shell
 
 Every screen sits inside a fixed shell: a top header, a left sidebar, and
@@ -168,14 +183,21 @@ Opening a task shows everything about it on one page.
   discards your changes, asking first. Clicking elsewhere keeps the
   editor open, and unsaved text survives a reload of the same tab.
 - **Related** — the task's relationships (blocks, parent/child, and any you
-  configure); add and remove links here.
+  configure); add and remove links here. Links keep the order you give
+  them: drag a row by its handle (or focus the handle, move it with the
+  arrow keys, and press Enter to drop or Escape to cancel) to move it
+  within its group. This includes a task's direct children: a child moves
+  with its own subtree; grandchildren are reordered on their parent's
+  page. New links go to the end.
 - **Attachments** — files on the task; upload more.
 - **Comments / Activity / All** — a tabbed lane. Comments has a composer
   and the discussion; Activity shows the change history.
 - **Details panel** — every field as an inline editor: status, type,
   priority, project, assignee (with "Assign to me"), reporter, labels,
-  milestone, sprint, start and due dates, estimate. Pickers search as you
-  type.
+  milestone, sprint, start and due dates, estimate, and custom fields.
+  Pickers search as you type. The labels picker offers **Create “x”** for
+  a name no label has; so does a choice field set to allow new values
+  (Settings → Custom fields → "Allow new values from a task").
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/task-detail.png">
@@ -234,6 +256,15 @@ Settings → Diagnostics checks this tracker's files, config and index for
 problems and reports what it finds. It runs the same checks as
 `loctt doctor` on the command line, so you can use whichever is closer to
 hand — the results are the same.
+
+When a problem has an automatic fix, a button for it appears above the
+list: **Rebuild key index**, **Restore missing files**, or **Repair
+relationships** (links stored with a task's key instead of its id, links
+only one task lists, duplicate links, and links with no stored place; no
+link is ever removed).
+**Fix all** appears when more than one safe fix applies and runs them
+together, like `loctt doctor --fix`. The buttons that change your files
+ask first, and the checks run again when a fix finishes.
 
 **A note on filesystem safety.** LocTT's file locks are POSIX *advisory*
 locks, which are not safe on network or sync-service filesystems. If the

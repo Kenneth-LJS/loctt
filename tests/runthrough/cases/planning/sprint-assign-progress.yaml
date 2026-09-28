@@ -1,0 +1,18 @@
+id: sprint-assign-progress
+name: Add a task to the active sprint and read its progress
+description: The task stores the sprint's id, and the sprint's progress counts it.
+tags: [planning, sprints]
+pre:
+  - count: { where: { sprint: "${sprint.sprint_2.id}" }, equals: 5 }
+cli:
+  - set ${task.search_ui.key} sprint "Sprint 2"
+  - sprint list --progress
+mcp:
+  call:
+    - { tool: update_task, args: { ref: "${task.search_ui.key}", field: sprint, value: Sprint 2 } }
+    - { tool: list_sprints, args: { progress: true } }
+post:
+  - field: { task: "${task.search_ui.key}", field: sprint, equals: "${sprint.sprint_2.id}" }
+  - count: { where: { sprint: "${sprint.sprint_2.id}" }, equals: 6 }
+  - output: { surface: cli, contains: ["Sprint 2\t[active]", "0/6"] }
+  - output: { surface: mcp, contains: ["\"total\": 6"] }

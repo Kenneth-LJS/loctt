@@ -1,0 +1,10 @@
+id: label-archive
+name: Archive a label
+description: The label is archived; tasks that carry it keep it.
+tags: [labels, archive]
+cli: label archive tech-debt
+mcp:
+  call: { tool: archive_label, args: { label: tech-debt } }
+post:
+  - entity: { kind: label, name: tech-debt, fields: { archived: true } }
+  - field: { task: "${task.theme_tokens.key}", field: labels, contains: "${label.tech_debt.id}" }

@@ -1,0 +1,60 @@
+id: rerank-across-kinds
+name: --before and --after land exactly where asked, on every kind and side
+description: >
+  K143: every link carries a rank from the moment it is written, so a
+  rerank places a link exactly, on any kind: relates_to (which had no
+  `ranked: true` and could not be reordered before), and the inverse
+  side of blocks (is_blocked_by). Each new link is ranked at the end of
+  its group, so links list in the order they were made.
+tags: [links, rerank, b41]
+steps:
+  - name: relate three tasks
+    cli:
+      - link ${task.ops_costs.key} relates_to ${task.ops_backups.key}
+      - link ${task.ops_costs.key} relates_to ${task.ops_monitoring.key}
+      - link ${task.ops_costs.key} relates_to ${task.ops_oncall.key}
+    mcp:
+      call:
+        - { tool: link_tasks, args: { refs: ["${task.ops_costs.key}"], type: relates_to, target: "${task.ops_backups.key}" } }
+        - { tool: link_tasks, args: { refs: ["${task.ops_costs.key}"], type: relates_to, target: "${task.ops_monitoring.key}" } }
+        - { tool: link_tasks, args: { refs: ["${task.ops_costs.key}"], type: relates_to, target: "${task.ops_oncall.key}" } }
+    post:
+      - relationship_order:
+          task: "${task.ops_costs.key}"
+          type: relates_to
+          targets: ["${task.ops_backups.key}", "${task.ops_monitoring.key}", "${task.ops_oncall.key}"]
+  - name: relates_to, before the first
+    cli: rerank ${task.ops_costs.key} relates_to ${task.ops_oncall.key} --before ${task.ops_backups.key}
+    mcp:
+      call: { tool: reorder_relationship, args: { source: "${task.ops_costs.key}", type: relates_to, target: "${task.ops_oncall.key}", before: "${task.ops_backups.key}" } }
+    post:
+      - relationship_order:
+          task: "${task.ops_costs.key}"
+          type: relates_to
+          targets: ["${task.ops_oncall.key}", "${task.ops_backups.key}", "${task.ops_monitoring.key}"]
+  - name: relates_to, after the middle
+    cli: rerank ${task.ops_costs.key} relates_to ${task.ops_oncall.key} --after ${task.ops_backups.key}
+    mcp:
+      call: { tool: reorder_relationship, args: { source: "${task.ops_costs.key}", type: relates_to, target: "${task.ops_oncall.key}", after: "${task.ops_backups.key}" } }
+    post:
+      - relationship_order:
+          task: "${task.ops_costs.key}"
+          type: relates_to
+          targets: ["${task.ops_backups.key}", "${task.ops_oncall.key}", "${task.ops_monitoring.key}"]
+  - name: three blockers, then is_blocked_by after the first
+    cli:
+      - link ${task.ops_backups.key} blocks ${task.ops_runbook.key}
+      - link ${task.ops_monitoring.key} blocks ${task.ops_runbook.key}
+      - link ${task.ops_oncall.key} blocks ${task.ops_runbook.key}
+      - rerank ${task.ops_runbook.key} is_blocked_by ${task.ops_oncall.key} --after ${task.ops_backups.key}
+    mcp:
+      call:
+        - { tool: link_tasks, args: { refs: ["${task.ops_backups.key}"], type: blocks, target: "${task.ops_runbook.key}" } }
+        - { tool: link_tasks, args: { refs: ["${task.ops_monitoring.key}"], type: blocks, target: "${task.ops_runbook.key}" } }
+        - { tool: link_tasks, args: { refs: ["${task.ops_oncall.key}"], type: blocks, target: "${task.ops_runbook.key}" } }
+        - { tool: reorder_relationship, args: { source: "${task.ops_runbook.key}", type: is_blocked_by, target: "${task.ops_oncall.key}", after: "${task.ops_backups.key}" } }
+    post:
+      - relationship_order:
+          task: "${task.ops_runbook.key}"
+          type: is_blocked_by
+          targets: ["${task.ops_backups.key}", "${task.ops_oncall.key}", "${task.ops_monitoring.key}"]

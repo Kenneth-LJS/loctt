@@ -1,0 +1,23 @@
+- timestamp: 2026-09-28T01:20:37.074Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJZPHE9XXXV61ZTP0AK4S
+      key: OPS-6
+      project: 01M3JSJ7938VBX3QQAD1AMW8MA
+      title: Write the incident runbook
+      created_at: 2026-09-28T01:20:37.074Z
+      updated_at: 2026-09-28T01:20:37.074Z
+      status: backlog
+      task_type: task
+      priority: medium
+    body: |
+      ## Paging
+
+      - Primary: on-call
+      - Secondary: team lead
+
+      ## First five minutes
+
+      Acknowledge, open a channel, post status.
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

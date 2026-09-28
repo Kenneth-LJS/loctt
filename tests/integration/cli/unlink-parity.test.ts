@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
 import { startMcpClient } from "../adapters/mcp-stdio.js";
-import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
+import { removeTaskOutOfBand, withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
 /**
  * @verifies REL-C1
@@ -122,7 +122,8 @@ describe("unlink leaves identical state on CLI and MCP", () => {
       const targetId = /target:\s*(\S+)/.exec(before)?.[1];
       expect(targetId, "seed should have written a relationship").toBeDefined();
 
-      await runCli(["delete", "T-2", "--yes"], { cwd: root });
+      // Out of band: `loctt delete` now removes the source's edge too (K147).
+      await removeTaskOutOfBand(root, "T-2");
 
       const res = await runCli(
         ["unlink", "T-1", "blocks", String(targetId)],
@@ -155,7 +156,8 @@ describe("unlink leaves identical state on CLI and MCP", () => {
   it("explains an unresolvable target instead of denying the edge", async () => {
     await withTmpLoctt(async ({ root }) => {
       await seed(root);
-      await runCli(["delete", "T-2", "--yes"], { cwd: root });
+      // Out of band: `loctt delete` now removes the source's edge too (K147).
+      await removeTaskOutOfBand(root, "T-2");
 
       const res = await runCli(["unlink", "T-1", "blocks", "T-2"], { cwd: root });
       expect(res.exitCode).not.toBe(0);
@@ -177,6 +179,68 @@ describe("unlink leaves identical state on CLI and MCP", () => {
 
       // The far end: the edge is gone from the file.
       expect(await snapshot(root)).not.toContain("blocks");
+    });
+  });
+});
+
+/**
+ * @verifies REL-C9
+ *
+ * G1: a link stored as a key more than one task has held. The repair
+ * keeps it (A357 7) and doctor reported it, but every surface resolved
+ * the key to one holder's id first, so `unlink` answered "does not
+ * exist" on CLI and MCP alike and the link could not be removed.
+ */
+describe("unlink removes a link stored as an ambiguous key", () => {
+  const taskFile = async (root: string, key: string): Promise<string> => {
+    const dir = path.join(root, ".loctt/tasks");
+    const { readdir } = await import("node:fs/promises");
+    for (const id of await readdir(dir)) {
+      const file = path.join(dir, id, "task.md");
+      if ((await readFile(file, "utf-8")).includes(`\nkey: ${key}\n`)) return file;
+    }
+    throw new Error(`no task file for ${key}`);
+  };
+
+  /** T-1 stores `relates_to: T-2`; T-2 holds T-2 and T-3 once held it too. */
+  const seed = async (root: string): Promise<string> => {
+    const { writeFile } = await import("node:fs/promises");
+    await runCli(["create", "source"], { cwd: root });
+    await runCli(["create", "holder"], { cwd: root });
+    await runCli(["create", "former holder"], { cwd: root });
+    const former = await taskFile(root, "T-3");
+    await writeFile(former, (await readFile(former, "utf-8"))
+      .replace("\nkey: T-3\n", "\nkey: T-3\nkey_history:\n  - T-2\n"), "utf-8");
+    const source = await taskFile(root, "T-1");
+    await writeFile(source, (await readFile(source, "utf-8"))
+      .replace("\nkey: T-1\n", "\nkey: T-1\nrelationships:\n  - type: relates_to\n    target: T-2\n"), "utf-8");
+    return source;
+  };
+
+  it("through the CLI", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const source = await seed(root);
+      const doctor = await runCli(["doctor"], { cwd: root });
+      expect(doctor.stdout).toMatch(/more than one task has had/);
+      expect(doctor.stdout).toMatch(/Remove this link, then link the right task/);
+
+      const res = await runCli(["unlink", "T-1", "relates_to", "T-2"], { cwd: root });
+      expect(res.exitCode, res.stderr).toBe(0);
+      expect(await readFile(source, "utf-8")).not.toMatch(/relationships:/);
+    });
+  });
+
+  it("through MCP", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const source = await seed(root);
+      const client = await startMcpClient(root);
+      try {
+        const res = await client.callTool("unlink_tasks", { ref: "T-1", type: "relates_to", target: "T-2" });
+        expect(res.isError, res.content[0]?.text).toBeFalsy();
+      } finally {
+        await client.close();
+      }
+      expect(await readFile(source, "utf-8")).not.toMatch(/relationships:/);
     });
   });
 });

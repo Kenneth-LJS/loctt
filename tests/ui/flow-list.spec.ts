@@ -4117,7 +4117,9 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
   }) => {
     await tracker.run(["milestone", "create", "v1"]);
     await tracker.seed([{ title: "One" }]);
-    const gone = "01M0DELETED000000000000000";
+    // A real ID shape (no I, L, O or U): K148 reads anything else as a
+    // name, and a name that matches nothing is refused.
+    const gone = "01M0DE1ETED000000000000000";
 
     await page.goto(`${tracker.baseURL}/list?milestone=${gone}`);
     await expect(page.getByText(/No tasks match these filters/i)).toBeVisible();
@@ -5205,7 +5207,8 @@ test.describe("MSL — many labels, and a dangling one (M1.3)", () => {
     tracker,
   }) => {
     await tracker.seed([{ title: "One" }]);
-    const gone = "01M0DELETEDLABEL0000000000";
+    // A real ID shape (K148; see LST-33 above).
+    const gone = "01M0DE1ETED1ABE10000000000";
 
     await page.goto(`${tracker.baseURL}/list?labels=${gone}`);
 

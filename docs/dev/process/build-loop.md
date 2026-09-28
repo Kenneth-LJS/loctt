@@ -190,16 +190,82 @@ own claims, another agent's, and every decision record.
   compile cascade, not as failures).
 - **A cross-cutting sweep must run EVERY suite it could touch.**
   `npm run test` runs the workspace *unit* suites only — not
-  integration, e2e, or the Playwright UI specs. A sweep that reports
+  integration, the runthrough, or the Playwright UI specs. A sweep that reports
   "all suites green" on the strength of `npm run test` has verified
   perhaps half of what it changed. Before claiming a repo-wide change is
   done, run `npm run test`, `npm run test:integration`, `npm run
-  test:e2e`, and the Playwright UI suite — and say which you ran.
+  test:runthrough`, and the Playwright UI suite — and say which you
+  ran. (`test:e2e` is gone: its journeys are runthrough scenarios since
+  B43, K145.)
+- **Full integration runs before merge, not per change (K146).** While
+  working, run only the integration files a change touches or could
+  affect; `npm run test:integration` (~6 min) runs in the pre-merge gate,
+  the same pattern as the full Playwright suite (~24 min). Measured
+  2026-09-27: unit ~2 min, integration ~6 min, packaging ~10 s plus a
+  build, Playwright ~24 min at 2 workers; the full gate set ~35 min.
+  Since B43 every writing integration test also runs `loctt doctor`
+  once (the doctor gate, ~0.5 s a test; not yet re-measured).
+- **Which suite a test goes in (K145).** Integration tests how each
+  surface behaves (flags, output, exit codes, error text, locks, git,
+  stdin); data behaviour goes to the runthrough; the user journeys are
+  runthrough scenarios (`tests/runthrough/cases/journeys/`). Existing
+  integration tests move only when touched. Every writing integration
+  test passes the doctor gate (`tests/integration/fixtures/doctor-gate.ts`).
+  See `tests/README.md` → "Which suite".
 - **`page.on("pageerror")` distinguishes a component that crashes on
   render from one that renders nothing** — reasoning about data flow
   cannot; both give identical "element not found" output. A hook below
   an early return can crash a whole subtree (React #310) while
   build/typecheck/lint all exit 0.
+
+## Smoke before every commit, the full set before every merge (K155)
+
+Measured on an idle machine (2026-09-28): lint 53 s cold, 5 s with a
+cache after a one-file change; unit 2.1 min; runthrough ~2.3 min; the
+full Playwright suite ~25 min; Playwright's blocker-case tests alone
+7.6 min; the full gate set (build, typecheck, lint, unit, integration,
+runthrough, packaging, full Playwright) ~45 min. Running the full set on
+every commit is too slow to actually happen every time, and a gate
+nobody runs is not a gate — so there are two tiers.
+
+**`npm run test:smoke`** — before every commit:
+
+- build, typecheck, cached lint (`cases:check`, so a stale
+  `smoke.list` or `case-index.json` fails here rather than silently
+  under-selecting)
+- `npm run test` (all unit tests)
+- the full runthrough (`npm run test:runthrough`)
+- packaging (`npm run test:packaging`)
+- only the Playwright tests that `@verifies` a **blocker**-severity case
+
+That last item is the reason smoke is precise rather than a fixed line
+window or a hand-maintained list: `tools/case-index/smoke.ts` resolves
+every `@verifies` tag naming a blocker case to the exact test it
+annotates (immediately before a `test(...)` call, or on the first line
+inside one — both shapes appear in `tests/ui/`), and
+`npm run cases:index` writes the result to `tests/ui/smoke.list` (one
+`file:line` per line, in the form Playwright's own CLI takes as a
+positional filter) alongside `case-index.json`. `cases:check` fails if
+either file is stale, so a case that moves or a test that gets renamed
+cannot quietly fall out of smoke. `tools/smoke/run.ts` (the script
+behind `test:smoke`) regenerates the selection at run time too and
+refuses to run an empty Playwright step, so the gate cannot pass by
+accident on zero tests.
+
+**Why integration is not in smoke.** Only 8 of 586 integration tests
+tie to a blocker case — the runthrough already covers CLI and MCP end
+to end, over the same seed tracker, on both surfaces. Integration tests
+*surface mechanics* (flags, exit codes, error text; see
+`tests/README.md` → "Which suite"), which matters for correctness but
+is not where a blocker-severity regression tends to show up. It still
+runs on touched files while working (K146) and in full before every
+merge.
+
+**Before every merge**, run the full set: `npm run test:integration`,
+the full `npm run test:ui` (not just the smoke selection), on top of
+everything smoke already covers. Smoke is a fast, precise gate for
+"did this commit break something serious"; the full set is what
+actually has to be true before the branch lands.
 
 ## Per ticket
 
@@ -234,7 +300,12 @@ own claims, another agent's, and every decision record.
                GATE  npm run cases:check                          (index not stale)
 
  9. SURFACE    Run the matching surface cases for CLI + MCP in this domain.
-               GATE  npm run test:integration
+               GATE  npx vitest run --config tests/vitest.integration.config.ts <touched files>
+                     (only the integration files this change touches or could
+                     affect; the full `npm run test:integration`, ~6 min, runs
+                     once before merge — K146)
+               GATE  npm run test:runthrough   (every runthrough case, CLI
+                     then scripted MCP, over the seed tracker — K144)
 
 10. COMMIT     One squashed commit. Update the ticket's status mark.
 ```
@@ -310,7 +381,7 @@ instead.**
   as *timeouts, not assertion failures*, which raising the timeout only
   masks. The tell is timeouts plus summed import time approaching wall
   clock: vitest defaults to one worker per core and each spawns ~10 real
-  processes, so integration/e2e configs pin `maxWorkers: 2`. Raising a
+  processes, so the integration config pins `maxWorkers: 2`. Raising a
   timeout that is not the cause hides the contention.
 - **Distinguish a real defect from ambient flake by running the file,
   not just the test — but know which modes can't be load-dependent.** A

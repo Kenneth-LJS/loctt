@@ -5,10 +5,14 @@ export type { Migration } from "./migrations.js";
 export { findMigrationPath, listMigrations } from "./migrations.js";
 export {
   backupLocttDir,
+  compareFormatVersions,
   CURRENT_SCHEMA_VERSION,
+  isFormatVersion,
   readSchemaVersion,
   SchemaTooNewError,
   SchemaUnmigratableError,
+  SchemaUpgradeRequiredError,
   SchemaVersionError,
+  upgradeRequiredMessage,
   writeSchemaVersion,
 } from "./version.js";

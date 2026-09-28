@@ -6,6 +6,7 @@ import {
   recoverInterruptedPrefixRename,
   requireSupportedSchema,
   resolveLocttDir,
+  SchemaUnmigratableError,
 } from "@loctt/core";
 
 import * as backupCmd from "./commands/backup.js";
@@ -112,9 +113,10 @@ export async function main(): Promise<void> {
   try {
     // Boot guard: every command that touches an existing tracker
     // must run against a tracker whose schema matches what this
-    // CLI knows how to read. Mismatches direct the user to
-    // `loctt migrate` rather than silently mutating data the code
-    // doesn't fully understand.
+    // CLI knows how to read. An older tracker is refused with "This
+    // tracker needs upgrading from X to Y. Run `loctt migrate` (a
+    // backup is made first)." and nothing is written: upgrading is a
+    // deliberate step (K154). A newer one points at a newer loctt.
     if (!SCHEMA_GUARD_EXEMPT_COMMANDS.has(command)) {
       const locttDir = resolveLocttDir(root);
       if (await dirExists(locttDir)) {
@@ -257,6 +259,9 @@ export async function main(): Promise<void> {
     // get a defensive stringify.
     if (err instanceof Error) {
       console.error(`Error: ${err.message}`);
+      // A schema state `loctt migrate` cannot fix carries the sentence
+      // that says what can (e.g. what `.schema-version` must hold).
+      if (err instanceof SchemaUnmigratableError) console.error(err.remedy);
       if (process.env["LOCTT_DEBUG"] === "1" && err.stack) {
         console.error(err.stack);
       }

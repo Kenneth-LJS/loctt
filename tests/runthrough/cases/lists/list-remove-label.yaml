@@ -1,0 +1,11 @@
+id: list-remove-label
+name: Remove one label, keeping the others
+description: K150 - `--remove` / MCP `remove` takes a label name or ID and leaves the rest of the list as stored.
+tags: [lists, labels, b45]
+pre:
+  - field: { task: "${task.search_index.key}", field: labels, equals: ["${label.backend.id}", "${label.infra.id}"] }
+cli: set ${task.search_index.key} labels --remove backend
+mcp:
+  call: { tool: update_task, args: { ref: "${task.search_index.key}", remove: { labels: [backend] } } }
+post:
+  - field: { task: "${task.search_index.key}", field: labels, equals: ["${label.infra.id}"] }

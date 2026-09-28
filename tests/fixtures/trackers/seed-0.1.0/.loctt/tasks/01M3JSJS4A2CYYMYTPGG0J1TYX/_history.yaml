@@ -1,0 +1,26 @@
+- timestamp: 2026-09-28T01:20:30.346Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJS4A2CYYMYTPGG0J1TYX
+      key: WEB-24
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Support Internet Explorer 11
+      created_at: 2026-09-28T01:20:30.346Z
+      updated_at: 2026-09-28T01:20:30.346Z
+      status: backlog
+      task_type: story
+      priority: low
+      labels:
+        - 01M3JSJ9ADABA1DAAX7Z2PCXME
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:41.485Z
+  kind: field_change
+  field: status
+  before: backlog
+  after: wont_do
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:54.499Z
+  kind: archived
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

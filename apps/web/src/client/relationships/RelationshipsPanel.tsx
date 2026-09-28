@@ -19,6 +19,7 @@ import type { RelationshipGroup, RelationshipRow } from "./group.ts";
 import { groupRelationships, treeChildSideKey } from "./group.ts";
 import { LinkPicker } from "./LinkPicker.tsx";
 import { RelationshipRowView } from "./RelationshipRow.tsx";
+import { useReorder } from "./Reorder.tsx";
 import type { TaskIndex } from "./tree.ts";
 import { buildTree, hasCycle } from "./tree.ts";
 import { TreeRows } from "./TreeRows.tsx";
@@ -44,7 +45,10 @@ import { TreeRows } from "./TreeRows.tsx";
  *
  * ## Reordering is per-group and drag-or-keyboard
  *
- * REL-13..15. Only a `ranked: true` kind gets handles. A drop sends
+ * REL-13..15. Every configured kind is ordered (K143), so every group
+ * gets the same handle (`Reorder.tsx`), the tree-rendered Children
+ * group's direct children included (B40); only a type workflow.yaml does
+ * not declare has none. A drop sends
  * one `before` / `after` against the neighbour it landed next to; core
  * computes the lexorank, rewrites **only** the moved edge, and
  * rebalances the window itself when the string would get too long
@@ -189,11 +193,10 @@ export function RelationshipsPanel({
        * disk" asks for. The message names the action, the row and the
        * group, and carries the server's own reason.
        *
-       * REL-33's refusal — a rerank against a kind switched to
-       * `ranked: false` — now arrives here as an ordinary `ReorderError`
-       * (core's `reorderRelationship` reads the `ranked` flag and the
-       * web route maps the error to a 400), rendering through this same
-       * branch.
+       * A refusal from core (e.g. a kind removed from workflow.yaml
+       * while the page was open) arrives here as an ordinary
+       * `ReorderError`, which the web route maps to a 400, rendering
+       * through this same branch.
        */
       onError: (err: Error) => {
         setErrorFor(
@@ -301,6 +304,7 @@ export function RelationshipsPanel({
                         statusOf={statusOf}
                         removing={unlink.isPending}
                         onRemove={row => { onRemove(group, row); }}
+                        onMove={(from, to) => { move(group, from, to); }}
                       />
                     )
                   : (
@@ -508,7 +512,10 @@ function ChildProgressMeter({
   );
 }
 
-/** A non-structural group: flat rows, drag handles when ranked. */
+/**
+ * A non-structural group: flat rows, each with the shared reorder handle
+ * (`Reorder.tsx`) when the kind is declared.
+ */
 function FlatGroup({
   group,
   statusOf,
@@ -522,137 +529,28 @@ function FlatGroup({
   readonly onRemove: (row: RelationshipRow) => void;
   readonly onMove: (from: number, to: number) => void;
 }): React.JSX.Element {
-  /** The row being dragged, by index. */
-  const [dragging, setDragging] = useState<number | null>(null);
-  /**
-   * A keyboard "pickup" in progress. REL-15's third bullet — "Escape
-   * restores the original position without a write ever leaving" —
-   * requires a buffer: arrow keys move the picked-up row *visually*
-   * only, and the rerank is committed once, on drop (Enter/Space). So
-   * this holds the row's origin index and its current visual position;
-   * while it is non-null the rendered order is `order` below, not
-   * `group.rows`. Escape drops it with no write; a commit calls
-   * `onMove(origin, current)` a single time.
-   *
-   * The previous code called `onMove` on every arrow press — each
-   * keystroke was a real rerank write — and Escape performed no
-   * restoring move at all, having already overwritten the origin it
-   * would have needed. Both are fixed here.
-   */
-  const [pickup, setPickup] = useState<{ origin: number; current: number } | null>(null);
-  /** The screen-reader announcement for a keyboard move (REL-15). */
-  const [announcement, setAnnouncement] = useState("");
-
-  const count = group.rows.length;
-
-  // While a pickup is live, render the rows in their in-flight visual
-  // order; otherwise render exactly what the file says. Reordering the
-  // buffer here (rather than writing) is what keeps arrow presses from
-  // leaving a write, and what lets Escape restore by simply dropping
-  // the buffer.
-  const displayRows = pickup === null
-    ? group.rows
-    : moveInArray(group.rows, pickup.origin, pickup.current);
-
-  /** Moves the picked-up row one step, visually only — no write. */
-  const keyboardStep = (delta: number): void => {
-    setPickup(prev => {
-      // First arrow: pick the row up at its current (rendered) index.
-      const active = prev;
-      if (active === null) return prev;
-      const to = active.current + delta;
-      if (to < 0 || to >= count) return active;
-      setAnnouncement(
-        `${group.rows[active.origin]?.resolvedKey ?? "Row"} moved to position `
-        + `${String(to + 1)} of ${String(count)}`,
-      );
-      return { origin: active.origin, current: to };
-    });
-  };
-
-  /** Commits the buffered move as a single rerank (Enter/Space). */
-  const commit = (): void => {
-    setPickup(prev => {
-      if (prev !== null && prev.current !== prev.origin) {
-        onMove(prev.origin, prev.current);
-      }
-      return null;
-    });
-  };
+  const reorder = useReorder({
+    count: group.rows.length,
+    nameAt: i => rowName(group.rows[i]),
+    onMove,
+    enabled: orderable(group),
+  });
 
   return (
     <div>
       {/* REL-15's second bullet: the move is announced rather than
           being a silent visual change. */}
-      <span role="status" aria-live="polite" className="sr-only" data-testid="reorder-announcement">
-        {announcement}
-      </span>
+      {reorder.announcer}
       <div className="space-y-0.5">
-        {displayRows.map((row, i) => (
-          <div
-            key={`${row.type}:${row.target}`}
-            draggable={group.ranked}
-            onDragStart={() => { setDragging(i); }}
-            onDragOver={e => { if (group.ranked && dragging !== null) e.preventDefault(); }}
-            onDrop={e => {
-              if (!group.ranked || dragging === null) return;
-              e.preventDefault();
-              onMove(dragging, i);
-              setDragging(null);
-            }}
-            onDragEnd={() => { setDragging(null); }}
-          >
+        {reorder.order(group.rows).map((row, i) => (
+          <div key={`${row.type}:${row.target}`} {...reorder.rowProps(i)}>
             <RelationshipRowView
               row={row}
               statusOf={statusOf}
               removing={removing}
               onRemove={() => { onRemove(row); }}
             >
-              {group.ranked && (
-                /* REL-6: only a ranked kind gets a handle. REL-15: it
-                   is a button, so it is tabbable and can be driven with
-                   the arrow keys — a `div` with `draggable` is neither. */
-                <button
-                  type="button"
-                  data-testid="drag-handle"
-                  aria-label={
-                    `Reorder ${row.resolvedKey ?? row.target}, position `
-                    + `${String(i + 1)} of ${String(count)}. `
-                    + `Arrow up and down to move, Enter to drop, Escape to cancel.`
-                  }
-                  onKeyDown={e => {
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      // Lazily begin the pickup at this row's current
-                      // rendered index, then step it up.
-                      setPickup(prev => prev ?? { origin: i, current: i });
-                      keyboardStep(-1);
-                    } else if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      setPickup(prev => prev ?? { origin: i, current: i });
-                      keyboardStep(1);
-                    } else if ((e.key === "Enter" || e.key === " ") && pickup !== null) {
-                      // Drop: commit the buffered move as one rerank.
-                      e.preventDefault();
-                      setAnnouncement(
-                        `${group.rows[pickup.origin]?.resolvedKey ?? "Row"} dropped at `
-                        + `position ${String(pickup.current + 1)} of ${String(count)}`,
-                      );
-                      commit();
-                    } else if (e.key === "Escape" && pickup !== null) {
-                      e.preventDefault();
-                      // Restore: dropping the buffer returns the row to
-                      // its origin with no write ever leaving (REL-15's
-                      // third bullet).
-                      setPickup(null);
-                      setAnnouncement("Move cancelled");
-                    }
-                  }}
-                  className="shrink-0 cursor-grab px-1 text-[0.8571rem] text-text-tertiary"
-                >
-                  ⠿
-                </button>
-              )}
+              {reorder.handle(i, rowName(row))}
             </RelationshipRowView>
           </div>
         ))}
@@ -662,17 +560,18 @@ function FlatGroup({
 }
 
 /**
- * Returns a copy of `rows` with the element at `from` moved to `to`,
- * shifting the rest. Used only for the in-flight keyboard pickup's
- * visual order — it never touches disk.
+ * Whether a group's rows can be reordered: every declared kind is ordered
+ * (K143), so only a type workflow.yaml does not declare is left without
+ * handles (core refuses to rerank it). `group.ranked` says the same thing
+ * since B41 and is kept only as the `data-ranked` attribute.
  */
-function moveInArray<T>(rows: readonly T[], from: number, to: number): readonly T[] {
-  if (from === to) return rows;
-  const next = [...rows];
-  const [moved] = next.splice(from, 1);
-  if (moved === undefined) return rows;
-  next.splice(to, 0, moved);
-  return next;
+function orderable(group: RelationshipGroup): boolean {
+  return !group.unknown;
+}
+
+/** How a row is named in the handle and the announcements. */
+function rowName(row: RelationshipRow | undefined): string {
+  return row?.resolvedKey ?? row?.target ?? "Row";
 }
 
 /** A `graph: tree` group: nested rows with visible depth (REL-5). */
@@ -683,6 +582,7 @@ function TreeGroup({
   statusOf,
   removing,
   onRemove,
+  onMove,
 }: {
   readonly group: RelationshipGroup;
   readonly taskId: string;
@@ -690,12 +590,22 @@ function TreeGroup({
   readonly statusOf: (key: string | undefined) => StatusDef | undefined;
   readonly removing: boolean;
   readonly onRemove: (row: RelationshipRow) => void;
+  readonly onMove: (from: number, to: number) => void;
 }): React.JSX.Element {
   const nodes = useMemo(
     () => buildTree(group.rows, group.key, taskIndex, taskId),
     [group.rows, group.key, taskIndex, taskId],
   );
   const cyclic = hasCycle(nodes);
+  // B40: the direct (depth-0) children reorder like any flat group; their
+  // subtrees move with them. `nodes[i]` is built from `group.rows[i]`, so
+  // the stored indices line up.
+  const reorder = useReorder({
+    count: group.rows.length,
+    nameAt: i => rowName(group.rows[i]),
+    onMove,
+    enabled: orderable(group),
+  });
 
   return (
     <div>
@@ -713,12 +623,14 @@ function TreeGroup({
           the two links to break it.
         </p>
       )}
+      {reorder.announcer}
       <TreeRows
-        nodes={nodes}
+        nodes={reorder.order(nodes)}
         rows={group.rows}
         statusOf={statusOf}
         removing={removing}
         onRemove={onRemove}
+        reorder={reorder}
       />
     </div>
   );

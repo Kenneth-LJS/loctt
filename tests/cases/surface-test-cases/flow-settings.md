@@ -102,3 +102,24 @@ not enabled and gives the enable command.
 **Given** any initialized tracker, **when** `loctt calendar set timezone UTC`
 runs, **then** stderr states the calendar is not editable from the CLI and
 names the surface that can edit it, exiting 2.
+
+### CFG-C6 · minor · P10 · CLI MCP UI
+**A choice field can allow new values.** (K150)
+A choice (enum) field's value list could only be grown by editing the
+field; there was no way to say "users may add values as they go".
+
+- Enum custom fields take `allow_new_values` (default off). Off keeps
+  today's behaviour: listed values only.
+- It is set on create and on edit from every surface: `loctt
+  custom-field add|edit --allow-new-values[=true|false]`, MCP
+  `edit_workflow_entity` `fields.allow_new_values`, and the Settings →
+  Custom fields dialog's "Allow new values from a task" toggle (shown
+  for enum fields only).
+- On a non-enum field it is refused on every surface ("Only a choice
+  (enum) field can allow new values").
+- The setting survives any later workflow write, and so does a field's
+  `task_types` scope (it was dropped by every write before B45).
+
+**Given** an enum field `platforms`, **when** `loctt custom-field edit
+platforms --allow-new-values` runs, **then** `workflow.yaml` stores
+`allow_new_values: true` on it, and adding a priority afterwards keeps it.

@@ -9,4 +9,4 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-Empty. B28–B38 shipped on `ui/polish-wave-4` (2026-09-27); records are K135–K139 and A351–A355 in `decisions.md`. Publishing `loctt` and unpublishing `@loctt/cli` / `@loctt/mcp` are Ken's (K139).
+Empty. B39–B50 shipped on `fix/parent-and-child-order`; records K140–K155, A357–A368.

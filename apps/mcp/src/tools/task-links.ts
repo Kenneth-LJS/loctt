@@ -5,7 +5,7 @@
  * sides of the edge in one state-locked transaction.
  */
 
-import { bulkLink, loadOptionalConfigs, lookupTask, unlinkTask } from "@loctt/core";
+import { bulkLink, loadOptionalConfigs, lookupTask, TaskNotFoundError, unlinkTask } from "@loctt/core";
 import { z } from "zod";
 
 import { errorResult, text } from "../runtime/errors.js";
@@ -58,7 +58,8 @@ export const TOOLS: readonly ToolDef[] = [
       "Remove a relationship between two tasks, clearing both sides of the " +
       "edge in one transaction. Refused if the edge does not exist, but a " +
       "target that was deleted out of band is tolerated so a dangling edge " +
-      "can still be cleaned up.",
+      "can still be cleaned up (pass the id the edge stores). A link stored " +
+      "as a task key rather than an id is removed by passing that key.",
     inputSchema: {
       ref: z.string(),
       type: z.string(),
@@ -66,17 +67,29 @@ export const TOOLS: readonly ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const task = await lookupTask(locttDir, args["ref"] as string);
-      const target = await lookupTask(locttDir, args["target"] as string);
+      const targetRef = args["target"] as string;
+      // A target that resolves to no task is passed through as given,
+      // as the CLI and web do: it is the id a dangling edge stores (the
+      // tool's description promised this and the handler refused it).
+      let target: { id: string; key: string } = { id: targetRef, key: targetRef };
+      try {
+        const found = await lookupTask(locttDir, targetRef);
+        target = { id: found.frontmatter.id, key: found.frontmatter.key };
+      } catch (err) {
+        if (!(err instanceof TaskNotFoundError)) throw err;
+      }
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
       const relType = args["type"] as string;
       await unlinkTask({
         locttDir,
         taskId: task.frontmatter.id,
         type: relType,
-        target: target.frontmatter.id,
+        target: target.id,
+        // G1: an edge stored as an ambiguous key is removed by that text.
+        storedTarget: targetRef,
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       });
-      return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
+      return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.key}`);
     },
   },
 ];

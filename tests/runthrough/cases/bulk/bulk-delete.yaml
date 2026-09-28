@@ -1,0 +1,16 @@
+id: bulk-delete
+name: Delete several unlinked tasks at once
+description: >
+  Permanent delete of two tasks with no links. The task directories go;
+  nothing else changes.
+tags: [bulk, delete]
+pre:
+  - field: { task: "${task.mob_tablet.key}", field: relationships, absent: true }
+  - field: { task: "${task.ops_costs.key}", field: relationships, absent: true }
+cli: delete ${task.mob_tablet.key},${task.ops_costs.key} --yes
+mcp:
+  call: { tool: delete_task, args: { refs: ["${task.mob_tablet.key}", "${task.ops_costs.key}"], confirm: true } }
+post:
+  - task_absent: "${task.mob_tablet.id}"
+  - task_absent: "${task.ops_costs.id}"
+  - count: { where: {}, archived: include, equals: 38 }

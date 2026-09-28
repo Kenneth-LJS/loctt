@@ -29,8 +29,12 @@ Commands:
                                    [--timezone <IANA tz>]  Workspace timezone; defaults to this
                                    machine's zone. Decides what "today" means in queries.
   info
-  doctor [--rebuild-index]         Run diagnostic checks; with --rebuild-index, rebuild
+  doctor [--rebuild-index] [--repair-relationships] [--fix]
+                                   Run diagnostic checks; with --rebuild-index, rebuild
                                    the key-lookup cache after out-of-band frontmatter edits
+                                   --repair-relationships: store link targets as ids, add
+                                   the missing side of one-sided links, merge duplicates
+                                   --fix: run every safe repair, then report what is left
   views [--archived <active|archived|all>]
                                    List saved views from queries.yaml
                                    --archived: active (default, hides archived)
@@ -75,7 +79,7 @@ Commands:
   relationship <list|add|edit|rm> ...
                                    Edit workflow relationships (no reorder). add <key> --label
                                    [--kind <directional|symmetric>][--inverse][--inverse-label]
-                                   [--graph <none|acyclic|tree>][--ranked]; rm <key> [--remap-to <key>]
+                                   [--graph <none|acyclic|tree>]; rm <key> [--remap-to <key>]
   custom-field <list|add|edit|rm|value> ...
                                    Edit custom fields. add <key> --label --type
                                    <string|number|date|boolean|enum> [--multi][--searchable]
@@ -110,7 +114,12 @@ Commands:
                                    Filters mirror 'list'; writes to stdout unless
                                    --output is given. CSV is a report, not a backup
                                    (use 'backup' to protect against data loss).
-  set <task> <field> <value>
+  set <task> <field> <value> [--create]
+  set <task>[,<task>...] <field> [--add <v>...] [--remove <v>...] [--create]
+                                   --add/--remove edit labels or a multi-value
+                                   field in place; --create makes an unknown label,
+                                   or a value of a field that allows new values.
+                                   Several tasks: each that can is changed
   unset <task> <field>
   link <task> <relationship> <target>
   unlink <task> <relationship> <target>
@@ -140,7 +149,7 @@ Commands:
   git <enable|disable|status|publish|sync|reconcile>
   config <get|set|unset|list> [key] [value]
   config usage                     Count tasks referencing each workflow key
-  migrate [--yes] [--dry-run]      Upgrade the tracker schema to the current version
+  migrate [--yes] [--dry-run]      Upgrade the tracker's format: preview, then confirm
   backup <file> [--no-history]     Write a whole-tracker JSONL backup
   restore <file...>                Restore a backup. Bare refuses a non-empty tracker;
     [--merge | --overwrite]        --merge adds only absent ids, --overwrite replaces

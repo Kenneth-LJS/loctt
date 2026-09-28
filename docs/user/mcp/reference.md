@@ -53,7 +53,7 @@ client fetch the package with `npx`:
 
 ## How an agent works with the tracker
 
-Three rules shape every correct interaction, and they are the same three
+Four rules shape every correct interaction, and they are the same four
 the server tells the agent on connect:
 
 1. **Structured tools only — never hand-edit files.** Task metadata is
@@ -71,6 +71,50 @@ the server tells the agent on connect:
    `archive_*` / `unarchive_*` pair is almost always the right choice.
    Before removing anything from the workflow config, the agent calls
    `get_workflow_key_usage` to see how many tasks a change would touch.
+4. **Upgrading the tracker is the user's call.** If a tool says the
+   tracker needs upgrading, the agent does not call `migrate_schema`
+   unless you asked it to upgrade the tracker; it tells you and asks
+   ("Don't call migrate_schema unless the user asked you to upgrade the
+   tracker. Tell the user it needs upgrading and ask.", in the server
+   instructions and the tool's description).
+
+### Format versions and upgrades
+
+Upgrading a tracker is always deliberate. On a tracker in an older
+format every tool returns an error and writes nothing: `This tracker
+needs upgrading from 0.1.0 to 0.3.0. Run \`loctt migrate\` (a backup is
+made first).` A risky step does not change that; it is only tagged in the
+preview. Four tools are not refused: `init`, `migrate_schema`, and the
+read-only `info` and `doctor`, which report the pending upgrade (`info`:
+`Schema: needs upgrading from 0.1.0 to 0.3.0. …`; `doctor`: a `schema
+version` error) and write nothing. Every repair `doctor` is asked for
+(`fix`, `rebuild_index`, `repair_relationships`, `restore_missing`) is
+skipped, saying why. The upgrade itself is `migrate_schema`: without
+`confirm` it previews (from → to, each step and what it changes,
+`[RISKY]`, where the backup goes); with `confirm: true`, after the user
+agrees, it backs up `.loctt/` and upgrades. A tracker in a newer format
+is refused with `This tracker needs loctt <version> or newer.`; a
+`.schema-version` holding anything but a format version (including
+0.2.x's `1`) is refused, saying what it must hold. A version between two
+formats stands for the older one (`0.2.1` is format `0.1.0` and is
+upgraded like it); one below `0.1.0` is refused. See
+[Upgrading](../common/upgrading.md).
+
+### Names and IDs
+
+Wherever a tool takes a label, user,
+milestone, sprint or project, it takes its name or its ID, and so do
+queries (`labels = urgent`). A value shaped like an ID
+(`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`) is an ID; anything else is a name
+(a project's slug counts as a name; a user may also be named by a
+unique prefix). A name several entities share is refused, listing
+each with its ID: `'urgent' matches 2 labels: urgent (01…), urgent
+(01…). Use the ID.` A name that matches nothing is refused: `No label
+named 'nope'.` Creating or renaming a label, user, milestone, sprint,
+project or saved view with an ID-shaped name is refused: `That looks
+like an ID; choose a different name.` Results return both: wherever a
+result refers to an entity by ID it also carries its name (see
+[Names beside IDs](#names-beside-ids)).
 
 ## Example flows
 
@@ -154,18 +198,18 @@ tools.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `get_task` | One task, optionally with body and a `body_token` for safe writes. | `ref`, `include_body` (default true) |
-| `list_tasks` | Query/filter tasks. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `archived` (`active` default / `archived` / `all`) |
+| `get_task` | One task, optionally with body and a `body_token` for safe writes. Relationships are listed in the web task page's order (kinds in workflow order; within each kind by `rank`, then any link without one in stored order), and each link carries its `rank`. Every link gets a rank when written (at the end of its kind's list), so only a hand-edited link lacks one. Each entity reference also carries its name (`assignee_name`, `label_names`, …). | `ref`, `include_body` (default true) |
+| `list_tasks` | Query/filter tasks. A query may name labels, users, milestones, sprints and projects (`labels = urgent`); an unknown or ambiguous name is refused. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `archived` (`active` default / `archived` / `all`) |
 | `export_tasks` | Export matching tasks as CSV or JSON (a report, not a backup). | `format`, `query`, `view`, `project`, `columns`, `include_body`, `include_archived` |
-| `create_task` | Create a task. | `title`, `project`, `status`, `priority`, `task_type`, `assignee`, `reporter`, `due_date`, `start_date`, `estimate`, `milestone`, `sprint`, `labels`, `body`, `parent` |
-| `update_task` | Set one writable field. | `ref`, `field`, `value` |
+| `create_task` | Create a task. `parent` (key or id) links it under the parent exactly as `link_tasks` would: the parent's id is stored and the parent gets the child link. A parent that doesn't exist or is archived is refused and nothing is created. | `title`, `project`, `status`, `priority`, `task_type`, `assignee`, `reporter`, `due_date`, `start_date`, `estimate`, `milestone`, `sprint`, `labels`, `body`, `parent` |
+| `update_task` | Set one writable field (`field` + `value`, replacing it), and/or add and remove values of list fields: `add` / `remove` map `labels` or a `multi` custom field to a list of values, applied to the task's current list (adding a present value or removing an absent one is a no-op, reported as "No change"). Labels by name or ID, choice values by key or label. An unknown label or value is refused (`… Pass create_missing: true to create it.`) unless `create_missing: true`, which creates a label, or a value of a choice field with `allow_new_values` (appended to its `values`, key from the label). | `ref`, `field`, `value`, `add`, `remove`, `create_missing` |
 | `unset_field` | Clear one field. | `ref`, `field` |
-| `bulk_update_tasks` | Set or clear one field across many tasks in one operation. | `refs` (≤500), `field`, `value` (omit to clear) |
+| `bulk_update_tasks` | Set or clear one field across many tasks in one operation (a bad ref is reported without aborting the rest), **or** add/remove values of a list field on each of them: `add` / `remove` as in `update_task`, applied to each task's own list. Like the set form, a task that fails is listed (`  T-9: task not found`) and the rest still change; the result reads `N updated, M unchanged, F failed (bulk_op_id …)`. An unknown label or value without `create_missing` refuses the whole call. `field` and `add`/`remove` can't be combined in one call. | `refs` (≤500), `field`, `value` (omit to clear), `add`, `remove`, `create_missing` |
 | `duplicate_task` | Copy a task to a new key (no relationships/attachments). | `ref`, `title`, `project` |
 | `move_task` | Reallocate tasks to another project; old keys still resolve. | `refs` (≤500), `project` |
 | `archive_task` / `unarchive_task` | Reversible soft-delete and restore, one or many tasks in one operation. Tasks already in the target state are counted as unchanged; a bad ref is reported without aborting the rest. | `refs` (≤500) |
-| `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. | `refs` (≤500), `confirm` |
-| `get_task_history` | Paginated activity log, newest first. | `ref`, `limit`, `offset` |
+| `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. Every task holding a link to a deleted task (one with no edge back included) loses that link, with a `link_removed` entry in its history. Those links are removed first: a task one of whose partners can't be written is not deleted (its links are put back) and is reported as failed; the rest still go. | `refs` (≤500), `confirm` |
+| `get_task_history` | Paginated activity log, newest first. Entries carry `actor_name`, and a change to an entity field (or a label added or removed) carries `before_name` / `after_name`. | `ref`, `limit`, `offset` |
 
 A task file that will not parse is an error that names the file and the
 line, never "not found". When a key matches nothing and some task files
@@ -204,7 +248,7 @@ content.
 | Tool | Purpose | Key params |
 |---|---|---|
 | `link_tasks` | Add a relationship from one or many sources to a single target (written on both sides of each edge, one operation). Each edge is committed independently; a bad source is reported without aborting the rest, and an unresolvable target fails every source. | `refs` (≤500), `type`, `target` |
-| `unlink_tasks` | Remove a relationship (written on both sides). Takes a single source. | `ref`, `type`, `target` |
+| `unlink_tasks` | Remove a relationship (written on both sides). Takes a single source. A target deleted out of band is removed by the id the link stores; a link stored as a task key (for example one more than one task has held, which `doctor` reports) is removed by passing that key. | `ref`, `type`, `target` |
 
 ### Reordering
 
@@ -214,7 +258,7 @@ starting point is a task, not a link.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `reorder_relationship` | Reorder a target among a source's links of one type. | `source`, `type`, `target`, `before`/`after` |
+| `reorder_relationship` | Reorder a target among a source's links of one type. Every kind is ordered, on either side (`child`, `is_blocked_by`, `relates_to`, …); only a type `workflow.yaml` does not declare is refused. The target lands exactly where asked (siblings without a rank are ranked first, in listed order). | `source`, `type`, `target`, `before`/`after` |
 | `reorder_board` | Reorder a task within its board column. | `ref`, `before`/`after` |
 | `move_board_card` | Move a task to another column and position in one write. | `ref`, `status`, `before`, `after` |
 
@@ -467,8 +511,10 @@ entity key, required for `edit`/`delete`, and the **new** key on
 required only for `entity: "custom_field_value"`); `fields` (the
 create/edit payload, whose shape depends on the entity — `label`,
 `category`, `icon`, `color`, `kind`, `inverse`, `type`, `multi`,
-`task_types`, `statuses`, `wip`, `values`, … — `color` takes any of the
-three shapes in [Colors](#colors)); `remap_to` (delete-in-use
+`allow_new_values` (enum custom fields only: lets `update_task`
+`create_missing` add values), `task_types`, `statuses`, `wip`, `values`, … — `color` takes any of the
+three shapes in [Colors](#colors); a relationship has no `ranked` field,
+every kind is ordered since 0.3.0); `remap_to` (delete-in-use
 target key, or `null` to clear the value from every task); `order` (the
 full ordered key list, for `reorder`); `confirm` (must be `true` for
 `delete`, matching every other `delete_*` tool).
@@ -498,7 +544,7 @@ created here is indistinguishable from one created there.
 | `enable_git` / `disable_git` | Turn git-backed mode on or off. `enable_git` takes `adopt` for an existing LocTT branch. |
 | `get_git_status` | Enabled state, branch, remote, and drift in both directions. |
 | `publish_to_git` | Commit (and push) local state to the branch. |
-| `sync_from_git` | Fetch and reconcile the branch into the workspace. |
+| `sync_from_git` | Fetch and reconcile the branch into the workspace. Links that arrive without a rank are ranked as they are applied; a branch whose `.schema-version` is newer or not a format version is refused. |
 | `get_reconcile_status` | Details of an in-progress reconcile: each conflict's `task_id`, `task_key`, field, and both values; delete-vs-edit rows; auto-merged fields. Read this before `resolve_reconcile`. |
 | `resolve_reconcile` | Apply per-conflict decisions and complete the blocked publish/sync. Requires `confirm`; a surfaced rekey needs `confirm_rekey`. |
 | `abandon_reconcile` | Discard the in-progress reconcile, leaving local files as they are. Requires `confirm`. |
@@ -529,12 +575,31 @@ web UI (Settings → Sync), or MCP:
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `info` | Prose summary of the tracker. | — |
-| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index` or `restore-missing`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data). | `rebuild_index`, `restore_missing` |
+| `info` | Prose summary of the tracker, including its format (`Schema: 0.3.0 (current)`, or `needs upgrading from …`). Runs on a tracker that needs upgrading, and writes nothing. | — |
+| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index`, `restore-missing` or `repair-relationships`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data); `repair_relationships` changes links stored as a task key to the task's id, adds the missing side of one-sided links (refusing one that would create a loop), merges identical links and ranks links that have no rank, never deleting a link; `fix` runs every safe repair (`rebuild_index` and `repair_relationships`, not `restore_missing`). Repairs run before the checks, so the checks report what is left. Runs on a tracker that needs upgrading, reports it, and skips every repair. | `rebuild_index`, `restore_missing`, `repair_relationships`, `fix` |
 | `init` | Bootstrap a new tracker. An empty `.loctt/` folder is filled in like a missing one. | `prefix`, `project_label`, `no_docs`, `timezone` |
-| `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a schema upgrade. | `confirm` |
+| `migrate_schema` | Preview (`confirm:false`, the default) or apply (`confirm:true`) a format upgrade: the only way an agent upgrades a tracker. Its description tells the agent not to call it unless the user asked to upgrade the tracker. The preview lists each step, what it changes and `[RISKY]`, and where the backup goes; apply backs up `.loctt/` first and returns `Upgraded this tracker from 0.1.0 to 0.3.0.` and the backup path. Not refused on an older tracker. | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |
 | `restore` | Restore a backup (`bare`/`merge`/`overwrite`). Requires `confirm` unless `dry_run`. | `files`, `mode`, `dry_run`, `confirm` |
+
+## Names beside IDs
+
+Storage holds IDs; results add the names as new sibling fields, so every
+existing field keeps its shape (K148):
+
+| Result | Added |
+|---|---|
+| `get_task` | `project_name`, `assignee_name`, `reporter_name`, `milestone_name`, `sprint_name`; `label_names` in the order of `labels` (`null` for a label that no longer exists). A reference to a deleted entity gets no name. |
+| `get_task_history` | `actor_name` on each entry; `before_name` / `after_name` on a change to `assignee`, `reporter`, `milestone`, `sprint` or `project`, and on `label_added` / `label_removed`. |
+| `edit_*`, `archive_*`, `unarchive_*` (labels, milestones, sprints, projects) | The text names the entity as `name (id)`. |
+| `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user`, `count_user_references` | `name` beside the id. |
+| `get_sprint_burndown` | `sprintName` beside `sprintId`. |
+| `list_users` | `current_name` beside `current`. |
+| `get_user_settings`, the sidebar-groups and keyboard-shortcut tools | `user_name` beside `user`. |
+| `set_default_project` | The text names the project as `name (id)`. |
+
+The `list_*` tools already return each entity whole (id and name).
+`list_tasks` rows carry no entity references.
 
 ## What the agent sees
 

@@ -1,15 +1,15 @@
 # Flow: relationships and attachments
 
 The task detail panel's Relationships section — grouping, symmetric
-folding, the add-link picker, inverse-edge bookkeeping, ranked
-drag-reorder, and structural parent/child trees — plus the Attachments
+folding, the add-link picker, inverse-edge bookkeeping, drag-reorder
+(every kind is ordered, K143), and structural parent/child trees — plus the Attachments
 grid. Lands in **M2.5**. Task detail read/edit and archive/delete are
 [flow-tasks.md](flow-tasks.md); the activity entries these actions emit
 (`link_added`, `link_removed`, `attachment_added`,
 `attachment_removed`) are rendered per
 [flow-comments-activity.md](flow-comments-activity.md); relationship
-*configuration* (adding a kind, flipping `symmetric`/`structural`/
-`ranked`) is [flow-settings.md](flow-settings.md).
+*configuration* (adding a kind, flipping `symmetric`/`graph`) is
+[flow-settings.md](flow-settings.md).
 
 Grounding: an edge is `{ type, target, rank? }` in task frontmatter,
 where `target` is a task **ULID** and `type` is a relationship `key` or
@@ -69,14 +69,34 @@ with two children, one of which has three children of its own.
   scannable.
 - Collapsing a node hides its descendants; the collapsed state does not
   leak into other tasks' panels.
+- Each nested level is listed in rank order (unranked after ranked, then
+  stored order), the order that task's own page shows — not the order
+  the links were written.
+
+> **Amended (K140, K143 — B40).** The direct children of the tree group
+> carry the same reorder handle as every flat group (REL-6, REL-13–15);
+> a child's subtree moves with it, grandchildren get no handle of their
+> own (their links belong to their own parent, reordered on its page),
+> and a reorder refreshes every page that draws the subtree.
 
 ### REL-6 · M2 · minor · P3
-**Ranked and unranked groups are visually distinguishable.**
-- A group whose kind is `ranked: true` shows drag handles on its rows.
-- A group whose kind is not ranked shows no drag handle and cannot be
-  reordered.
-- Within a ranked group, edges carrying a `rank` sort by rank; edges
-  without one sort below the ranked ones (matching core's ordering).
+**Every group of a configured kind is ordered and reorderable.**
+- Every group of a kind `workflow.yaml` declares shows drag handles on
+  its rows, `relates_to` included, and so do the direct children of the
+  tree-rendered Children group (B40).
+- Every group uses the same handle: a button at least 24×24px, drawn with
+  the drag icon (not "⠿"), named "Reorder {key}, position N of M".
+- A group of a type `workflow.yaml` does not declare shows no handle:
+  core cannot reorder a kind it has no definition for.
+- Within a group, edges sort by `rank`; an edge without one (a hand-edit,
+  a merge from an old branch) sorts below the ranked ones (matching
+  core's ordering).
+- Every link written by LocTT carries a rank.
+
+> **Amended (K143, Ken 2026-09-28).** Ken chose that *every relationship
+> kind carries an order*: the `ranked` setting is removed from
+> workflow.yaml, every write gives a new link a rank at the end of its
+> group, and every group on the task page is reorderable (B41).
 
 ### A.2 Adding and removing links
 
@@ -149,8 +169,9 @@ confirm.**
 ### A.3 Ranked reorder
 
 ### REL-13 · M2 · blocker · P1
-**Drag-reorder within a ranked group persists a new rank.** A `subtask`
-group (ranked) with 4 targets; drag the 4th to position 2.
+**Drag-reorder within a group persists a new rank.** A `blocks` group
+with 4 targets; drag the 4th to position 2. (Every kind is ordered since
+K143; there is no longer a "ranked" group to pick.)
 - The row lands between the old 1st and 2nd and stays there after a
   reload.
 - Only the dragged edge's `rank` is rewritten; the other three edges'
@@ -160,6 +181,9 @@ group (ranked) with 4 targets; drag the 4th to position 2.
   `0`.
 - The reorder writes to the source task only — the targets' inverse
   edges are not re-ranked by this action.
+- The same holds for the direct children of a task's Children tree (B40,
+  K140): dragged or moved by keyboard, the new order survives a reload
+  and `loctt show` on the parent lists the children in that order.
 
 ### REL-14 · M2 · major · P9
 **Reordering into first and last position works.**
@@ -168,13 +192,18 @@ group (ranked) with 4 targets; drag the 4th to position 2.
 - Dropping below the current last produces a rank above every existing
   rank.
 - Neither operation renumbers the other rows.
+- In the Children tree, a direct child moved first or last takes its whole
+  subtree with it (B40).
 
 ### REL-15 · M2 · minor · P8
 **Drag-reorder is keyboard-reachable.**
 - A ranked row can be picked up from the keyboard and moved up/down.
 - The move is announced (position N of M) rather than being a silent
   visual change.
-- Escape during a keyboard move restores the original position.
+- Escape during a keyboard move restores the original position, with no
+  write ever leaving; the move is committed once, on Enter or Space.
+- The Children tree's direct children use the same keyboard model (B40,
+  K140, K143).
 
 ### A.4 Attachments
 
@@ -352,20 +381,39 @@ reorder a different row in tab B against tab B's stale list.
 - The losing tab is told what happened and offered a refresh.
 
 ### REL-33 · M2 · minor · P1
-**Reordering a group whose kind was just switched to `ranked: false` is
-refused cleanly.** Change the config in another process mid-session.
-- Drag handles disappear on the next refresh.
-- A drag attempt against a stale page is refused with a message that the
-  kind is no longer ranked.
-- Existing `rank` values on the edges are not stripped by the refusal.
+**A retired `ranked` setting left in `workflow.yaml` is ignored.** Write
+`ranked: false` on a kind in another process mid-session.
+- Loading `workflow.yaml` does not fail and the kind is not reported
+  broken; the setting is dropped on read.
+- The group keeps its drag handles, and a reorder lands (no "no longer
+  ranked" refusal exists).
+- `loctt doctor` reports the line as a warning naming the kind, saying
+  it no longer does anything; the 0.1.0 → 0.3.0 upgrade removes it, and
+  the next write of `workflow.yaml` drops it.
+
+> **Amended (K143, Ken 2026-09-28).** Ken chose that *every relationship
+> kind carries an order*: the `ranked` setting is removed from
+> workflow.yaml, every write gives a new link a rank at the end of its
+> group, and every group on the task page is reorderable (B41).
+> This case used to require the opposite (handles disappear, the
+> reorder is refused with "no longer ranked").
 
 ### REL-34 · M2 · minor · P9
-**A ranked group where no edge has a rank still orders
-deterministically.**
+**A group where no edge has a rank still orders deterministically.**
+Since K143 only a hand-edit or a merge from a branch written before 0.3.0
+leaves an edge without a rank.
 - Rows sort by a documented fallback (creation order in the array), not
   randomly.
-- Dragging one row assigns it a rank and it moves to the front of the
-  ranked segment; unranked rows remain below.
+- Dragging one row lands it exactly where it was dropped: the reorder
+  first ranks the group's unranked siblings in the order they are
+  listed, so every edge in the group has a rank afterwards.
+
+> **Amended (K143, Ken 2026-09-28).** Ken chose that *every relationship
+> kind carries an order*: the `ranked` setting is removed from
+> workflow.yaml, every write gives a new link a rank at the end of its
+> group, and every group on the task page is reorderable (B41).
+> Before, the dragged row was the only one given a rank and jumped to
+> the front of the "ranked segment", with the unranked rows below.
 
 ### B.3 Attachments
 

@@ -1,0 +1,9 @@
+id: edit-custom-multi-enum
+name: Edit a multi-value enum custom field
+description: A multi enum custom field is stored as a list of value keys; the CLI takes a comma-separated list (G2).
+tags: [edit, custom-fields]
+cli: set ${task.mob_push.key} platforms ios,android
+mcp:
+  call: { tool: update_task, args: { ref: "${task.mob_push.key}", field: platforms, value: [ios, android] } }
+post:
+  - field: { task: "${task.mob_push.key}", field: fields.platforms, equals: [ios, android] }

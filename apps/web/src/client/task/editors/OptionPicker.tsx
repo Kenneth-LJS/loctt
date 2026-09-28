@@ -68,6 +68,8 @@ export function OptionPicker({
   disabledReason,
   errorId,
   search,
+  onCreate,
+  taken = [],
 }: {
   /** The field's own label, for the trigger's accessible name. */
   readonly label: string;
@@ -104,8 +106,44 @@ export function OptionPicker({
    * appeared.
    */
   readonly errorId?: string | undefined;
+  /**
+   * K150: an open choice field. The list becomes searchable and, when the
+   * typed text names no option (by label or key, ignoring case), offers
+   * "Create “x”" as a separate row under the options — the labels
+   * picker's pattern. Enter with nothing to pick creates too.
+   */
+  readonly onCreate?: ((label: string) => void) | undefined;
+  /** Options not listed but already chosen: never offered for creation. */
+  readonly taken?: readonly PickerOption[];
 }) {
   const slug = fieldSlug(label);
+  const known = (q: string): boolean => {
+    const lower = q.toLowerCase();
+    return [...options, ...taken].some(o => o.label.toLowerCase() === lower || o.key.toLowerCase() === lower);
+  };
+  const createProps = onCreate === undefined
+    ? {}
+    : {
+        searchable: true,
+        searchPlaceholder: "Find or create…",
+        noMatchesText: (q: string) => (q !== "" && !known(q) ? null : "No matches."),
+        footer: ({ query, close }: { query: string; close: (returnFocus: boolean) => void }) =>
+          query !== "" && !known(query) ? (
+            <button
+              type="button"
+              data-testid={`meta-create-${slug}`}
+              onClick={() => { onCreate(query); close(true); }}
+              className="w-full px-3 py-1.5 text-left text-body text-text-primary hover:bg-bg-muted"
+            >
+              Create “{query}”
+            </button>
+          ) : null,
+        onSubmitQuery: (q: string, close: (returnFocus: boolean) => void) => {
+          if (q === "" || known(q)) return;
+          onCreate(q);
+          close(true);
+        },
+      };
   const current = options.find(o => o.key === value);
   // Set, but the config no longer declares it. TSK-30, XS-27, and the
   // status/priority equivalents all land here. Rendering the raw key
@@ -126,6 +164,7 @@ export function OptionPicker({
       disabledReason={disabledReason}
       listTestId={`meta-options-${slug}`}
       searchTestId={`meta-search-${slug}`}
+      {...createProps}
       align="end"
       trigger={({ ref, open, toggle, ...aria }) => (
         <button

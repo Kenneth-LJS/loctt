@@ -45,7 +45,6 @@ const WORKFLOW: WorkflowConfig = {
       inverse: "is_blocked_by",
       inverse_label: "Is blocked by",
       graph: "acyclic",
-      ranked: true,
     },
     {
       key: "parent",
@@ -53,7 +52,6 @@ const WORKFLOW: WorkflowConfig = {
       inverse: "child",
       inverse_label: "Child",
       graph: "tree",
-      ranked: true,
     },
     { key: "relates_to", label: "Relates to", kind: "symmetric" },
   ],
@@ -195,9 +193,9 @@ describe("groupRelationships", () => {
   });
 
   // @verifies REL-6
-  it("marks only a ranked kind as ranked, and only a tree kind as a tree", () => {
+  it("orders every configured kind (K143), not an unknown type, and only a tree kind is a tree", () => {
     const groups = groupRelationships(
-      [resolved("blocks", "a"), resolved("parent", "b"), resolved("relates_to", "c")],
+      [resolved("blocks", "a"), resolved("parent", "b"), resolved("relates_to", "c"), resolved("mystery", "d")],
       undefined,
       WORKFLOW,
     );
@@ -207,10 +205,12 @@ describe("groupRelationships", () => {
     expect(flags).toEqual({
       blocks: { ranked: true, tree: false },
       parent: { ranked: true, tree: true },
-      // `relates_to` declares neither, so both must be false —
-      // defaulting `ranked` to true would put drag handles on a kind
-      // that has no rank to write.
-      relates_to: { ranked: false, tree: false },
+      // `relates_to` has no `ranked` setting (there is none since K143)
+      // and is still reorderable: every link carries a rank.
+      relates_to: { ranked: true, tree: false },
+      // Core refuses to reorder a kind workflow.yaml does not declare,
+      // so its group offers no handles.
+      mystery: { ranked: false, tree: false },
     });
   });
 
@@ -431,8 +431,8 @@ describe("orderRows", () => {
 
   // @verifies REL-6
   // @verifies REL-34
-  it("sorts a ranked group by rank, unranked below, tiebroken on creation index", () => {
-    expect(orderRows(scrambled, true).map(r => r.target)).toEqual([
+  it("sorts a group by rank, unranked below, tiebroken on creation index", () => {
+    expect(orderRows(scrambled).map(r => r.target)).toEqual([
       // Ranked first, in rank order — not input order.
       "rank-a",
       "rank-z",
@@ -447,8 +447,8 @@ describe("orderRows", () => {
 
   // @verifies REL-34
   it("is deterministic across repeated calls on the same input", () => {
-    const a = orderRows(scrambled, true).map(r => r.target);
-    const b = orderRows(scrambled, true).map(r => r.target);
+    const a = orderRows(scrambled).map(r => r.target);
+    const b = orderRows(scrambled).map(r => r.target);
     expect(a).toEqual(b);
     // And the input was not mutated, so a second render sees the same
     // array a first one did — the reshuffle REL-34 rules out.
@@ -458,11 +458,20 @@ describe("orderRows", () => {
   });
 
   // @verifies REL-6
-  it("leaves an unranked group in file order", () => {
-    // The same scrambled input: an unranked kind must not be sorted at
-    // all, so the output is the input, ranks and indices ignored.
-    expect(orderRows(scrambled, false).map(r => r.target)).toEqual([
-      "unranked-first", "rank-z", "rank-a", "unranked-late", "unranked-early",
-    ]);
+  it("sorts every group, including a kind that used to be unranked and an unknown type (K143)", () => {
+    const wf = WORKFLOW;
+    const rows = scrambled.map(r => ({ ...r, type: "relates_to" }));
+    const unknown = scrambled.map(r => ({ ...r, type: "mystery" }));
+    const stored = [...rows, ...unknown].map(r => ({ type: r.type, target: r.target, ...(r.rank !== undefined ? { rank: r.rank } : {}) }));
+    const groups = groupRelationships(
+      [...rows, ...unknown].map(r => resolved(r.type, r.target)),
+      stored,
+      wf,
+    );
+    for (const key of ["relates_to", "mystery"]) {
+      expect(groups.find(g => g.key === key)?.rows.map(r => r.target)).toEqual([
+        "rank-a", "rank-z", "unranked-first", "unranked-late", "unranked-early",
+      ]);
+    }
   });
 });

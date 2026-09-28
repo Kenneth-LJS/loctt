@@ -107,19 +107,37 @@ describe("AppBootstrap against a refused schema", () => {
    * visible." Not a full-page error, which is what this did.
    */
   it("renders the shell with the banner rather than a fatal error page", async () => {
-    MISMATCH = { kind: "future", on_disk: 5, current: 3 };
+    MISMATCH = { kind: "future", on_disk: "0.5.0", current: "0.3.0" };
     mount();
 
     const banner = await screen.findByRole("alert");
     expect(banner.getAttribute("data-kind")).toBe("future");
-    expect(banner.textContent).toContain("v5");
-    expect(banner.textContent).toContain("v3");
+    expect(banner.textContent).toContain("0.5.0");
+    expect(banner.textContent).toContain("0.3.0");
 
     // The shell is up: navigation is present and the route rendered.
     expect(screen.getByLabelText("Toggle sidebar")).toBeTruthy();
     expect(screen.getByText("list pane")).toBeTruthy();
     // Not the fatal page.
     expect(screen.queryByText("Something went wrong")).toBeNull();
+  });
+
+  /**
+   * @verifies ONB-C17
+   *
+   * K154: an older tracker is upgraded only on purpose, and every route
+   * refuses it until then, so the Upgrade screen replaces the shell:
+   * no sidebar, no routed page, nothing else to click.
+   */
+  it("renders only the Upgrade screen for an older tracker, not the shell", async () => {
+    MISMATCH = { kind: "outdated", on_disk: "0.1.0", current: "0.3.0" };
+    mount();
+
+    const screenEl = await screen.findByTestId("upgrade-required");
+    expect(screenEl.textContent).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+    expect(screen.getByRole("button", { name: "Upgrade" })).toBeTruthy();
+    expect(screen.queryByLabelText("Toggle sidebar")).toBeNull();
+    expect(screen.queryByText("list pane")).toBeNull();
   });
 
   /**
@@ -205,7 +223,7 @@ describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
               taskCount: 0,
               keyPrefix: "WEB-",
               nextKey: "WEB-1",
-              schemaStatus: { kind: "current", version: 3 },
+              schemaStatus: { kind: "current", version: "0.3.0" },
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -240,14 +258,14 @@ describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
     return qc;
   }
 
-  /** The schema banner specifically — `data-kind` is unique to it among
-   * this shell's several `role="alert"` elements (a sidebar data-load
-   * failure carries the same role). */
-  const findSchemaBanner = () => screen.findByText("Schema out of date.").then(el => el.closest("[data-kind]"));
+  /** The Upgrade screen (K154), which `outdated` gets instead of a
+   * banner: found by its test id, since a sidebar data-load failure
+   * carries the same `role="alert"`. */
+  const findSchemaBanner = () => screen.findByTestId("upgrade-required");
 
   // @verifies XS-38
   it("the banner clears on refetch once the on-disk schema is fixed, without remounting", async () => {
-    MISMATCH = { kind: "outdated", on_disk: 2, current: 3 };
+    MISMATCH = { kind: "outdated", on_disk: "0.1.0", current: "0.3.0" };
     const qc = mountWithClient();
     await findSchemaBanner();
 
@@ -257,7 +275,7 @@ describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
     await qc.invalidateQueries({ queryKey: ["info"] });
 
     await screen.findByText("list pane");
-    expect(screen.queryByText("Schema out of date.")).toBeNull();
+    expect(screen.queryByTestId("upgrade-required")).toBeNull();
   });
 
   // @verifies XS-38
@@ -265,11 +283,11 @@ describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
     MISMATCH = null;
     const qc = mountWithClient();
     await screen.findByText("list pane");
-    expect(screen.queryByText("Schema out of date.")).toBeNull();
+    expect(screen.queryByTestId("upgrade-required")).toBeNull();
 
     // Equivalent of another process (CLI/MCP) bumping the schema, or the
     // build changing, while this session was already open and healthy.
-    MISMATCH = { kind: "outdated", on_disk: 2, current: 3 };
+    MISMATCH = { kind: "outdated", on_disk: "0.1.0", current: "0.3.0" };
     await qc.invalidateQueries({ queryKey: ["info"] });
 
     const banner = await findSchemaBanner();
@@ -296,8 +314,8 @@ describe("AppBootstrap with an interrupted migration", () => {
   it("renders its own blocking screen, not the schema banner", async () => {
     MISMATCH = {
       kind: "interrupted",
-      from: 1,
-      to: 2,
+      from: "0.1.0",
+      to: "0.3.0",
       backup: BACKUP,
       sentinel_path: SENTINEL,
     };
@@ -316,16 +334,16 @@ describe("AppBootstrap with an interrupted migration", () => {
   it("shows the recorded versions, the backup path, and the sentinel path", async () => {
     MISMATCH = {
       kind: "interrupted",
-      from: 1,
-      to: 2,
+      from: "0.1.0",
+      to: "0.3.0",
       backup: BACKUP,
       sentinel_path: SENTINEL,
     };
     mount();
 
     const text = (await screen.findByRole("alert")).textContent ?? "";
-    expect(text).toContain("v1");
-    expect(text).toContain("v2");
+    expect(text).toContain("0.1.0");
+    expect(text).toContain("0.3.0");
     expect(text).toContain(BACKUP);
     expect(text).toContain(SENTINEL);
   });
@@ -333,8 +351,8 @@ describe("AppBootstrap with an interrupted migration", () => {
   it("offers no one-click fix at all", async () => {
     MISMATCH = {
       kind: "interrupted",
-      from: 1,
-      to: 2,
+      from: "0.1.0",
+      to: "0.3.0",
       backup: BACKUP,
       sentinel_path: SENTINEL,
     };
@@ -371,8 +389,8 @@ describe("AppBootstrap with an interrupted migration", () => {
   it("states that the user must investigate before continuing and gives the CLI recovery path", async () => {
     MISMATCH = {
       kind: "interrupted",
-      from: 1,
-      to: 2,
+      from: "0.1.0",
+      to: "0.3.0",
       backup: BACKUP,
       sentinel_path: SENTINEL,
     };

@@ -572,8 +572,12 @@ describe("guards", () => {
     await emptyTasks(dstDir);
     await writeFile(getSchemaMigrationInProgressPath(dstDir), "in progress\n", "utf-8");
 
-    await expect(restoreBackup(dstDir, [out], { mode: "merge" }))
-      .rejects.toThrow(/schema-migration-in-progress[\s\S]*migrate/);
+    // This asserted "Run 'loctt migrate' to finish it", which sent the
+    // user to a command that refuses while the sentinel is there (A366).
+    const err = await restoreBackup(dstDir, [out], { mode: "merge" }).then(() => undefined, (e: unknown) => e);
+    expect((err as Error).message).toMatch(/schema-migration-in-progress is present: a schema migration is running here or was interrupted\./);
+    expect((err as Error).message).toMatch(/restore \.loctt\/ from the backup that file names and remove the file\. Then restore again\. Nothing has been restored\.$/);
+    expect((err as Error).message).not.toMatch(/loctt migrate/);
     expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
   });
 });

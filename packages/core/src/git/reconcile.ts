@@ -199,13 +199,15 @@ export function rekeyCollisions(
 
 /**
  * Merges two sets of relationships by union of (type, target) pairs.
+ * Each edge keeps what it carries, `rank` included (K143): a link on
+ * both sides keeps `a`'s copy.
  */
-export function mergeRelationships(
-  a: readonly { type: string; target: string }[],
-  b: readonly { type: string; target: string }[],
-): { type: string; target: string }[] {
+export function mergeRelationships<T extends { type: string; target: string }>(
+  a: readonly T[],
+  b: readonly T[],
+): T[] {
   const seen = new Set<string>();
-  const result: { type: string; target: string }[] = [];
+  const result: T[] = [];
 
   for (const rel of [...a, ...b]) {
     const key = `${rel.type}:${rel.target}`;

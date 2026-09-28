@@ -1,0 +1,35 @@
+id: list-open-vs-closed
+name: A choice field grows only once it allows new values
+description: >
+  K150: a closed field refuses a new value even when asked to create it;
+  once `allow_new_values` is on, the value is appended to the field's
+  values with a key from the label, and the task stores that key.
+tags: [lists, custom-fields, b45]
+steps:
+  - name: closed field refuses
+    cli: set ${task.dark_mode.key} platforms --add "Windows Phone" --create
+    mcp:
+      call: { tool: update_task, args: { ref: "${task.dark_mode.key}", add: { platforms: [Windows Phone] }, create_missing: true } }
+    expect_error:
+      cli: { message: "platforms does not allow new values" }
+      mcp: { message: "platforms does not allow new values" }
+  - name: open the field
+    cli: custom-field edit platforms --allow-new-values
+    mcp:
+      call: { tool: edit_workflow_entity, args: { entity: custom_field, op: edit, key: platforms, fields: { allow_new_values: true } } }
+    post:
+      - yaml: { file: config/workflow.yaml, path: "custom_fields[key=platforms].allow_new_values", equals: true }
+  - name: unknown value still refused without create
+    cli: set ${task.dark_mode.key} platforms --add "Windows Phone"
+    mcp:
+      call: { tool: update_task, args: { ref: "${task.dark_mode.key}", add: { platforms: [Windows Phone] } } }
+    expect_error:
+      cli: { message: "No platforms value named 'Windows Phone'. Pass --create to create it." }
+      mcp: { message: "No platforms value named 'Windows Phone'. Pass create_missing: true to create it." }
+  - name: created with create
+    cli: set ${task.dark_mode.key} platforms --add "Windows Phone" --create
+    mcp:
+      call: { tool: update_task, args: { ref: "${task.dark_mode.key}", add: { platforms: [Windows Phone] }, create_missing: true } }
+    post:
+      - yaml: { file: config/workflow.yaml, path: "custom_fields[key=platforms].values[key=windows_phone].label", equals: Windows Phone }
+      - field: { task: "${task.dark_mode.key}", field: fields.platforms, equals: [web, windows_phone] }

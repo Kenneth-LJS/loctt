@@ -70,6 +70,9 @@ export default tseslint.config(
       // `npm run lint` OOM the V8 heap, and the crash dump grepped
       // clean — so a broken lint reported as a passing one.
       ".claude/worktrees/",
+      // Plain Node scripts for the README screenshots, run by hand. No
+      // tsconfig includes them, so the typed lint cannot parse them.
+      "tools/screenshots/",
     ],
   },
   ...tseslint.configs.recommendedTypeChecked,

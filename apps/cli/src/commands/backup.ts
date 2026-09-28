@@ -62,7 +62,7 @@ export async function backup(args: string[], root: string): Promise<void> {
     + `${String(report.users)} user${report.users === 1 ? "" : "s"}`,
   );
   console.log(`Size: ${String(report.bytes)} bytes`);
-  console.log(`Schema version: ${String(report.schemaVersion)}`);
+  console.log(`Format version: ${report.schemaVersion}`);
   console.log(
     report.includedHistory
       ? "History: included"

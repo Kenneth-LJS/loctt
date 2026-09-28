@@ -1,0 +1,16 @@
+id: milestone-create-assign
+name: Create a milestone and assign a task to it
+description: The task stores the new milestone's id.
+tags: [planning, milestones]
+cli:
+  - milestone create "Release candidate" --target-date 2026-12-01
+  - set ${task.search_index.key} milestone "Release candidate"
+mcp:
+  call:
+    - { tool: create_milestone, args: { name: Release candidate, target_date: "2026-12-01" } }
+    - { tool: update_task, args: { ref: "${task.search_index.key}", field: milestone, value: Release candidate } }
+capture:
+  rc: { entity: { kind: milestone, name: Release candidate } }
+post:
+  - entity: { kind: milestone, name: Release candidate, fields: { target_date: "2026-12-01" } }
+  - field: { task: "${task.search_index.key}", field: milestone, equals: "${var.rc.id}" }

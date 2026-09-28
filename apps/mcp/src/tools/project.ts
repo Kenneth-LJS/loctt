@@ -30,6 +30,7 @@ import { z } from "zod";
 import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
+import { named } from "../runtime/names.js";
 import type { ToolDef } from "../types.js";
 
 export const TOOLS: readonly ToolDef[] = [
@@ -98,7 +99,8 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadProjectsConfig(locttDir);
       const id = resolveProjectIdFromInput(cfg, args["project"] as string);
       await editProject(locttDir, id, { name: args["name"] as string });
-      return text(`Updated project ${id}`);
+      // K148: name and ID.
+      return text(`Updated project ${named((args["name"] as string | undefined) ?? cfg.projects.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -172,7 +174,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadProjectsConfig(locttDir);
       const id = resolveProjectIdFromInput(cfg, args["project"] as string, { includeArchived: true });
       await archiveProject(locttDir, id);
-      return text(`Archived project ${id}`);
+      return text(`Archived project ${named(cfg.projects.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -183,7 +185,7 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadProjectsConfig(locttDir);
       const id = resolveProjectIdFromInput(cfg, args["project"] as string, { includeArchived: true });
       await unarchiveProject(locttDir, id);
-      return text(`Unarchived project ${id}`);
+      return text(`Unarchived project ${named(cfg.projects.find(e => e.id === id)?.name, id)}`);
     },
   },
   {
@@ -199,7 +201,10 @@ export const TOOLS: readonly ToolDef[] = [
         return text(`Cleared workspace default project`);
       }
       await setDefaultProject(locttDir, project);
-      return text(`Set workspace default to ${project}`);
+      // K148: name and ID of the project the ref resolved to.
+      const after = await loadProjectsConfig(locttDir);
+      const def = after.projects.find(p => p.id === after.default);
+      return text(`Set workspace default to ${def !== undefined ? named(def.name, def.id) : project}`);
     },
   },
 ];
