@@ -22685,6 +22685,26 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K142 · The data format version is the `loctt` release that introduced it
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Today `.loctt/.schema-version` holds an integer counter (`1`) unrelated
+to the package version. Ken: *"can we peg it to semantic versions? so if
+we're looking up the versions, we just find the highest version that's
+lower/at the data version"*. So the format version is the semver of the
+`loctt` release that introduced that format (e.g. `0.1.0`, then `0.3.0`
+for ordered links). A build writes the highest format-changing release at
+or below its own version; a tracker whose format is newer is refused with
+the release to install; an older one is upgraded. No pre-release tags in
+format versions; the constant is set to the release the change will ship
+in and frozen once published.
+
+No compatibility for the old integer: *"i can update the schema version
+manually in existing data BECAUSE im the only user"*. The new code accepts
+only semver strings; Ken edits his trackers from `1` to `0.1.0`. The
+0.1.0 → 0.3.0 upgrade step (ordering every link) still runs in code.
+
 ### K141 · Relationship repair and ordering rulings (B39, B40)
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
