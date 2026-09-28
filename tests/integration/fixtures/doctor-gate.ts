@@ -153,7 +153,16 @@ export function finishDoctorGate(root: string): void {
   }
 }
 
-/** `loctt doctor`'s non-✓ lines, with the root replaced by `<root>`. */
+/**
+ * `loctt doctor`'s non-✓ lines, with the root replaced by `<root>`.
+ *
+ * Compared one finding per line. Doctor has no JSON output; its
+ * `relationships` check is a single count line, which a write that fixes
+ * one link and breaks another leaves unchanged, but the same findings are
+ * also printed one per link under `data integrity` (path, field and
+ * message), and those are what catch such a swap (A366, the "fixes one
+ * relationship finding and introduces another" test).
+ */
 function doctorFindings(root: string): string[] {
   let out: string;
   try {

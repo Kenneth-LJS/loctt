@@ -133,4 +133,16 @@ describe("bulkEditTaskFields (K152, K153)", () => {
     for (const i of [0, 1, 2]) expect(await labelsOf(i)).toContain(created);
     expect((await labelsFile()).match(/name: urgent/g)).toHaveLength(1);
   });
+  it("reports nothing created when no task changed, since nothing was saved", async () => {
+    // Planning resolves (and would create) `urgent`; the status then
+    // fails every task, so no task changes and nothing is saved.
+    const r = await bulkEditTaskFields({
+      locttDir, taskRefs: keys(),
+      set: [{ field: "labels", value: ["urgent"] }, { field: "status", value: "nope" }],
+      createMissing: true,
+    });
+    expect(r.failed).toHaveLength(3);
+    expect(r.created).toEqual([]);
+    expect(await labelsFile()).not.toMatch(/name: urgent/);
+  });
 });

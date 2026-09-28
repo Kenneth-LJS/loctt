@@ -11,6 +11,7 @@ import {
 } from "../config/calendar.js";
 import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
 import { getTrackerInfo } from "../diagnostics/info.js";
+import { LocttError } from "../errors.js";
 import {
   getDocsDir,
   getQueriesConfigPath,
@@ -21,9 +22,12 @@ import {
 } from "../paths/index.js";
 import { assertValidPrefix } from "../projects/prefix.js";
 import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
+import { knownFormats } from "../schema/migrations.js";
+import { isProvablyRanked } from "../schema/steps/rank-every-link.js";
 import { loadState } from "../state/state.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { ensureDefaultUser } from "../users/index.js";
+import { assertNameNotIdShaped } from "../utils/entity-ref.js";
 import { fileExists } from "../utils/fs.js";
 import { missingCoreFiles } from "./core-files.js";
 import {
@@ -172,7 +176,14 @@ async function repairLoctt(
 
   const schemaPath = join(locttDir, ".schema-version");
   if (!(await fileExists(schemaPath))) {
-    await writeFile(schemaPath, `${String(CURRENT_SCHEMA_VERSION)}\n`, "utf-8");
+    // The version was lost with the file, and the tasks that survive may
+    // be from before 0.3.0. Stamping the current format over them would
+    // skip the upgrade that ranks their links. Stamp current only when
+    // the data provably is current (every link ranked, no retired
+    // `ranked` setting); otherwise the first format, so the next command
+    // upgrades from there (A366).
+    const stamp = (await isProvablyRanked(locttDir)) ? CURRENT_SCHEMA_VERSION : (knownFormats()[0] ?? CURRENT_SCHEMA_VERSION);
+    await writeFile(schemaPath, `${stamp}\n`, "utf-8");
     created.push(".schema-version");
   }
 
@@ -241,6 +252,10 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   if (projectName.length === 0) {
     throw new Error(`project name must be non-empty`);
   }
+  // K148: a name may not look like an ID, on every surface that names a
+  // project, the starting one included.
+  assertNameNotIdShaped(projectName, message =>
+    new LocttError("validation_failed", message, { field: "projectLabel", dataState: "not_saved" }));
 
   // Generate the initial project's id up front so projects.yaml and
   // state.yaml agree on the same ULID.

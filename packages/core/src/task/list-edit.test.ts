@@ -159,7 +159,7 @@ describe("editTaskFields (K150)", () => {
 
     it("refuses add/remove on a field that is not a list", async () => {
       await expect(editTaskFields({ locttDir, taskId: id(), lists: { area: { add: ["ui"] } } }))
-        .rejects.toThrow("area holds one value, not a list; set it instead.");
+        .rejects.toThrow("area holds one value, not a list. Set it instead.");
       await expect(editTaskFields({ locttDir, taskId: id(), lists: { status: { add: ["done"] } } }))
         .rejects.toThrow(/status is not a list field/);
     });
@@ -205,7 +205,7 @@ describe("editTaskFields (K150)", () => {
       const wf = await readFile(join(locttDir, "config", "workflow.yaml"), "utf-8");
       await expect(editTaskFields({
         locttDir, taskId: id(), lists: { platforms: { add: ["Windows"] } }, createMissing: true,
-      })).rejects.toThrow("platforms does not allow new values; choose one of: iOS, Android.");
+      })).rejects.toThrow("platforms does not allow new values. Choose one of: iOS, Android.");
       expect(await readFile(join(locttDir, "config", "workflow.yaml"), "utf-8")).toBe(wf);
     });
 

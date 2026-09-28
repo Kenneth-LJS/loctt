@@ -130,8 +130,10 @@ post:
   result). An error step automatically asserts **the tracker is
   unchanged**; add `post` checks only for anything else. `cli: {
   partial: true }` is the exception: a bulk command that changed some
-  tasks and exited non-zero for the rest (K153); `post` then says what
-  changed.
+  tasks and exited non-zero for the rest (K153). Such a step must carry a
+  `changed_only: { tasks: [refs], files: [paths] }` post check: nothing
+  outside those tasks' folders and those files (relative to `.loctt/`)
+  may change. `changed_only` works in any `post`.
 - **`steps`** makes a scenario: a list of `{ name, cli, mcp, capture,
   post, expect_error }`, run in order on one tracker. A top-level `post`
   runs after the last step. A failing step stops the scenario.

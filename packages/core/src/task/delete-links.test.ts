@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +14,7 @@ import { loadKeyIndex, loadState, saveState, withStateLock } from "../state/inde
 import { bulkDelete } from "./bulk.js";
 import { createTask } from "./create.js";
 import { readHistory } from "./history.js";
-import { readTask } from "./io.js";
+import { readTask, writeTask } from "./io.js";
 import { deleteTask } from "./lifecycle.js";
 import { lookupTask } from "./lookup.js";
 import { linkTask } from "./relationships.js";
@@ -110,6 +110,88 @@ describe("delete removes the partners' side of its links (K147)", () => {
       meta: { type: "relates_to", target: a.id },
       bulk_op_id: result.bulk_op_id,
     });
+  });
+});
+
+// A366: the partners are written before the folder goes, all or nothing
+// per task, and a one-sided link pointing at the task is found by a scan.
+// @verifies REL-C8
+describe("delete detaches first, all or nothing (K147, A366)", () => {
+  it("removes a one-sided link another task holds to it, with no edge back", async () => {
+    const a = await seed("A");
+    const b = await seed("B");
+    const onB = await readTask(locttDir, b.id);
+    await writeTask(locttDir, b.id, {
+      ...onB,
+      frontmatter: { ...onB.frontmatter, relationships: [{ type: "blocks", target: a.id, rank: "u" }] },
+    });
+
+    await deleteTask(locttDir, a.id, { force: true });
+
+    expect((await readTask(locttDir, b.id)).frontmatter.relationships).toBeUndefined();
+    expect((await readHistory(locttDir, b.id)).at(-1)).toMatchObject({
+      kind: "link_removed",
+      meta: { type: "blocks", target: a.id },
+    });
+  });
+
+  it("a partner that can't be written: nothing is deleted, the partners written are put back, and the error says so", async () => {
+    const a = await seed("A");
+    const b = await seed("B");
+    const c = await seed("C");
+    await link(a.id, "blocks", b.id);
+    await link(a.id, "relates_to", c.id);
+    const cDir = getTaskDir(locttDir, c.id);
+    await chmod(cDir, 0o555);
+    let err: unknown;
+    try {
+      err = await deleteTask(locttDir, a.id, { force: true }).then(() => undefined, (e: unknown) => e);
+    } finally {
+      await chmod(cDir, 0o755);
+    }
+    expect((err as Error).message).toMatch(
+      new RegExp(`^Could not delete ${a.key}: removing its link from ${c.key} failed \\(.+\\)\\. Nothing was deleted\\.$`),
+    );
+    expect(existsSync(getTaskDir(locttDir, a.id))).toBe(true);
+    expect((await readTask(locttDir, b.id)).frontmatter.relationships)
+      .toEqual([{ type: "is_blocked_by", target: a.id, rank: "u" }]);
+    expect((await readHistory(locttDir, b.id)).slice(-2).map(h => h.kind)).toEqual(["link_removed", "link_added"]);
+    expect((await readTask(locttDir, c.id)).frontmatter.relationships)
+      .toEqual([{ type: "relates_to", target: a.id, rank: "u" }]);
+  });
+
+  it("bulkDelete is partial (K153): the task whose partner can't be written stays, the rest go", async () => {
+    const a = await seed("A");
+    const c = await seed("C");
+    const d = await seed("D");
+    await link(a.id, "relates_to", c.id);
+    const cDir = getTaskDir(locttDir, c.id);
+    await chmod(cDir, 0o555);
+    let result;
+    try {
+      result = await bulkDelete({ locttDir, taskRefs: [a.key, d.key] });
+    } finally {
+      await chmod(cDir, 0o755);
+    }
+    expect(result.succeeded).toEqual([d.id]);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.taskId).toBe(a.key);
+    expect(result.failed[0]?.error).toMatch(/Nothing was deleted\.$/);
+    expect(existsSync(getTaskDir(locttDir, a.id))).toBe(true);
+    expect(existsSync(getTaskDir(locttDir, d.id))).toBe(false);
+  });
+
+  it("a key index that can't be rewritten does not turn a delete that happened into a failure", async () => {
+    const a = await seed("A");
+    await lookupTask(locttDir, a.key); // writes the index
+    const localDir = join(locttDir, "local");
+    await chmod(localDir, 0o555);
+    try {
+      await expect(deleteTask(locttDir, a.id, { force: true })).resolves.toBeUndefined();
+    } finally {
+      await chmod(localDir, 0o755);
+    }
+    expect(existsSync(getTaskDir(locttDir, a.id))).toBe(false);
   });
 });
 

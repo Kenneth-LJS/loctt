@@ -206,7 +206,7 @@ function describe(status: SchemaStatusResponse): {
         // cannot move a schema backwards, so the suggestion would only
         // invite a destructive attempt.
         detail:
-          `This tracker needs loctt ${status.on_disk} or newer; this build reads ` +
+          `This tracker needs loctt ${status.on_disk} or newer. This build reads ` +
           `format ${status.current}. Update LocTT to continue (\`npm install -g ` +
           "loctt@latest\`). A newer format can't be downgraded.",
       };
@@ -221,7 +221,7 @@ function describe(status: SchemaStatusResponse): {
         detail:
           `Reading the tracker's schema version did not produce a result that could ` +
           `be interpreted: ${status.message} Your data is untouched. Nothing has ` +
-          "been changed. Open Settings → Diagnostics to run the health checks; if the " +
+          "been changed. Open Settings → Diagnostics to run the health checks. If the " +
           "schema file itself is corrupt, inspect `.loctt/.schema-version` by hand.",
       };
     case "missing":
@@ -229,8 +229,13 @@ function describe(status: SchemaStatusResponse): {
         tone: "danger",
         title: "Not a recognized tracker.",
         detail:
+          // Not `loctt migrate`: it refuses a tracker with no recorded
+          // version, so naming it sends the user to a second refusal
+          // (A366). The fix is to write the file; doctor says what to
+          // write, so this copy names no version it cannot know.
           "The data directory has no `.schema-version`, so its layout can't be "
-          + "confirmed. Run `loctt migrate` to stamp and upgrade it. Do not "
+          + "confirmed. Write the tracker's format version into `.loctt/.schema-version`, "
+          + "then reload. `loctt doctor` says which version to write. Do not "
           + "reinitialize. A directory holding tasks is a damaged tracker, not "
           + "an empty one, and reinitializing would risk the data.",
       };

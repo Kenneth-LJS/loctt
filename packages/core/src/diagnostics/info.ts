@@ -7,6 +7,7 @@ import { loadWorkflowConfig } from "../config/workflow.js";
 import { isEmptyTracker, missingCoreFiles } from "../init/core-files.js";
 import { getSchemaMigrationInProgressPath, resolveLocttDir } from "../paths/index.js";
 import { compareFormatVersions, CURRENT_SCHEMA_VERSION, isFormatVersion, readSchemaVersion } from "../schema/index.js";
+import { formatForRecordedVersion } from "../schema/migrations.js";
 import { loadState } from "../state/state.js";
 import { listTaskIds } from "../task/list-ids.js";
 
@@ -161,10 +162,19 @@ export async function computeSchemaStatus(locttDir: string): Promise<SchemaStatu
     return { kind: "unknown", message: (err as Error).message };
   }
   if (onDisk === null) return { kind: "missing" };
-  const cmp = compareFormatVersions(onDisk, CURRENT_SCHEMA_VERSION);
-  if (cmp === 0) return { kind: "current", version: onDisk };
-  if (cmp < 0) return { kind: "outdated", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
-  return { kind: "future", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
+  if (compareFormatVersions(onDisk, CURRENT_SCHEMA_VERSION) > 0) {
+    return { kind: "future", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
+  }
+  // K142: the recorded version stands for the highest known format at or
+  // below it; one below every known format is not a LocTT format.
+  let format: string;
+  try {
+    format = formatForRecordedVersion(onDisk);
+  } catch (err) {
+    return { kind: "unknown", message: (err as Error).message };
+  }
+  if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) === 0) return { kind: "current", version: onDisk };
+  return { kind: "outdated", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
 }
 
 /**

@@ -24,6 +24,37 @@ async function dropInverse(root: string): Promise<void> {
   }
 }
 
+async function taskFileOf(root: string, key: string): Promise<string> {
+  const tasks = path.join(root, ".loctt/tasks");
+  for (const id of await readdir(tasks)) {
+    const file = path.join(tasks, id, "task.md");
+    if ((await readFile(file, "utf-8")).includes(`\nkey: ${key}\n`)) return file;
+  }
+  throw new Error(`no task ${key}`);
+}
+
+async function idOf(root: string, key: string): Promise<string> {
+  return path.basename(path.dirname(await taskFileOf(root, key)));
+}
+
+/** Drops `onKey`'s `is_blocked_by` edge to `toKey`, leaving `toKey`'s link one-sided. */
+async function dropInverseOf(root: string, onKey: string, toKey: string): Promise<void> {
+  const file = await taskFileOf(root, onKey);
+  const target = await idOf(root, toKey);
+  const text = await readFile(file, "utf-8");
+  const next = text.replace(new RegExp(`  - type: is_blocked_by\\n    target: ${target}\\n(?:    rank: .*\\n)?`), "");
+  if (next === text) throw new Error(`no edge from ${onKey} to ${toKey}`);
+  await writeFile(file, next, "utf-8");
+}
+
+/** Puts back `onKey`'s `is_blocked_by` edge to `toKey`. */
+async function restoreInverse(root: string, onKey: string, toKey: string): Promise<void> {
+  const file = await taskFileOf(root, onKey);
+  const target = await idOf(root, toKey);
+  const text = await readFile(file, "utf-8");
+  await writeFile(file, text.replace("relationships:\n", `relationships:\n  - type: is_blocked_by\n    target: ${target}\n    rank: a\n`), "utf-8");
+}
+
 async function linkedPair(root: string): Promise<void> {
   await runCli(["create", "a"], { cwd: root });
   await runCli(["create", "b"], { cwd: root });
@@ -42,6 +73,23 @@ describe("doctor gate (K145)", () => {
       await linkedPair(root);
       await gated(path.resolve(root), () => dropInverse(root));
     })).rejects.toThrow(/doctor gate \(K145\).*relationship/s);
+  });
+
+  // A366: the gate compares findings one by one. Doctor's relationships
+  // check is one count line ("1 issue(s) found"), the same before and
+  // after a write that fixes one link and breaks another, so comparing
+  // whole lines let that write through. The per-link findings must differ.
+  it("fails a write that fixes one relationship finding and introduces another", async () => {
+    await expect(withTmpLoctt(async ({ root }) => {
+      await linkedPair(root);
+      await runCli(["create", "c"], { cwd: root });
+      await runCli(["link", "T-3", "blocks", "T-2"], { cwd: root });
+      await dropInverseOf(root, "T-2", "T-1"); // out of band: the starting finding
+      await gated(path.resolve(root), async () => {
+        await restoreInverse(root, "T-2", "T-1");
+        await dropInverseOf(root, "T-2", "T-3");
+      });
+    })).rejects.toThrow(/doctor gate \(K145\)/);
   });
 
   it("does not blame the surface for a state the test made out of band", async () => {

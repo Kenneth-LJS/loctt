@@ -93,7 +93,7 @@ describe("validateRelationships", () => {
     expect(errors).toEqual([{
       taskId: "aaa",
       field: "relationships[0].rank",
-      message: `"parent" to "bbb" has no rank, so its place in the list isn't stored. `
+      message: `"parent" link from T-1 to T-2 has no rank, so its place in the list isn't stored. `
         + `The relationship repair ranks it at the end of its group.`,
     }]);
   });

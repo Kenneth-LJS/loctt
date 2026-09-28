@@ -185,7 +185,7 @@ function choiceResolver(pending: Pending, fieldKey: string, createMissing: boole
     }
     if (!open) {
       throw new TaskUpdateError(
-        `${fieldKey} does not allow new values; choose one of: ${values.map(v => v.label).join(", ")}.`,
+        `${fieldKey} does not allow new values. Choose one of: ${values.map(v => v.label).join(", ")}.`,
         { field: fieldKey },
       );
     }
@@ -229,7 +229,7 @@ function assertEditShape(sets: readonly SetFieldsEntry[], lists: Readonly<Record
   for (const f of listFields) {
     if (sets.some(s => s.field === f)) {
       throw new TaskUpdateError(
-        `${f} is both replaced and edited in one change; do one or the other.`,
+        `${f} is both replaced and edited in one change. Do one or the other.`,
         { field: f },
       );
     }
@@ -254,7 +254,7 @@ function assertListFields(workflow: WorkflowConfig, listFields: readonly string[
       throw new TaskUpdateError(
         def === undefined
           ? `${field} is not a list field. Values can be added to and removed from labels and multi-value custom fields.`
-          : `${field} holds one value, not a list; set it instead.`,
+          : `${field} holds one value, not a list. Set it instead.`,
         { field },
       );
     }
@@ -388,7 +388,9 @@ export async function editTaskFields(opts: EditTaskFieldsOptions): Promise<EditT
     const changes = planTaskEdit(task, pending, sets, lists, opts.createMissing === true);
 
     if (changes.length === 0) {
-      return { task, changed: false, created: pending.created };
+      // Nothing is written, so nothing was created either: a value
+      // planned for creation is saved only with a task that uses it.
+      return { task, changed: false, created: [] };
     }
 
     const guard: ArchivedGuardConfigs = {
@@ -515,7 +517,8 @@ export async function bulkEditTaskFields(opts: BulkEditTaskFieldsOptions): Promi
       succeeded: [...writes.map(w => w.id), ...unchanged],
       failed,
       unchanged,
-      created: pending.created,
+      // Saved only when some task changed (above); otherwise nothing was.
+      created: writes.length > 0 ? pending.created : [],
     };
   });
 }

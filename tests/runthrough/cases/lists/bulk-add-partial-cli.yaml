@@ -14,5 +14,8 @@ capture:
   l: { entity: { kind: label, name: brand-new } }
 post:
   - output: { contains: ["Updated labels (added brand-new) on 2 task(s)"] }
+  # Partial skips "tracker unchanged": only the two tasks and the label
+  # file may change.
+  - changed_only: { tasks: ["${task.search_index.key}", "${task.theme_tokens.key}"], files: [config/labels.yaml] }
   - field: { task: "${task.search_index.key}", field: labels, contains: "${var.l.id}" }
   - field: { task: "${task.theme_tokens.key}", field: labels, contains: "${var.l.id}" }

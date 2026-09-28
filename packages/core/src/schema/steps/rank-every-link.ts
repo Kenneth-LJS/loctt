@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 
 import type { Task, TaskRelationship } from "@loctt/contracts";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, parseDocument } from "yaml";
 
-import { stripRetiredRelationshipKeys } from "../../config/retired-keys.js";
+import { findRetiredRelationshipKeys, stripRetiredRelationshipKeys } from "../../config/retired-keys.js";
 import { getWorkflowConfigPath } from "../../paths/index.js";
 import { evenlySpacedRanks } from "../../rank/lexorank.js";
 import { fillMissingRanks } from "../../task/edge-rank.js";
@@ -117,16 +117,101 @@ export async function rankUnrankedLinks(locttDir: string, taskIds: Iterable<stri
 }
 
 /**
+ * The upgrade step's full ranking ({@link rankInShownOrder}) on the given
+ * tasks: every link ranked so each group lists as format 0.1.0 showed it
+ * under `rankedTypes`. Git sync runs it over the tasks it applied from a
+ * branch whose `.schema-version` is below 0.3.0, with that branch's own
+ * workflow.yaml, because such a branch's stored order is its shown order
+ * (K151, A366). Changes only `relationships`, like the step. Returns how
+ * many tasks it wrote.
+ */
+export async function rankLinksInShownOrder(
+  locttDir: string,
+  taskIds: Iterable<string>,
+  rankedTypes: ReadonlySet<string>,
+): Promise<number> {
+  let written = 0;
+  for (const id of new Set(taskIds)) {
+    let task: Task;
+    try {
+      task = await readTask(locttDir, id);
+    } catch {
+      continue;
+    }
+    if ((task.health ?? []).some(h => h.field === "relationships" || h.field.startsWith("relationships["))) continue;
+    const rels = task.frontmatter.relationships;
+    if (rels === undefined || rels.length === 0) continue;
+    const next = rankInShownOrder(rels, rankedTypes);
+    if (next === rels) continue;
+    await writeTask(locttDir, id, {
+      ...task,
+      frontmatter: { ...task.frontmatter, relationships: [...next] },
+    }, new Set(["relationships"]));
+    written += 1;
+  }
+  return written;
+}
+
+/**
+ * Whether the tracker's data is provably already in format 0.3.0, for a
+ * repair that must stamp a `.schema-version` it lost: workflow.yaml sets
+ * no retired `ranked` key, and every link on every task carries a rank.
+ * A tracker with no links passes. Anything that can't be read (a task,
+ * its `relationships`, a workflow.yaml that doesn't parse) fails: then
+ * the caller stamps 0.1.0 and the upgrade step ranks the links, which is
+ * harmless on data that turns out to be 0.3.0 already except that a
+ * group whose ranks disagree with stored order is re-ranked in stored
+ * order.
+ */
+export async function isProvablyRanked(locttDir: string): Promise<boolean> {
+  let raw: string | undefined;
+  try {
+    raw = await readFile(getWorkflowConfigPath(locttDir), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") return false;
+  }
+  if (raw !== undefined) {
+    if (parseDocument(raw).errors.length > 0) return false;
+    if ((await findRetiredRelationshipKeys(locttDir)).length > 0) return false;
+  }
+  for (const id of await listTaskIds(locttDir)) {
+    let task: Task;
+    try {
+      task = await readTask(locttDir, id);
+    } catch {
+      return false;
+    }
+    if ((task.health ?? []).some(h => h.field === "relationships" || h.field.startsWith("relationships["))) return false;
+    if ((task.frontmatter.relationships ?? []).some(r => r.rank === undefined)) return false;
+  }
+  return true;
+}
+
+/**
  * The stored types (forward and inverse keys) of every kind set
  * `ranked: true` in workflow.yaml, read from the raw file: the schema no
  * longer carries the setting. An unreadable file reads as none ranked,
  * so every group keeps its stored order.
  */
 async function legacyRankedTypes(locttDir: string): Promise<ReadonlySet<string>> {
+  let raw: string;
+  try {
+    raw = await readFile(getWorkflowConfigPath(locttDir), "utf-8");
+  } catch {
+    return new Set();
+  }
+  return legacyRankedTypesIn(raw);
+}
+
+/**
+ * {@link legacyRankedTypes} over a workflow.yaml's text (git sync reads
+ * the branch's). Text that doesn't parse reads as none ranked.
+ */
+export function legacyRankedTypesIn(raw: string): ReadonlySet<string> {
   const out = new Set<string>();
   let parsed: unknown;
   try {
-    parsed = parseYaml(await readFile(getWorkflowConfigPath(locttDir), "utf-8"));
+    parsed = parseYaml(raw);
   } catch {
     return out;
   }

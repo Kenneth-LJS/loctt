@@ -346,6 +346,23 @@ export function runCheck(check: Check, ctx: CheckContext): string | null {
     const diff = diffSnapshots(ctx.before, snapshot(tracker.locttDir), check.file_unchanged);
     return diff === "" ? null : `expected ${check.file_unchanged} unchanged:\n${diff}`;
   }
+  if ("changed_only" in check) {
+    const dirs: string[] = [];
+    for (const ref of check.changed_only.tasks) {
+      const t = tracker.findTask(ref);
+      if (!t) return `changed_only: no task on disk matches "${ref}"`;
+      dirs.push(`tasks/${t.id}/`);
+    }
+    const files = new Set(check.changed_only.files ?? []);
+    const after = snapshot(tracker.locttDir);
+    const outside = [...new Set([...ctx.before.keys(), ...after.keys()])]
+      .filter(name => ctx.before.get(name) !== after.get(name))
+      .filter(name => !files.has(name) && !dirs.some(d => name.startsWith(d)))
+      .sort();
+    if (outside.length === 0) return null;
+    return `expected changes only to ${show(check.changed_only)}; also changed:\n`
+      + outside.map(name => diffSnapshots(ctx.before, after, name)).join("\n");
+  }
   if ("tracker_unchanged" in check) {
     const diff = diffSnapshots(ctx.before, snapshot(tracker.locttDir));
     return diff === "" ? null : `expected the tracker unchanged:\n${diff}`;

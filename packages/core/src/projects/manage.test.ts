@@ -633,6 +633,20 @@ describe("resolveProjectIdFromInput", () => {
     const cfg = await loadProjectsConfig(locttDir);
     expect(() => resolveProjectIdFromInput(cfg, "Nope")).toThrow("No project named 'Nope'.");
   });
+
+  // K149: input that is not ID-shaped is never matched as an ID, archived
+  // projects included (a hand-edited id like `legacy` is not an ID).
+  it("does not match an archived project's non-ID-shaped id", () => {
+    const cfg = {
+      default: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      projects: [
+        { id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", name: "Tasks", prefix: "T" },
+        { id: "legacy", name: "Old", prefix: "O", archived: true },
+      ],
+    } as unknown as Parameters<typeof resolveProjectIdFromInput>[0];
+    expect(() => resolveProjectIdFromInput(cfg, "legacy")).toThrow("No project named 'legacy'.");
+    expect(() => resolveProjectIdFromInput(cfg, "Old")).toThrow('Project "Old" is archived. Unarchive it or pick another.');
+  });
 });
 
 describe("resolveProjectId", () => {

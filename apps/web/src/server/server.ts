@@ -605,6 +605,7 @@ function gitErrorResponse(err: unknown): {
           remote_version: err.remoteVersion,
           local_version: err.localVersion,
           branch: err.branch,
+          ...(err.raw !== undefined ? { remote_raw: err.raw } : {}),
         },
       },
     };
@@ -3473,6 +3474,13 @@ export function createWebApp(options: WebAppOptions) {
         });
         return;
       }
+      // A refusal that names its own field (an ID-shaped project name,
+      // K148) is placed at that field, not the prefix.
+      if (err instanceof LocttError && err.field !== undefined) {
+        const env = err.toEnvelope();
+        error(res, env.message, statusForCode(err.code), env);
+        return;
+      }
       // What remains is genuine input validation (empty prefix, empty
       // project name, an invalid timezone) or an already-healthy tracker
       // — the cases where blaming the request body reads correctly.
@@ -5727,6 +5735,19 @@ export function createWebApp(options: WebAppOptions) {
       // when no migration applies, but a failure partway through a
       // multi-step run cannot say how far it got — ERR-4 wants `unknown`
       // rather than a guess. The backup is the user's way to check.
+      // A state migrate cannot fix (no readable version, an interrupted
+      // run, a version newer than this build) nothing ran, and naming
+      // `loctt migrate` would send the user to the same refusal. Each
+      // carries its own remedy, sent as `detail` like the guard does.
+      if (err instanceof SchemaUnmigratableError || err instanceof SchemaTooNewError) {
+        error(res, err.message, 409, {
+          code: "schema_mismatch",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+          ...(err instanceof SchemaUnmigratableError ? { detail: err.remedy } : {}),
+        });
+        return;
+      }
       error(res, (err as Error).message, 409, {
         code: "schema_mismatch",
         data_state: "unknown",

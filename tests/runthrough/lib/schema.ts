@@ -126,6 +126,18 @@ export const CheckSchema = z.union([
   /** `git show <spec>` in the tracker's repository contains the text. */
   z.strictObject({ git_show: z.strictObject({ spec: z.string().min(1), contains: z.string() }) }),
   z.strictObject({ tracker_unchanged: z.literal(true) }),
+  /**
+   * Nothing changed outside these tasks' folders (`tasks/<id>/`) and
+   * these files (relative to `.loctt/`): the "tracker unchanged" check
+   * for a step that is meant to change some things (a partial bulk
+   * result, K153). Task refs are ids or keys, as in `field`.
+   */
+  z.strictObject({
+    changed_only: z.strictObject({
+      tasks: z.array(z.string().min(1)),
+      files: z.array(z.string().min(1)).optional(),
+    }),
+  }),
   z.strictObject({
     output: z.strictObject({
       /** Only on this surface (outputs differ: CLI prints text, MCP JSON). */
@@ -178,7 +190,8 @@ const ExpectErrorSchema = z.strictObject({
     /**
      * The command changed some tasks and exited non-zero for the rest (a
      * bulk op reporting per-task failures, K153): the tracker is *not*
-     * asserted unchanged; `post` says what changed.
+     * asserted unchanged. `post` must then carry a `changed_only` check
+     * saying what may have changed (enforced when the case loads).
      */
     partial: z.boolean().optional(),
   }).optional(),

@@ -17430,7 +17430,7 @@
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-cross-surface.md",
       "line": 290,
-      "title": "`.schema-version` missing: the UI says the tracker is unrecognized and points at `loctt migrate`.",
+      "title": "`.schema-version` missing: the UI says the tracker is unrecognized and says to write the file.",
       "milestone": "M1",
       "severity": "blocker",
       "principles": [

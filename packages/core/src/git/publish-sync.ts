@@ -11,7 +11,7 @@ import type { IntegrityFinding } from "../diagnostics/integrity.js";
 import { blockingFindings, checkDataIntegrity } from "../diagnostics/integrity.js";
 import { getLocalDir, getTaskFilePath } from "../paths/index.js";
 import { compareFormatVersions, CURRENT_SCHEMA_VERSION, isFormatVersion } from "../schema/index.js";
-import { rankUnrankedLinks } from "../schema/steps/rank-every-link.js";
+import { legacyRankedTypesIn, rankLinksInShownOrder, rankUnrankedLinks } from "../schema/steps/rank-every-link.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { appendKeyHistory } from "../state/keys.js";
 import { clearReconcileState, readReconcileState, saveReconcileState } from "../state/reconcile.js";
@@ -286,13 +286,27 @@ export class GitRemoteSchemaNewerError extends GitSyncError {
   readonly localVersion: string;
   /** The branch whose schema is newer. */
   readonly branch: string;
+  /** What the branch's file holds, when it is not a format version. */
+  readonly raw?: string;
   constructor(opts: {
     remoteVersion: string | null;
     localVersion: string;
     branch: string;
+    /** What the branch's file holds, when it is not a format version. */
+    raw?: string;
   }) {
     super(
-      opts.remoteVersion !== null
+      opts.remoteVersion === null && opts.raw !== undefined && /^\d+$/.test(opts.raw)
+        // The old integer counter (`1`) is what loctt 0.2.x and earlier
+        // wrote, so the branch is older, not newer, and upgrading loctt
+        // cannot help. Publish never writes the branch's .schema-version
+        // (LOCAL_OWNED), so re-publishing cannot fix it either: the file
+        // on the branch has to be changed (K151, A366).
+        ? `Sync aborted: the ${opts.branch} branch's .schema-version holds ${opts.raw}, `
+          + `the old version number loctt 0.2.x and earlier wrote. It is not a format version, `
+          + `so nothing was written. Your local files are untouched.\n\n`
+          + `On the ${opts.branch} branch, change .schema-version to 0.1.0 and commit it, then sync again.`
+        : opts.remoteVersion !== null
         ? `Sync aborted: the ${opts.branch} branch was written in format `
           + `${opts.remoteVersion}, and this loctt reads format ${opts.localVersion}. `
           + `Applying it could corrupt or drop data, so nothing was written. Your local `
@@ -306,6 +320,7 @@ export class GitRemoteSchemaNewerError extends GitSyncError {
     );
     this.name = "GitRemoteSchemaNewerError";
     this.remoteVersion = opts.remoteVersion;
+    if (opts.raw !== undefined) this.raw = opts.raw;
     this.localVersion = opts.localVersion;
     this.branch = opts.branch;
   }
@@ -518,6 +533,7 @@ function assertRemoteSchemaNotNewer(
       remoteVersion: null,
       localVersion: CURRENT_SCHEMA_VERSION,
       branch,
+      raw: trimmed,
     });
   }
   // Strictly newer than what this build reads: refuse (K94).
@@ -530,6 +546,20 @@ function assertRemoteSchemaNotNewer(
   }
   // Equal or older: proceed unchanged.
 }
+
+/**
+ * Whether the branch records a format older than 0.3.0 (the format that
+ * ranks every link). No version, or one that is not a format version
+ * (refused earlier by `assertRemoteSchemaNotNewer`), reads as not older.
+ */
+function branchPredatesRanks(root: string, remoteHead: string): boolean {
+  const raw = readTreeFile(root, remoteHead, ".schema-version")?.trim();
+  if (raw === undefined || raw === "" || !isFormatVersion(raw)) return false;
+  return compareFormatVersions(raw, RANKED_FORMAT) < 0;
+}
+
+/** The format in which every link carries a rank (K143). */
+const RANKED_FORMAT = "0.3.0";
 
 /**
  * The commit the *remote* branch head points at, for the ancestry check
@@ -2136,7 +2166,21 @@ export async function pullFromLocttBranch(
     // so the listing is ordered and doctor finds nothing left over. The
     // ranks are local edits from here on, and the next publish carries
     // them to the branch.
-    await rankUnrankedLinks(locttDir, taskIdsTouchedBy(activePlan, resolution.merged.map(m => m.path)));
+    //
+    // A branch whose `.schema-version` says it is older than 0.3.0 was
+    // written by a loctt whose shown order was 0.1.0's rule, so its links
+    // get the upgrade step's full ranking under the branch's own
+    // workflow.yaml (A366). Otherwise (0.3.0 or later, or no version on
+    // the branch, which is what publish leaves since it never mirrors
+    // the file) only the fill: a group whose ranks disagree with stored
+    // order there is one someone reordered (A365 call 5).
+    const touched = taskIdsTouchedBy(activePlan, resolution.merged.map(m => m.path));
+    if (branchPredatesRanks(root, remoteHead)) {
+      const workflowRaw = readTreeFile(root, remoteHead, "config/workflow.yaml");
+      await rankLinksInShownOrder(locttDir, touched, legacyRankedTypesIn(workflowRaw ?? ""));
+    } else {
+      await rankUnrankedLinks(locttDir, touched);
+    }
 
     // NORMALISE. Merging can leave two projects sharing a prefix (two
     // independently-init'ed trackers both mint `T-`), and tasks sharing

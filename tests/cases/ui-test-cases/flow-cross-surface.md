@@ -288,11 +288,11 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### Schema version drift
 
 ### XS-33 · M1 · blocker · P4 P7
-**`.schema-version` missing: the UI says the tracker is unrecognized and points at `loctt migrate`.** Delete `.schema-version` and load the UI.
+**`.schema-version` missing: the UI says the tracker is unrecognized and says to write the file.** Delete `.schema-version` and load the UI.
 
 - The server refuses to serve tracker data (`requireSupportedSchema` fails) and the UI shows the schema banner with the **`missing`** kind rather than an empty list. `missing` and `unknown` are distinct kinds in `SchemaStatusResponse`: `unknown` is an unreadable/unparseable version (SHL-38), not an absent one.
 - The banner names the missing file by path and says the tracker's layout cannot be confirmed.
-- It offers a concrete next step, not a generic retry: run `loctt migrate` to stamp and upgrade.
+- It offers a concrete next step, not a generic retry: write the tracker's format version into `.loctt/.schema-version` (`loctt doctor` says which), then reload. It does not offer `loctt migrate`, which refuses a tracker with no recorded version (A366).
 - **It does not offer `loctt init` or reinitialize.** A `.loctt/` holding tasks but no version file is a *damaged* tracker, not an empty one; reinitializing is the one path that can destroy real data. Only a wholly absent or empty `.loctt/` routes to onboarding (ONB-1/ONB-16).
 - The app does not route to `/init` — the directory is not uninitialized.
 - No "Migrate now" button is offered for this kind in M4; migration is not the mechanical fix for a missing file.

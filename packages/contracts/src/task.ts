@@ -32,9 +32,9 @@ export const TaskRelationshipSchema = z.object({
   target: z.string().min(1),
   /**
    * Lexorank string used to order the targets of a single
-   * relationship type within one source task. Only set when the
-   * relationship type is configured as `ranked: true` in the
-   * workflow. Tasks without rank sort below ranked ones.
+   * relationship type within one source task. Every link carries one
+   * since format 0.3.0 (K143); a link without one (a hand-edit, or data
+   * from before 0.3.0) sorts below the ranked ones.
    */
   rank: z.string().min(1).optional(),
 }).strict();

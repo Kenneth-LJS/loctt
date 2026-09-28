@@ -403,58 +403,104 @@ export async function persistRelationships(
 }
 
 /**
- * The other side of a delete's links (K147, G4).
+ * Every readable task, by id, for {@link deleteWithLinks}: the scan that
+ * finds each task holding a link to the one being deleted. Tasks that
+ * won't parse are left out (nothing can be written to them; doctor
+ * reports them).
+ */
+export async function loadLinkSnapshot(locttDir: string): Promise<Map<string, Task>> {
+  return new Map((await loadAllTasks(locttDir)).map(t => [t.frontmatter.id, t]));
+}
+
+/** Refusal of a delete whose partner could not be written. */
+export class DeleteDetachError extends LocttError {
+  constructor(message: string, dataState: "not_saved" | "unknown" = "not_saved") {
+    super("io_failed", message, { dataState });
+    this.name = "DeleteDetachError";
+  }
+}
+
+function hasRelationshipsHealth(task: Task): boolean {
+  return (task.health ?? []).some(h => h.field === "relationships" || h.field.startsWith("relationships["));
+}
+
+/**
+ * Deletes one task and the other side of its links, all or nothing
+ * (K147, G4).
  *
- * Deleting a task used to remove only its directory, so every partner
- * kept an edge pointing at nothing and doctor reported it. For each
- * task in `deleted`, every task it links to loses **every** edge that
- * targets it (the inverse and any stray edge of another type), each
- * with a `link_removed` entry in the partner's history, the same entry
- * `unlink` writes there. Partners that are themselves being deleted are
- * skipped, and so is a partner that is gone or whose file or
- * `relationships` cannot be read: nothing can be written to it, and
- * doctor reports what is left.
+ * Every task in `snapshot` holding a link to the deleted task loses
+ * **every** such link (the inverse, any stray link of another type, and
+ * a one-sided link with no edge back, which only this scan finds), each
+ * with a `link_removed` entry, the same entry `unlink` writes there. A
+ * partner whose `relationships` can't be read is skipped (nothing can be
+ * written to it; doctor reports what is left).
+ *
+ * The partners are written **before** `remove` runs. If a partner write
+ * or `remove` fails, the partners already written get their links back
+ * (with `link_added` entries) and the error says nothing was deleted.
+ * So a failure never leaves a task deleted with partners still pointing
+ * at it, and never reports a delete that happened as failed. `snapshot`
+ * is updated in place (partners rewritten, the task dropped) so a batch
+ * can reuse it.
  *
  * Lock-free: `deleteTask` and `bulkDelete` call it inside their own
- * state lock, after the directories are removed. That order means a
- * crash part-way leaves dangling edges (which `unlink` and doctor
- * handle), never a one-sided link the relationship repair would
- * complete back onto a deleted task.
+ * state lock.
  */
-export async function detachDeletedTasks(
+export async function deleteWithLinks(
   locttDir: string,
-  deleted: readonly Task[],
+  task: Task,
+  snapshot: Map<string, Task>,
+  remove: () => Promise<void>,
   now: string,
   bulkOpId?: string,
 ): Promise<void> {
-  const deletedIds = new Set(deleted.map(t => t.frontmatter.id));
-  const partners = new Set<string>();
-  for (const t of deleted) {
-    for (const r of t.frontmatter.relationships ?? []) {
-      if (!deletedIds.has(r.target)) partners.add(r.target);
-    }
-  }
-  for (const partnerId of partners) {
-    let partner: Task;
-    try {
-      partner = await readTask(locttDir, partnerId);
-    } catch {
-      // Gone, never a task (a key-stored or dangling target), or will
-      // not parse: nothing to write to.
-      continue;
-    }
-    if ((partner.health ?? []).some(h => h.field === "relationships")) continue;
-    const existing = partner.frontmatter.relationships ?? [];
-    const kept = existing.filter(r => !deletedIds.has(r.target));
-    if (kept.length === existing.length) continue;
-    const removed = existing.filter(r => deletedIds.has(r.target));
-    await persistRelationships(locttDir, partner, kept, now, removed.map(r => ({
+  const id = task.frontmatter.id;
+  const entries = (edges: readonly TaskRelationship[], kind: "link_removed" | "link_added"): HistoryEntry[] =>
+    edges.map(r => ({
       timestamp: now,
-      kind: "link_removed" as const,
+      kind,
       meta: { type: r.type, target: r.target },
       ...(bulkOpId !== undefined ? { bulk_op_id: bulkOpId } : {}),
-    })));
+    }));
+  const written: { before: Task; after: Task; removed: TaskRelationship[] }[] = [];
+  try {
+    for (const [partnerId, partner] of snapshot) {
+      if (partnerId === id || hasRelationshipsHealth(partner)) continue;
+      const existing = partner.frontmatter.relationships ?? [];
+      const removed = existing.filter(r => r.target === id);
+      if (removed.length === 0) continue;
+      const kept = existing.filter(r => r.target !== id);
+      let after: Task;
+      try {
+        after = await persistRelationships(locttDir, partner, kept, now, entries(removed, "link_removed"));
+      } catch (err) {
+        throw new DeleteDetachError(
+          `Could not delete ${task.frontmatter.key}: removing its link from ${partner.frontmatter.key} failed `
+          + `(${(err as Error).message}). Nothing was deleted.`,
+        );
+      }
+      written.push({ before: partner, after, removed });
+    }
+    await remove();
+  } catch (err) {
+    for (const w of written.reverse()) {
+      // Best effort: a partner that can't be put back keeps a link-less
+      // side, which the task (not deleted) still links from, so the
+      // relationship repair completes it.
+      await persistRelationships(
+        locttDir, w.after, [...(w.before.frontmatter.relationships ?? [])], now, entries(w.removed, "link_added"),
+      ).catch(() => undefined);
+    }
+    if (err instanceof DeleteDetachError) throw err;
+    // `rm` itself failed part-way: some of the folder's files may be gone.
+    throw new DeleteDetachError(
+      `Could not delete ${task.frontmatter.key}: removing its folder failed (${(err as Error).message}). `
+      + `Its links were put back, but some of its files may already be gone.`,
+      "unknown",
+    );
   }
+  for (const w of written) snapshot.set(w.after.frontmatter.id, w.after);
+  snapshot.delete(id);
 }
 
 /**
@@ -514,14 +560,40 @@ export async function commitParentLink(
   childId: string,
   prepared: PreparedParentLink,
   now: string,
-): Promise<void> {
+): Promise<boolean> {
   const { targetTask, inverseType } = prepared.checked;
-  if (inverseType === undefined || targetTask === undefined) return;
+  if (inverseType === undefined || targetTask === undefined) return false;
   const updated = addEdge(targetTask.frontmatter.relationships ?? [], inverseType, childId);
-  if (updated === null) return;
+  if (updated === null) return false;
   await persistRelationships(locttDir, targetTask, updated, now, [{
     timestamp: now,
     kind: "link_added",
+    meta: { type: inverseType, target: childId },
+  }]);
+  return true;
+}
+
+/**
+ * Takes back the parent's side of a create's link when the child could
+ * not be written after it (`createTask` writes the parent first, so a
+ * failure never leaves a created child whose key the caller does not
+ * save). Removes the one edge `commitParentLink` added, with the
+ * matching `link_removed` entry.
+ */
+export async function rollbackParentLink(
+  locttDir: string,
+  childId: string,
+  prepared: PreparedParentLink,
+  now: string,
+): Promise<void> {
+  const { targetTask, inverseType } = prepared.checked;
+  if (inverseType === undefined || targetTask === undefined) return;
+  const current = await readTask(locttDir, targetTask.frontmatter.id);
+  const updated = removeEdge(current.frontmatter.relationships ?? [], inverseType, childId);
+  if (updated === null) return;
+  await persistRelationships(locttDir, current, updated, now, [{
+    timestamp: now,
+    kind: "link_removed",
     meta: { type: inverseType, target: childId },
   }]);
 }

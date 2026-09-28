@@ -13,8 +13,8 @@ import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
 import { readPrefixRenameState } from "../projects/prefix.js";
 import { isMigrationLocked } from "../schema/lock.js";
-import { findMigrationPath } from "../schema/migrations.js";
-import { compareFormatVersions, CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/version.js";
+import { findMigrationPath, readRecordedFormat, type RecordedFormat } from "../schema/migrations.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION, SchemaTooNewError } from "../schema/version.js";
 import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { readReconcileState } from "../state/reconcile.js";
 import { loadState } from "../state/state.js";
@@ -186,10 +186,20 @@ async function* checkSchemaVersion(
     return;
   }
 
-  let onDisk: string | null;
+  let rf: RecordedFormat | null;
   try {
-    onDisk = await readSchemaVersion(locttDir);
+    rf = await readRecordedFormat(locttDir);
   } catch (err) {
+    if (err instanceof SchemaTooNewError) {
+      yield {
+        name,
+        status: "error",
+        message:
+          `on disk ${err.trackerVersion}, this build reads ${CURRENT_SCHEMA_VERSION}. `
+          + `This tracker needs loctt ${err.trackerVersion} or newer`,
+      };
+      return;
+    }
     yield {
       name,
       status: "error",
@@ -201,36 +211,30 @@ async function* checkSchemaVersion(
     return;
   }
 
-  if (onDisk === null) {
+  if (rf === null) {
     // Distinct from "outdated": there is no version to migrate *from*,
     // so `loctt migrate` is not the answer.
     yield {
       name,
       status: "error",
       message:
-        `no .schema-version file. This tracker predates schema versioning `
-        + `and must be re-initialized (expected ${CURRENT_SCHEMA_VERSION})`,
+        `no .schema-version file. Write the tracker's format version into it `
+        + `(0.1.0 if you don't know it, expected ${CURRENT_SCHEMA_VERSION})`,
     };
     return;
   }
 
-  const cmp = compareFormatVersions(onDisk, CURRENT_SCHEMA_VERSION);
-  if (cmp > 0) {
-    yield {
-      name,
-      status: "error",
-      message:
-        `on disk ${onDisk}, this build reads ${CURRENT_SCHEMA_VERSION}. `
-        + `This tracker needs loctt ${onDisk} or newer`,
-    };
-    return;
-  }
+  // Too new is refused by `readRecordedFormat` (caught above). The
+  // recorded version stands for the highest known format at or below
+  // it (K142), so 0.2.1 reads as 0.1.0.
+  const onDisk = rf.recorded;
+  const cmp = compareFormatVersions(rf.format, CURRENT_SCHEMA_VERSION);
 
   if (cmp < 0) {
     // K143: doctor explains, it does not write, so it reports rather
     // than upgrading. Any other command upgrades automatically when
     // every step is safe; a risky step waits for `loctt migrate`.
-    const path = findMigrationPath(onDisk, CURRENT_SCHEMA_VERSION);
+    const path = findMigrationPath(rf.format, CURRENT_SCHEMA_VERSION);
     const automatic = path !== null && path.length > 0 && path.every(step => step.risky !== true);
     yield {
       name,

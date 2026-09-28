@@ -67,9 +67,12 @@ export function relationshipFindings(
         errors.push({
           taskId: id,
           field: `relationships[${i}].rank`,
+          // Named by key where the task is known: a raw ID tells the
+          // reader nothing (messaging.md, A366).
           message:
-            `"${rel.type}" to "${rel.target}" has no rank, so its place in the list `
-            + `isn't stored. The relationship repair ranks it at the end of its group.`,
+            `"${rel.type}" link from ${task.frontmatter.key} to `
+            + `${byId.get(rel.target)?.frontmatter.key ?? `"${rel.target}"`} has no rank, so its place in `
+            + `the list isn't stored. The relationship repair ranks it at the end of its group.`,
         });
       }
 

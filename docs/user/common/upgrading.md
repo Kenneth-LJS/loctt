@@ -142,9 +142,13 @@ branch, and LocTT keeps the two sides from corrupting each other:
   `loctt` already upgraded, the sync is **refused**, naming the release to
   install, and nothing is written.
 - Upgrades happen on each machine, never through a sync. A branch whose
-  `.schema-version` is not a format version (the old `1` included) is
-  refused; nothing is written. Links a sync brings in without a rank are
-  ranked as it applies them, after the ranked links of their kind.
+  `.schema-version` is not a format version is refused and nothing is
+  written. For a branch holding the old `1`, change `.schema-version` on
+  that branch to `0.1.0` and commit it, then sync again (publishing never
+  writes that file on the branch). Links a sync brings in without a rank
+  are ranked as it applies them, after the ranked links of their kind.
+  From a branch whose `.schema-version` is older than `0.3.0`, every link
+  it brings is ranked in the order that branch showed it.
 
 The rule: **everyone on a shared tracker upgrades `loctt` on their own
 machine** (editing `.schema-version` from `1` to `0.1.0` first when coming

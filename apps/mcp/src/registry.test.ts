@@ -6,7 +6,7 @@
  * isn't a plain record of zod schemas.
  *
  * The wire-format end-to-end contract (snapshot of every tool
- * name) lives in tests/e2e/11-mcp-schema-contract.test.ts.
+ * name) lives in tests/integration/mcp/tool-contract.test.ts.
  */
 
 import { describe, expect, it } from "vitest";

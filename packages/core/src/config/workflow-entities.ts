@@ -677,7 +677,7 @@ export interface CreateCustomFieldInput {
 function assertAllowNewValuesFits(type: CustomFieldDef["type"], allow: boolean | undefined): void {
   if (allow === true && type !== "enum") {
     throw new WorkflowEntityError(
-      `Only a choice (enum) field can allow new values; this field is ${type}.`,
+      `Only a choice (enum) field can allow new values. This field is ${type}.`,
       { field: "allow_new_values" },
     );
   }

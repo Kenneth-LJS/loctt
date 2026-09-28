@@ -733,7 +733,7 @@ export async function set(args: string[], root: string): Promise<void> {
   // K152/K153: add/remove takes several tasks. A replace value with
   // --create stays one task at a time (A365).
   if (!editing && create && splitRefs(ref).length > 1) {
-    throw new UsageError("--create with a value works on one task at a time; use --add to add to several", SET_USAGE);
+    throw new UsageError("--create with a value works on one task at a time. Use --add to add to several", SET_USAGE);
   }
   const locttDir = resolveLocttDir(root);
   if (editing && splitRefs(ref).length > 1) {

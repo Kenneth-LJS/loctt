@@ -7,12 +7,13 @@ import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { recordTaskKeys } from "../state/key-index.js";
 import { allocateKey } from "../state/keys.js";
+import { saveState } from "../state/state.js";
 import { appendRankedEdge } from "./edge-rank.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 import type { PreparedParentLink } from "./relationships.js";
-import { commitParentLink, prepareParentLink } from "./relationships.js";
+import { commitParentLink, prepareParentLink, rollbackParentLink } from "./relationships.js";
 import { invalidValueError, resolveEntityRef } from "./update.js";
 import { todayDateString } from "./update.js";
 
@@ -67,9 +68,11 @@ export interface CreateTaskParams {
 /**
  * Creates a new task on disk and updates key allocation state.
  *
- * Caller is responsible for persisting the updated state afterwards,
- * and must hold the state lock: with a `parent`, this also writes the
- * inverse edge on the parent task (K140), under the caller's lock.
+ * Must be called under the state lock. The updated key counter is saved
+ * here as soon as the task is on disk, so a later failure cannot leave a
+ * key that the next create issues again. Callers still save `state`
+ * afterwards (harmless). With a `parent`, this also writes the inverse
+ * edge on the parent task (K140), before the child.
  * Returns the created task.
  */
 export async function createTask(params: CreateTaskParams): Promise<Task> {
@@ -243,7 +246,31 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
     body: options.body ?? "",
   };
 
-  await writeTask(locttDir, id, task);
+  // The order keeps the key invariant (a key is never issued twice).
+  // The caller saves the counter only when this returns, so nothing may
+  // fail after the child's task.md is on disk without the counter saved.
+  //
+  // 1. The parent's side of the link first (K140), with the `link_added`
+  //    entry `link` writes on the target. If it fails, nothing is
+  //    written and the key was never used. The child's own `created`
+  //    entry records the edge, so it gets no separate `link_added` (K141).
+  // 2. The child. If it fails, the parent's edge is taken back.
+  // 3. The counter, here, before anything else can fail (the caller
+  //    saves it again, which changes nothing).
+  const parentWritten = parentLink !== undefined
+    && await commitParentLink(locttDir, id, parentLink, now);
+  try {
+    await writeTask(locttDir, id, task);
+  } catch (err) {
+    if (parentWritten && parentLink !== undefined) {
+      // Best effort: if this fails too, the parent keeps a link to a
+      // task that does not exist, which doctor reports and `unlink`
+      // removes. The key is still unused either way.
+      await rollbackParentLink(locttDir, id, parentLink, now).catch(() => undefined);
+    }
+    throw err;
+  }
+  await saveState(locttDir, state);
   // Keep an existing on-disk key index complete (G6). An index is
   // written by the first lookup, including `--parent`'s own; without
   // this, doctor found the new task "not in index" after an ordinary
@@ -256,12 +283,6 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   await appendHistory(locttDir, id, [
     { timestamp: now, kind: "created", after: { frontmatter, body: task.body } },
   ]);
-  // The parent's side of the link, with the `link_added` entry `link`
-  // writes on the target. The child's own `created` entry already
-  // records the edge, so it gets no separate `link_added` (K141).
-  if (parentLink !== undefined) {
-    await commitParentLink(locttDir, id, parentLink, now);
-  }
   // Invalidate any in-process "key not found" verdicts cached by
   // lookupByKey — the new task's key/key_history may now resolve.
   clearLookupCaches(locttDir);

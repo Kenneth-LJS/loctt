@@ -354,3 +354,78 @@ describe("initLoctt repair — projects.yaml lost", () => {
     }
   });
 });
+
+// A366 (M2): a repair that has to write `.schema-version` stamps the
+// current format only when the data provably is current. Otherwise it
+// stamps 0.1.0, so the automatic upgrade ranks the links a pre-0.3.0
+// tracker stored without ranks.
+describe("initLoctt repair — .schema-version lost", () => {
+  const A = "01J0000000000000000000000A";
+  const B = "01J0000000000000000000000B";
+  const task = (id: string, key: string, rels: { type: string; target: string; rank?: string }[]) => ({
+    frontmatter: {
+      id, key, title: key, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      relationships: rels,
+    },
+    body: "",
+  });
+
+  async function repairedStamp(rels: [{ type: string; target: string; rank?: string }[], { type: string; target: string; rank?: string }[]], workflowExtra?: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "loctt-repair-ver-"));
+    try {
+      await initLoctt(root, { docs: false, timezone: "UTC" });
+      const locttDir = resolveLocttDir(root);
+      const { writeTask } = await import("../task/io.js");
+      await writeTask(locttDir, A, task(A, "T-1", rels[0]));
+      await writeTask(locttDir, B, task(B, "T-2", rels[1]));
+      if (workflowExtra !== undefined) {
+        const wf = join(locttDir, "config", "workflow.yaml");
+        const raw = await readFile(wf, "utf-8");
+        await writeFile(wf, raw.replace(/(\n {2}- key: blocks\n)/, `$1${workflowExtra}`), "utf-8");
+      }
+      await rm(join(locttDir, ".schema-version"));
+      await rm(join(locttDir, "state.yaml"));
+      await initLoctt(root, { repair: true, timezone: "UTC" });
+      return (await readFile(join(locttDir, ".schema-version"), "utf-8")).trim();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  it("stamps the current format when every link is ranked and no `ranked` setting is left", async () => {
+    expect(await repairedStamp([
+      [{ type: "blocks", target: B, rank: "u" }],
+      [{ type: "is_blocked_by", target: A, rank: "u" }],
+    ])).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  it("stamps 0.1.0 when a link has no rank", async () => {
+    expect(await repairedStamp([
+      [{ type: "blocks", target: B, rank: "u" }],
+      [{ type: "is_blocked_by", target: A }],
+    ])).toBe("0.1.0");
+  });
+
+  it("stamps 0.1.0 when workflow.yaml still sets the retired `ranked`", async () => {
+    expect(await repairedStamp([
+      [{ type: "blocks", target: B, rank: "u" }],
+      [{ type: "is_blocked_by", target: A, rank: "u" }],
+    ], "    ranked: true\n")).toBe("0.1.0");
+  });
+});
+
+// K148: the starting project's name may not look like an ID either.
+describe("initLoctt — project name", () => {
+  it("refuses an ID-shaped project name with K148's message, and creates nothing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-init-idname-"));
+    try {
+      const err = await initLoctt(root, { projectName: "01ARZ3NDEKTSV4RRFFQ69G5FAV", docs: false, timezone: "UTC" })
+        .then(() => undefined, (e: unknown) => e) as { message: string; field?: string } | undefined;
+      expect(err?.message).toBe("That looks like an ID; choose a different name.");
+      expect(err?.field).toBe("projectLabel");
+      await expect(access(join(root, ".loctt"))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

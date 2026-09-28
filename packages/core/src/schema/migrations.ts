@@ -25,7 +25,14 @@
  */
 
 import { rankEveryLink } from "./steps/rank-every-link.js";
-import { compareFormatVersions } from "./version.js";
+import {
+  compareFormatVersions,
+  CURRENT_SCHEMA_VERSION,
+  readSchemaVersion,
+  SCHEMA_VERSION_REPAIR,
+  SchemaTooNewError,
+  SchemaUnmigratableError,
+} from "./version.js";
 
 export interface Migration {
   /** Source format version (semver). */
@@ -59,6 +66,73 @@ const MIGRATIONS: readonly Migration[] = [
 
 export function listMigrations(): readonly Migration[] {
   return MIGRATIONS;
+}
+
+/**
+ * Every format this build knows, oldest first: the current one and each
+ * end of a registered migration.
+ */
+export function knownFormats(migrations: readonly Migration[] = MIGRATIONS): string[] {
+  const all = new Set<string>([CURRENT_SCHEMA_VERSION]);
+  for (const m of migrations) {
+    all.add(m.from);
+    all.add(m.to);
+  }
+  return [...all].sort(compareFormatVersions);
+}
+
+/**
+ * The format a recorded version stands for (K142: *"find the highest
+ * version that's lower/at the data version"*): the highest known format
+ * at or below it. `0.2.1` is format `0.1.0`, since no release between
+ * them changed the format.
+ *
+ * - Above `CURRENT_SCHEMA_VERSION`: refused as too new, naming the
+ *   release. A build always writes the format version it knows, never
+ *   its own release, so a higher number on disk was written by a build
+ *   that introduced a format this one has never seen.
+ * - Below the first format (`0.1.0`): not a LocTT format at all; refused
+ *   with what to write instead, never with `loctt migrate` (there is
+ *   nothing to migrate from).
+ */
+export function formatForRecordedVersion(
+  recorded: string,
+  migrations: readonly Migration[] = MIGRATIONS,
+): string {
+  if (compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) > 0) {
+    throw new SchemaTooNewError(recorded, CURRENT_SCHEMA_VERSION);
+  }
+  const formats = knownFormats(migrations);
+  let found: string | undefined;
+  for (const f of formats) {
+    if (compareFormatVersions(f, recorded) <= 0) found = f;
+  }
+  if (found === undefined) {
+    throw new SchemaUnmigratableError(
+      `.schema-version holds ${recorded}, which is not a LocTT format. The first format is ${formats[0] ?? CURRENT_SCHEMA_VERSION}.`,
+      SCHEMA_VERSION_REPAIR,
+    );
+  }
+  return found;
+}
+
+/** A recorded version and the known format it stands for. */
+export interface RecordedFormat {
+  /** What `.schema-version` holds, as written. */
+  readonly recorded: string;
+  /** The known format it stands for (`formatForRecordedVersion`). */
+  readonly format: string;
+}
+
+/**
+ * Reads `.schema-version` and resolves it to a known format. Null when
+ * the file is absent; throws as `readSchemaVersion` and
+ * `formatForRecordedVersion` do.
+ */
+export async function readRecordedFormat(locttDir: string): Promise<RecordedFormat | null> {
+  const recorded = await readSchemaVersion(locttDir);
+  if (recorded === null) return null;
+  return { recorded, format: formatForRecordedVersion(recorded) };
 }
 
 /**

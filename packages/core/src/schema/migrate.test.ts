@@ -14,6 +14,7 @@ import type { Migration } from "./migrations.js";
 import {
   CURRENT_SCHEMA_VERSION,
   SchemaTooNewError,
+  SchemaUnmigratableError,
   SchemaVersionError,
   writeSchemaVersion,
 } from "./version.js";
@@ -193,5 +194,27 @@ describe("migrateToCurrent: a step fails partway (SET-37)", () => {
     // "does not report a partial success as success" bullets, read
     // from the boot-guard side) refuses rather than resuming.
     await expect(requireWithFakeCurrent(dir)).rejects.toThrow(/interrupted mid-run/);
+  });
+});
+
+// M2 (A366): `loctt init --repair` refuses a tracker whose config and
+// state are all present, so it is named only when one of them is gone.
+describe("a missing .schema-version names the remedy that helps", () => {
+  it("with config and state present: write the file, not init --repair", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const root = join(dir, "t");
+    await initLoctt(root, { docs: false, timezone: "UTC" });
+    await rm(join(root, ".loctt", ".schema-version"));
+    const err = await requireSupportedSchema(join(root, ".loctt")).catch((e: unknown) => e) as SchemaUnmigratableError;
+    expect(err).toBeInstanceOf(SchemaUnmigratableError);
+    expect(err.message).toMatch(/^No \.schema-version file found in .+\. This tracker has no recorded format version\.$/);
+    expect(err.remedy).toMatch(/^Create \.schema-version holding the tracker's format version: 0\.1\.0 /);
+    expect(err.remedy).not.toMatch(/init --repair/);
+  });
+
+  it("with a core file gone too: init --repair, which writes it", async () => {
+    const err = await planMigration(dir).catch((e: unknown) => e) as SchemaUnmigratableError;
+    expect(err).toBeInstanceOf(SchemaUnmigratableError);
+    expect(err.remedy).toMatch(/^Run 'loctt init --repair' to restore the missing files, \.schema-version included\./);
   });
 });

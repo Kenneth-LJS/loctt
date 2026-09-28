@@ -89,8 +89,11 @@ describe("web schema guard", () => {
     // offering it sends the user on a round trip to find that out.
     expect(body.recovery?.command).toBeUndefined();
     expect(body.recovery?.kind).toBe("none");
-    // But something actionable must still be said.
-    expect(body.detail).toMatch(/init --repair/);
+    // But something actionable must still be said, and not
+    // `init --repair` either: it refuses a tracker whose config and
+    // state are all present (A366).
+    expect(body.detail).toMatch(/^Create \.schema-version holding the tracker's format version: 0\.1\.0 /);
+    expect(body.detail).not.toMatch(/init --repair/);
   });
 
   it("offers no command for a tracker from a newer LocTT", async () => {
@@ -118,7 +121,7 @@ describe("web schema guard", () => {
     const guarded = await fetch(`${base}/api/info`);
     const guardedBody = await guarded.json() as Envelope;
     // The guard attaches the remedy it knows about.
-    expect(guardedBody.detail).toMatch(/init --repair/);
+    expect(guardedBody.detail).toMatch(/^Put the tracker's format version in \.schema-version: 0\.1\.0 /);
 
     // Migration is the remedy for a mismatch, so it cannot be gated
     // behind one. Reaching its own handler is what this asserts: the

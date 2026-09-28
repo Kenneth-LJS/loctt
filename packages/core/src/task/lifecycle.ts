@@ -8,7 +8,7 @@ import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
-import { detachDeletedTasks } from "./relationships.js";
+import { deleteWithLinks, loadLinkSnapshot } from "./relationships.js";
 
 export class TaskLifecycleError extends Error {
   constructor(message: string) {
@@ -146,18 +146,34 @@ export async function deleteTask(
   }
 
   await withStateLock(locttDir, async () => {
-    // Verify task exists first; its edges name the partners to detach.
+    // Verify task exists first.
     const task = await readTask(locttDir, taskId);
 
-    const taskDir = getTaskDir(locttDir, taskId);
-    await rm(taskDir, { recursive: true, force: true });
-    // The partners' side of every link (K147), then the task's keys in
-    // the on-disk index (G5).
-    await detachDeletedTasks(locttDir, [task], new Date().toISOString());
-    await forgetTasks(locttDir, [taskId]);
-    // Drop any cached "key not found" verdicts — the just-deleted
-    // task's keys still resolved a moment ago and any rebuild after
-    // this point should reflect the new (smaller) population.
-    clearLookupCaches(locttDir);
+    // The partners' side of every link, then the directory, all or
+    // nothing (K147).
+    const snapshot = await loadLinkSnapshot(locttDir);
+    await deleteWithLinks(
+      locttDir, task, snapshot,
+      () => rm(getTaskDir(locttDir, taskId), { recursive: true, force: true }),
+      new Date().toISOString(),
+    );
+    await afterDelete(locttDir, [taskId]);
   });
+}
+
+/**
+ * What follows a delete that happened: the task's keys leave the on-disk
+ * index (G5) and cached lookups are dropped. Runs after every successful
+ * delete. The index is a cache that lookups repair (a key whose task is
+ * gone is dropped when met), so a failure to rewrite it does not turn a
+ * delete that happened into a reported failure.
+ */
+export async function afterDelete(locttDir: string, ids: readonly string[]): Promise<void> {
+  try {
+    await forgetTasks(locttDir, ids);
+  } catch {
+    // See above: the lookup drops the stale entry when it meets it.
+  } finally {
+    clearLookupCaches(locttDir);
+  }
 }

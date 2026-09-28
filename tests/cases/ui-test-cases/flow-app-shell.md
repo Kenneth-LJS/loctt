@@ -279,7 +279,7 @@ a violation of P4.
 **`.schema-version` missing renders a "not a recognized tracker" banner.** Serve a tracker whose `.schema-version` file has been deleted (a legacy or hand-assembled `.loctt/`); `schemaStatus.kind` is `missing`.
 
 - The banner states that `.loctt/` exists but has no recorded schema version, so LocTT cannot tell what format the data is in.
-- The next action offered is running `loctt migrate` in the terminal to stamp and upgrade the tracker — **not** "reinitialize", which would risk data.
+- The next action offered is writing the tracker's format version into `.loctt/.schema-version` (`loctt doctor` says which) and reloading — **not** `loctt migrate`, which refuses a tracker with no recorded version (A366), and **not** "reinitialize", which would risk data.
 - The banner does **not** say the tracker is out of date; the version is unknown, not old.
 - No version numbers are displayed, because none are known — the banner does not print `undefined` or `0`.
 - The app does not route to `/init`; the directory is not uninitialized.

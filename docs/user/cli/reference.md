@@ -39,7 +39,10 @@ repeats these tables.
   automatically; commands refuse and point you to `loctt migrate`. A
   tracker in a newer format is refused with `This tracker needs loctt
   <version> or newer.`; a file holding anything but a format version
-  (including 0.2.x's `1`) is refused, saying what it must hold. `init`,
+  (including 0.2.x's `1`) is refused, saying what it must hold. A
+  version between two formats stands for the older one (`0.2.1` is format
+  `0.1.0` and is upgraded like it); one below `0.1.0` is not a LocTT
+  format and is refused. `init`,
   `migrate`, `doctor`, `info`, `mcp`, `ui`, `help` and `--version` do not
   upgrade (`mcp` and `ui` upgrade on their first request). See
   [Upgrading](../common/upgrading.md).
@@ -376,9 +379,13 @@ list (`WEB-9,WEB-10`) to delete several at once, as a single operation.
 Destructive; it prompts for confirmation once for the whole set. To hide
 a task reversibly instead, use [`loctt archive`](#loctt-archive-tasktask--loctt-unarchive-tasktask).
 
-Every task a deleted task was linked to loses its side of the link in the
-same operation, and its history (`loctt log`) records the removal, so no
-link is left pointing at a task that no longer exists.
+Every task holding a link to a deleted task loses that link in the same
+operation (a link with no edge back included), and its history
+(`loctt log`) records the removal, so no link is left pointing at a task
+that no longer exists. Those links are removed before the task is: if one
+of those tasks can't be written, that task is not deleted, the links
+already removed are put back, and the error says so. With several tasks,
+the others are still deleted and the failures are listed.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|

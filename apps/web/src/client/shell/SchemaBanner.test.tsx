@@ -33,14 +33,16 @@ describe("SchemaBanner", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("banners a missing .schema-version and points at `loctt migrate`", () => {
+  it("banners a missing .schema-version and says to write it, not `loctt migrate`", () => {
     // Previously rendered nothing, on the theory that the bootstrap
     // routed this to the init wizard — which is a stub, so nothing
     // routed anywhere and the user saw an unexplained broken app.
     render(<SchemaBanner status={{ kind: "missing" }} />);
     const alert = screen.getByRole("alert");
     expect(alert.getAttribute("data-kind")).toBe("missing");
-    expect(alert.textContent).toContain("loctt migrate");
+    // `loctt migrate` refuses a tracker with no recorded version (A366).
+    expect(alert.textContent).not.toContain("loctt migrate");
+    expect(alert.textContent).toContain("Write the tracker's format version into `.loctt/.schema-version`, then reload.");
   });
 
   it("does not offer to reinitialize a tracker with a missing version", () => {
@@ -154,12 +156,13 @@ describe("SchemaBanner distinguishes the four kinds", () => {
    * none may be printed, and the tracker must not be described as out
    * of date.
    */
-  it("missing: names the absent file, offers migrate, and prints no version numbers", () => {
+  it("missing: names the absent file, says to write it, and prints no version numbers", () => {
     render(<SchemaBanner status={{ kind: "missing" }} />);
     const text = textOf();
 
     expect(text).toContain(".schema-version");
-    expect(text).toContain("loctt migrate");
+    expect(text).toContain("`loctt doctor` says which version to write.");
+    expect(text).not.toContain("loctt migrate");
     // Reinitialize is not merely absent as an offer — it is warned
     // against, which is the stronger reading of "not reinitialize,
     // which would risk data".

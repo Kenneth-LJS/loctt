@@ -9,12 +9,12 @@
  *
  * @verifies REL-C6
  */
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Task, WorkflowConfig } from "@loctt/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadArchivedGuardConfigs } from "../config/archived-guard.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
@@ -168,5 +168,62 @@ describe("createTask with a parent (K140)", () => {
     expect(await nextNumber()).toBe(before);
     // The archived parent was not touched either.
     expect((await readTask(locttDir, parent.frontmatter.id)).frontmatter.relationships).toBeUndefined();
+  });
+  // The key invariant: the caller saves the counter only when createTask
+  // returns, so a failure after the child is on disk used to leave a key
+  // the next create issued again (A366).
+  it("a parent that can't be written: the create fails, writes nothing, and the key is not issued twice", async () => {
+    const parent = await create("the parent");
+    const before = await nextNumber();
+    const parentDir = join(locttDir, "tasks", parent.frontmatter.id);
+    await chmod(parentDir, 0o555);
+    try {
+      await expect(create("the child", "GAME-1")).rejects.toThrow();
+    } finally {
+      await chmod(parentDir, 0o755);
+    }
+    expect(await readdir(join(locttDir, "tasks"))).toEqual([parent.frontmatter.id]);
+    expect(await nextNumber()).toBe(before);
+    const next = await create("another");
+    expect(next.frontmatter.key).toBe(`GAME-${String(before)}`);
+    expect(await checkDataIntegrity(locttDir)).toEqual([]);
+  });
+
+  it("a child that can't be written: the parent's side is taken back", async () => {
+    const parent = await create("the parent");
+    const before = await nextNumber();
+    vi.doMock("./io.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("./io.js")>();
+      return {
+        ...actual,
+        writeTask: async (...args: Parameters<typeof actual.writeTask>) => {
+          if (args[2].frontmatter.title === "the child") throw new Error("disk full");
+          return actual.writeTask(...args);
+        },
+      };
+    });
+    vi.resetModules();
+    try {
+      const { createTask: failing } = await import("./create.js");
+      const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+      await expect(withStateLock(locttDir, async () => {
+        const state = await loadState(locttDir);
+        const task = await failing({
+          locttDir, state, workflowConfig, archivedGuard,
+          options: { project, title: "the child", parent: "GAME-1" },
+        });
+        await saveState(locttDir, state);
+        return task;
+      })).rejects.toThrow("disk full");
+    } finally {
+      vi.doUnmock("./io.js");
+      vi.resetModules();
+    }
+    expect(await readdir(join(locttDir, "tasks"))).toEqual([parent.frontmatter.id]);
+    expect(await nextNumber()).toBe(before);
+    expect((await readTask(locttDir, parent.frontmatter.id)).frontmatter.relationships ?? []).toEqual([]);
+    const kinds = (await readHistory(locttDir, parent.frontmatter.id)).map(h => h.kind);
+    expect(kinds.slice(-2)).toEqual(["link_added", "link_removed"]);
+    expect(await validateRelationships(locttDir, workflowConfig)).toEqual([]);
   });
 });

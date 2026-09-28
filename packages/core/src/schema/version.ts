@@ -99,12 +99,15 @@ export class SchemaTooNewError extends SchemaVersionError {
  * What `.schema-version` must hold, for the refusal of anything else.
  * A tracker made before 0.3.0 holds the old counter `1`; K142 gives it
  * no compatibility (Ken edits his trackers by hand), so the remedy says
- * what to write instead.
+ * what to write instead. It names no command: `loctt migrate` needs a
+ * readable version to start from, and `loctt init --repair` refuses a
+ * tracker whose config and state are all present, so neither helps.
+ * `0.1.0` is the safe guess: the next command upgrades from there.
  */
-const REPAIR = `Put the tracker's format version in ${".schema-version"}: `
+export const SCHEMA_VERSION_REPAIR = `Put the tracker's format version in ${".schema-version"}: `
   + `0.1.0 for a tracker made by loctt 0.2.x or earlier (which wrote 1). `
-  + `If you don't know it, re-initialize with 'loctt init --repair'. `
-  + `'loctt migrate' cannot help: there is no readable version to migrate from.`;
+  + `If you don't know it, write 0.1.0. The next command upgrades the tracker from there.`;
+const REPAIR = SCHEMA_VERSION_REPAIR;
 
 /**
  * Reads the format version recorded on disk. Returns null if the file

@@ -23212,6 +23212,208 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A366 · Branch review fixes: format mapping, repair stamping, create/delete ordering, messages (fix/parent-and-child-order)
+
+#### A366 · Review fixes: recorded versions map to known formats, honest remedies, create/delete ordering, sync ranking, gate checks
+
+**Ticket:** review of B39–B47 (M1, M2, minors 1–9) · **Date:** 2026-09-28 · **Agent-made** (under K142, K143, K147, K148, K149, K151, K153; K154 noted).
+
+**The situation.** An independent review of the B39–B47 work found two
+majors and nine minors, each checked against the code before fixing. The
+fixes left the calls below open. None changes scope or a recorded ruling
+except where noted (call 10 reverses A360 call 2 on the reviewer's
+instruction; call 1 departs from one requested test and says why).
+
+**Options considered / decided.** (chosen first)
+
+1. *A recorded version between known formats (M1, K142 "highest at or
+   below").* (a) `formatForRecordedVersion` (`schema/migrations.ts`)
+   maps a recorded semver to the highest known format at or below it
+   (known = `CURRENT_SCHEMA_VERSION` plus every migration's `from`/`to`):
+   `0.2.1` → `0.1.0`. Below the first format (`0.0.9`) is refused as
+   `SchemaUnmigratableError` ("… is not a LocTT format. The first format
+   is 0.1.0.") with the write-the-file remedy, never `loctt migrate`.
+   Above `CURRENT_SCHEMA_VERSION` stays `SchemaTooNewError`, naming the
+   release. `planMigration`, `migrateToCurrent`, `requireSupportedSchema`,
+   `upgradeIfSafe`, doctor and `computeSchemaStatus` all go through it.
+   **The review also asked that `0.3.1` be treated as current** (and
+   `0.3.4` → `0.3.0`). Not done: a build writes `CURRENT_SCHEMA_VERSION`,
+   never its own release, so a file holding `0.3.1` can only have come
+   from a build that introduced format `0.3.1` (or a hand edit). Reading
+   it as `0.3.0` would let this build write old-format data into a newer
+   tracker, the corruption K142's "too new is refused" exists to
+   prevent. The resolver takes the migration list as a parameter, and a
+   unit test shows the mapping for a release between two formats.
+   (b) Treat anything above current as current (the review's reading):
+   silent downgrade of a newer tracker. (c) A build-release constant as
+   the ceiling: every release would have to bump it, and it only matters
+   for hand-edited files.
+2. *Rewrite to the canonical version.* The upgrade runs the steps from
+   the mapped format and the last step's stamp writes `0.3.0`, so `0.2.1`
+   ends as `0.3.0`; the backup is named `…backup-v0.2.1-…` and the notice
+   says "from 0.2.1". `migrateToCurrent` also stamps the canonical
+   version when a recorded one maps to the current format (unreachable
+   while the ceiling is the current format; kept so the rule is whole).
+3. *Remedies that name only what helps (M1, M2).* `SCHEMA_VERSION_REPAIR`
+   (unreadable or empty file, or below every format) no longer names
+   `loctt init --repair`, which refuses a tracker whose config and state
+   are present: "… If you don't know it, write 0.1.0. The next command
+   upgrades the tracker from there." A missing `.schema-version` names
+   `init --repair` only when a core file (workflow/projects/state) is also
+   missing, since only then does repair run; otherwise "Create
+   .schema-version holding …". "No upgrade path" and the automatic
+   upgrade's wait-timeout are `SchemaUnmigratableError` (the web guard
+   then offers no command). The web `/api/migrate` catch sends `recovery:
+   none` plus the remedy for an unmigratable or too-new tracker (it named
+   `loctt migrate` for every failure). Restore's sentinel refusal said
+   "Run 'loctt migrate' to finish it", which refuses with a sentinel
+   present; it now says to wait, or restore from the backup the file names
+   and remove it. The web banner's `missing` kind said "Run `loctt
+   migrate` to stamp and upgrade it", which also refuses: it now says to
+   write the file and reload, with `loctt doctor` naming the version (no
+   version number in the banner, SHL-34). **Cases changed:** XS-33 and
+   SHL-34 required the `loctt migrate` advice; their text now requires
+   the write-the-file remedy and says why.
+4. *What `init --repair` stamps (M2).* `isProvablyRanked`
+   (`schema/steps/rank-every-link.ts`): workflow.yaml parses (or is
+   absent) and sets no retired `ranked`, and every readable task's every
+   link carries a rank, with no unreadable task or `relationships`. Then
+   `0.3.0`; otherwise `0.1.0`, so the automatic upgrade ranks the links.
+   A tracker with no links stamps `0.3.0`. Known cost of `0.1.0` on data
+   that was really `0.3.0`: a group whose ranks disagree with stored order
+   (a reorder) is re-ranked in stored order.
+5. *Create keeps the key invariant (minor 1).* `createTask` writes the
+   parent's edge first, then the child; if the child write fails the
+   parent's edge is taken back (`rollbackParentLink`, a `link_removed`
+   entry). Right after the child is on disk, `createTask` saves the key
+   counter itself (the caller saves again, harmlessly), so a later failure
+   (key index, history) can't lead to the key being issued twice.
+   **Residual:** if the parent's task.md is written but its history
+   append fails, the create throws and the parent keeps an edge to a task
+   that never existed (doctor reports it, `unlink` removes it); no key is
+   issued.
+6. *`created` from add/remove (minor 2).* Reported only when something
+   was saved: `editTaskFields` with no change returns `[]`; bulk returns
+   `[]` when no task changed.
+7. *Automatic upgrade racing a starting upgrade (minor 3).* In
+   `upgradeIfSafe`'s catch, a held migration lock sends it back to
+   waiting (the sentinel it tripped on is the other process's live one);
+   the wait-timeout is an `SchemaUnmigratableError` naming no command.
+   **Not tested**, by the coordinator's instruction: K154 removes the
+   automatic upgrade and this path with it.
+8. *Sync from a branch older than 0.3.0 (minor 4).* When the branch's
+   `.schema-version` is a format version below `0.3.0`, sync runs the
+   step's full `rankInShownOrder` (`rankLinksInShownOrder`) on the tasks
+   it applied, with the branch's own workflow.yaml `ranked` settings. No
+   file on the branch (what publish leaves: `.schema-version` is
+   LOCAL_OWNED and never mirrored), an empty one, or `0.3.0`+ keep the
+   fill-only rank (A365 call 5).
+9. *A branch holding `1` (minor 7).* The refusal said "may have been
+   written by a newer loctt … Upgrade loctt", which cannot help. For a
+   bare integer it now says the branch holds the old version number and
+   to change `.schema-version` on that branch to `0.1.0` and commit it
+   (re-publishing cannot: publish never writes that file).
+   `GitRemoteSchemaNewerError.raw` and the envelope's
+   `schema_remote_newer.remote_raw` carry the text; the web panel renders
+   the same remedy. Other non-format text keeps the "newer" wording.
+10. *Delete (minor 5, K147; reverses A360 call 2).* `deleteWithLinks`
+    (`task/relationships.ts`): scans every readable task
+    (`loadLinkSnapshot`) for links to the task, one-sided ones included,
+    writes each partner (with `link_removed`), **then** removes the
+    folder. A partner write failure or an `rm` failure puts the written
+    partners back (`link_added`) and throws `DeleteDetachError`
+    (`io_failed`; "… Nothing was deleted." / for `rm`, data state
+    `unknown`: "… some of its files may already be gone"). Bulk delete
+    keeps K153's partial shape: each task all-or-nothing, failures listed,
+    the rest deleted; one snapshot per batch, kept current. After every
+    successful delete `afterDelete` runs `forgetTasks` (a failure is
+    swallowed: the index is a cache lookup repairs) and always
+    `clearLookupCaches`. A360's reason for the old order (a crash between
+    leaves a one-sided link the repair would complete onto a deleted
+    task) no longer applies: with partners first, a crash leaves the task
+    present, and the repair restores the links it still holds.
+11. *ID-shaped starting project name (minor 6, K148).* `initLoctt`
+    refuses it with K148's message as a `LocttError` at field
+    `projectLabel`; the web init route places it at that field (it pinned
+    every init refusal on `prefix`). K148's message keeps its semicolon:
+    it is the text Ken's ruling quotes.
+12. *Messages (minor 7).* The six semicolon sentences are split. Doctor's
+    "has no rank" finding names both tasks by key when known:
+    `"parent" link from T-1 to T-2 has no rank, …`.
+13. *Leftovers (minor 8).* registry.test.ts points at
+    `tests/integration/mcp/tool-contract.test.ts`; the contracts `rank`
+    comment drops `ranked: true`; `get_task`'s description drops the
+    ranked/unranked wording; the archived-project lookup in
+    `resolveProjectIdFromInput` matches `p.id` only for ID-shaped input
+    (K149).
+14. *Doctor gate (minor 9a).* The premise was partly false: doctor
+    prints every relationship finding again as its own `data integrity`
+    line (path, field, message), and the gate already compared those one
+    by one, so a swap failed it. Kept as is (doctor has no JSON); a test
+    now pins it, and the gate's comment says the per-link lines are what
+    catch a swap.
+15. *Runthrough `changed_only` (minor 9b).* A post check `changed_only:
+    { tasks: [refs], files: [paths] }` fails on any change outside those
+    tasks' folders and files. A step with `expect_error.cli.partial` must
+    carry one (load-time error otherwise). Used in both bulk-add-partial
+    cases.
+16. *Green tests that asserted a bug.* `backup/restore.test.ts` (sentinel
+    refusal expected "migrate"); `SchemaBanner.test.tsx` (missing kind
+    expected `loctt migrate`); `schema-guard.test.ts` (missing and empty
+    `.schema-version` expected `init --repair`).
+
+**Decided.** As chosen in 1–16.
+
+**Why.** Each remedy names only a step that works; a failure never
+leaves a reissued key, a delete half-done, or an error that misstates
+what happened; the format rule is K142's in one resolver.
+
+**To revert.**
+1. `knownFormats`, `formatForRecordedVersion`, `readRecordedFormat` in
+   `schema/migrations.ts`; `requireRecordedFormat` and its callers in
+   `schema/migrate.ts`; the resolver calls in `diagnostics/doctor.ts`
+   (`checkSchemaVersion`) and `diagnostics/info.ts`
+   (`computeSchemaStatus`); the M1 tests in `schema/upgrade-0.3.0.test.ts`.
+2. The canonical-stamp branch and `let current = format` in
+   `migrateToCurrent`.
+3. `SCHEMA_VERSION_REPAIR` text in `schema/version.ts`;
+   `missingVersionError`, `noUpgradePathError`, `stillUpgradingError` in
+   `migrate.ts`; the `/api/migrate` catch in `apps/web/src/server/server.ts`;
+   `assertNotMidOperation` text in `backup/restore.ts`; the `missing`,
+   `future` and `unknown` copy in `SchemaBanner.tsx`; XS-33
+   (`flow-cross-surface.md`) and SHL-34 (`flow-app-shell.md`); the tests
+   in call 16.
+4. `isProvablyRanked` and its use in `repairLoctt` (`init/init.ts`); the
+   ".schema-version lost" tests in `init.test.ts`.
+5. The write order, `saveState` and `rollbackParentLink` in
+   `task/create.ts` / `task/relationships.ts` (`commitParentLink` returns
+   a boolean); two tests in `create-parent.test.ts`.
+6. The two `created:` lines in `task/list-edit.ts`; the test in
+   `list-edit-bulk.test.ts`.
+7. The catch in `upgradeIfSafe`.
+8. `branchPredatesRanks`, `rankLinksInShownOrder`, `legacyRankedTypesIn`
+   and the branch in `sync` (`git/publish-sync.ts`,
+   `schema/steps/rank-every-link.ts`); the test in
+   `sync-ranks-incoming.test.ts`.
+9. `raw` on `GitRemoteSchemaNewerError`, `remote_raw` in contracts
+   `service.ts` and `server.ts`, the integer branch in
+   `SchemaRemoteNewerRefusal` (`GitSyncPanel.tsx`, now exported); tests in
+   `schema-remote-newer.test.ts` and `GitSyncPanel.test.tsx`.
+10. `loadLinkSnapshot`, `DeleteDetachError`, `deleteWithLinks` (restore
+    `detachDeletedTasks`), `afterDelete` in `task/lifecycle.ts`,
+    `bulkDelete` in `task/bulk.ts`; the "delete detaches first" tests in
+    `delete-links.test.ts`; the delete paragraphs in the CLI and MCP
+    references.
+11. The `assertNameNotIdShaped` call in `initLoctt`, the `LocttError`
+    branch in the web init route; the "project name" test.
+12. The strings in `list-edit.ts`, `workflow-entities.ts`, CLI
+    `task-crud.ts`, `migrate.ts`, `task/traversal.ts`, and their tests.
+13. Per file.
+14. The comment in `tests/integration/fixtures/doctor-gate.ts` and the
+    swap test in `tests/integration/doctor-gate.test.ts`.
+15. `changed_only` in `tests/runthrough/lib/schema.ts` and `checks.ts`,
+    the check in `load.ts`, the two case files, the README paragraph.
+
 ### A365 · Batch fix round: gate failures, git sync refuses `1` and orders links, bulk add/remove (B46, B47, K151, K153)
 
 #### A365 · Batch gate fixes (B41/B45/B40/B43 fallout), B46, B47

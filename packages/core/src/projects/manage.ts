@@ -1,4 +1,5 @@
 import type { LocttState, ProjectDef, ProjectsConfig } from "@loctt/contracts";
+import { isIdShaped } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import {
@@ -153,8 +154,10 @@ export function resolveProjectIdFromInput(
   // Case-sensitive on the name, matching `resolveProjectByName` above.
   // A looser comparison here would let an archived "Ops" claim an input
   // that an active "OPS" should have taken.
+  // K149: only ID-shaped input is matched as an ID.
+  const byId = isIdShaped(input);
   const archived = config.projects.find(
-    p => p.id === input || p.slug === input || p.name === input,
+    p => (byId && p.id === input) || p.slug === input || p.name === input,
   );
   if (archived?.archived === true) {
     throw new ProjectError(

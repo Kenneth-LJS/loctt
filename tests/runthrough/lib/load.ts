@@ -110,6 +110,11 @@ export function loadCase(file: string): Case {
     if (s.expect_error && s.expect_error.mcp === undefined && on.includes("mcp")) {
       throw new Error(`${rel}: ${where} expects an error but gives no \`expect_error.mcp\``);
     }
+    // A partial result skips the automatic "tracker unchanged"; something
+    // must still say what else stayed put (A366).
+    if (s.expect_error?.cli?.partial === true && !(s.post ?? []).some(ch => "changed_only" in ch)) {
+      throw new Error(`${rel}: ${where} is \`partial\` but has no \`changed_only\` post check`);
+    }
   }
 
   return {

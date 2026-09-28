@@ -86,7 +86,9 @@ automatically: those tools return an error pointing at `loctt migrate`
 (or `migrate_schema` with `confirm: true`). A
 tracker in a newer format is refused with `This tracker needs loctt
 <version> or newer.`; a `.schema-version` holding anything but a format
-version (including 0.2.x's `1`) is refused, saying what it must hold. See
+version (including 0.2.x's `1`) is refused, saying what it must hold. A
+version between two formats stands for the older one (`0.2.1` is format
+`0.1.0` and is upgraded like it); one below `0.1.0` is refused. See
 [Upgrading](../common/upgrading.md).
 
 ### Names and IDs
@@ -197,7 +199,7 @@ tools.
 | `duplicate_task` | Copy a task to a new key (no relationships/attachments). | `ref`, `title`, `project` |
 | `move_task` | Reallocate tasks to another project; old keys still resolve. | `refs` (≤500), `project` |
 | `archive_task` / `unarchive_task` | Reversible soft-delete and restore, one or many tasks in one operation. Tasks already in the target state are counted as unchanged; a bad ref is reported without aborting the rest. | `refs` (≤500) |
-| `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. Every task a deleted task was linked to loses its side of the link, with a `link_removed` entry in its history. | `refs` (≤500), `confirm` |
+| `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. Every task holding a link to a deleted task (one with no edge back included) loses that link, with a `link_removed` entry in its history. Those links are removed first: a task one of whose partners can't be written is not deleted (its links are put back) and is reported as failed; the rest still go. | `refs` (≤500), `confirm` |
 | `get_task_history` | Paginated activity log, newest first. Entries carry `actor_name`, and a change to an entity field (or a label added or removed) carries `before_name` / `after_name`. | `ref`, `limit`, `offset` |
 
 A task file that will not parse is an error that names the file and the

@@ -717,6 +717,12 @@ export interface ErrorResponse {
     readonly remote_version: string | null;
     readonly local_version: string;
     readonly branch: string;
+    /**
+     * What the branch's `.schema-version` holds when it is not a format
+     * version. The old integer `1` (loctt 0.2.x) means an older branch,
+     * whose fix is to change that file, not to upgrade LocTT.
+     */
+    readonly remote_raw?: string;
   };
   /**
    * Present on `rekey_needed` (GIT-8, K92): a divergent sync merged, but two

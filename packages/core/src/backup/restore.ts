@@ -319,9 +319,9 @@ async function assertNotMidOperation(locttDir: string): Promise<void> {
   const migrating = getSchemaMigrationInProgressPath(locttDir);
   if (await stat(migrating).then(() => true, () => false)) {
     throw new RestoreRefusedError(
-      `${migrating} is present: a schema migration is in progress here. `
-      + `Run 'loctt migrate' to finish it, then restore again. `
-      + `Nothing has been restored.`,
+      `${migrating} is present: a schema migration is running here or was interrupted. `
+      + `If one is running, wait for it to finish. If not, restore .loctt/ from the backup `
+      + `that file names and remove the file. Then restore again. Nothing has been restored.`,
     );
   }
 }

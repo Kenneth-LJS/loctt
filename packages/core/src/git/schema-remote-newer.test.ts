@@ -198,6 +198,14 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
     const caught = await sync(locttDir, root).then(() => undefined, (e: unknown) => e);
     expect(caught).toBeInstanceOf(GitRemoteSchemaNewerError);
     expect((caught as GitRemoteSchemaNewerError).remoteVersion).toBeNull();
+    // What helps: the branch's own file changed (publish never writes it),
+    // not upgrading loctt, which the "may be newer" wording said (A366).
+    expect((caught as Error).message).toBe(
+      "Sync aborted: the loctt branch's .schema-version holds 1, the old version number "
+      + "loctt 0.2.x and earlier wrote. It is not a format version, so nothing was written. "
+      + "Your local files are untouched.\n\n"
+      + "On the loctt branch, change .schema-version to 0.1.0 and commit it, then sync again.",
+    );
     const after = await loadSyncState(locttDir);
     expect(after.git.last_synced_commit).toBe(base);
   });

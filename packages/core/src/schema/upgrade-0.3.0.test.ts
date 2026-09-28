@@ -280,3 +280,80 @@ describe("what upgradeIfSafe refuses", () => {
     vi.doUnmock("./migrations.js");
   });
 });
+
+// K142: "find the highest version that's lower/at the data version". A
+// recorded version stands for the highest known format at or below it.
+describe("a recorded version between known formats (M1)", () => {
+  const write = async (content: string): Promise<void> => {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(locttDir, ".schema-version"), content, "utf-8");
+  };
+
+  it.each(["0.2.1", "0.2.0"])("%s is format 0.1.0: upgraded like it, and the file rewritten to 0.3.0", async (recorded) => {
+    await write(`${recorded}\n`);
+    const before = await shownOrder010(locttDir);
+
+    const result = await upgradeIfSafe(locttDir);
+    expect(result?.from).toBe(recorded);
+    expect(result?.to).toBe("0.3.0");
+    expect(result?.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0"]);
+    expect((await readdir(root)).filter(n => n.startsWith(`.loctt.backup-v${recorded}-`))).toHaveLength(1);
+
+    for (const edges of (await edgesByTask(locttDir)).values()) {
+      for (const e of edges) expect(e.rank, JSON.stringify(e)).toBeDefined();
+    }
+    expect(await listedOrder030(locttDir)).toEqual(before);
+    expect((await readFile(join(locttDir, ".schema-version"), "utf-8")).trim()).toBe("0.3.0");
+    expect(await upgradeIfSafe(locttDir)).toBeNull();
+  });
+
+  it("planMigration and the strict guard read 0.2.1 as format 0.1.0", async () => {
+    await write("0.2.1\n");
+    const { planMigration } = await import("./migrate.js");
+    const plan = await planMigration(locttDir);
+    expect(plan.from).toBe("0.2.1");
+    expect(plan.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0"]);
+    await expect(requireSupportedSchema(locttDir)).rejects.toThrow(
+      "This tracker's format is 0.2.1. This build reads 0.3.0. Run `loctt migrate` to upgrade.",
+    );
+  });
+
+  it("0.0.9 is below every format: refused, not offered `loctt migrate`, and nothing written", async () => {
+    await write("0.0.9\n");
+    const original = await snapshot(locttDir);
+    const err = await upgradeIfSafe(locttDir).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SchemaUnmigratableError);
+    expect((err as Error).message).toBe(".schema-version holds 0.0.9, which is not a LocTT format. The first format is 0.1.0.");
+    expect((err as SchemaUnmigratableError).remedy).toMatch(/^Put the tracker's format version in \.schema-version: 0\.1\.0 /);
+    expect((err as SchemaUnmigratableError).remedy).not.toMatch(/loctt (migrate|init)/);
+    expect(await snapshot(locttDir)).toEqual(original);
+    const { planMigration, migrateToCurrent } = await import("./migrate.js");
+    await expect(planMigration(locttDir)).rejects.toMatchObject({ name: "SchemaUnmigratableError" });
+    await expect(migrateToCurrent(locttDir)).rejects.toMatchObject({ name: "SchemaUnmigratableError" });
+  });
+
+  // A build writes the format it knows, never its own release, so a
+  // version above 0.3.0 was written by a build with a newer format, even
+  // 0.3.1 (A366 call 1).
+  it("0.3.1 is above this build's format: refused, naming the release", async () => {
+    await write("0.3.1\n");
+    await expect(upgradeIfSafe(locttDir)).rejects.toThrow("This tracker needs loctt 0.3.1 or newer.");
+  });
+});
+
+describe("formatForRecordedVersion", () => {
+  it("maps to the highest known format at or below, and refuses outside them", async () => {
+    const { formatForRecordedVersion, knownFormats } = await import("./migrations.js");
+    const { SchemaTooNewError, SchemaUnmigratableError: Unmigratable } = await import("./version.js");
+    expect(knownFormats()).toEqual(["0.1.0", "0.3.0"]);
+    expect(formatForRecordedVersion("0.1.0")).toBe("0.1.0");
+    expect(formatForRecordedVersion("0.2.99")).toBe("0.1.0");
+    expect(formatForRecordedVersion("0.3.0")).toBe("0.3.0");
+    // With a later format registered, a release between them maps down.
+    const later = [{ from: "0.1.0", to: "0.2.5", description: "", apply: () => Promise.resolve() }];
+    expect(formatForRecordedVersion("0.2.9", later)).toBe("0.2.5");
+    expect(formatForRecordedVersion("0.2.4", later)).toBe("0.1.0");
+    expect(() => formatForRecordedVersion("0.0.9")).toThrow(Unmigratable);
+    expect(() => formatForRecordedVersion("0.3.1")).toThrow(SchemaTooNewError);
+  });
+});

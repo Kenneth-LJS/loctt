@@ -459,7 +459,7 @@ describe("custom-field allow_new_values and scope survive writes", () => {
   it("refuses allow_new_values on a non-enum field", async () => {
     await expect(createCustomField(locttDir, {
       key: "team", label: "Team", type: "string", multi: false, searchable: false, allow_new_values: true,
-    })).rejects.toThrow("Only a choice (enum) field can allow new values; this field is string.");
+    })).rejects.toThrow("Only a choice (enum) field can allow new values. This field is string.");
     await createCustomField(locttDir, { key: "team", label: "Team", type: "string", multi: false, searchable: false });
     await expect(editCustomField(locttDir, "team", { allow_new_values: true }))
       .rejects.toBeInstanceOf(WorkflowEntityError);
