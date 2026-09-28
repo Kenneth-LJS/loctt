@@ -22685,6 +22685,38 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K141 · Relationship repair and ordering rulings (B39, B40)
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+After the B39/B40 proposals:
+- *"So the repair should be comprehensive"*: every one-sided link is
+  repaired, not only this bug's footprint. Rule (2a): when one side of a
+  link exists, add the other; if adding it would create a loop, refuse and
+  report; a target that resolves to nothing or to an ambiguous key stays
+  reported and is never deleted. This reverses the `17fae3f` "reported,
+  not repaired" rationale for one-sided edges.
+- *"we should be storing the ID, yes"*. *"for MCP and web UI, i think we
+  can operate on the ID. for CLI, the user is likely manually typing, so we
+  want them to be able to use the key."* Told that agents work in keys and
+  an ID-only MCP would break agent setups, Ken chose (1a): **MCP keeps
+  accepting a key or an ID; every surface stores the ID.**
+- (3a) Identical duplicate links left by a repair are merged into one.
+- (4a) The repair runs as `loctt doctor --repair-relationships`, an MCP
+  doctor option and a Diagnostics button; and *"doctor --fix, should it fix
+  this issue too? so if the user doesnt want to fully diagnose part by
+  part, they can just run all at once, manually fix what's left"*: a
+  `loctt doctor --fix` runs every safe repair, this one included, then
+  reports what is left.
+- (6a) `loctt show` and MCP `get_task` list relationships in the same rank
+  order as the web, and MCP returns the order.
+- (7a) List and board are unchanged (they count children, not list them).
+- (5) *"let's force there to be an order on everything now. we bump the
+  data store into a new version. then we can test the versioning too?"*:
+  every link carries an order; a schema bump to v2 with a migration that
+  ranks existing links in their current displayed order. Scope, migration
+  trigger and test depth are **open with Ken**.
+
 ### K140 · User bug report: `create --parent`; children can't be reordered
 
 **Date:** 2026-09-28 · **Ken's request.**
