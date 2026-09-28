@@ -22685,6 +22685,19 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K143 · Ordering scope, automatic upgrades, full versioning tests
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Asked what "order on everything" covers, when upgrades run, and how much
+to test the first real migration, Ken chose: **every relationship kind
+carries an order** (the `ranked` flag in workflow.yaml is removed and
+every group on the task page gets handles); **non-risky upgrade steps run
+automatically** on first use, after a backup, printing one line; risky
+steps still wait for `loctt migrate`; **full tests** of the versioning
+machinery. The 0.1.0 → 0.3.0 step (order every link in its current
+displayed order) is non-risky.
+
 ### K142 · The data format version is the `loctt` release that introduced it
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
@@ -22734,8 +22747,13 @@ After the B39/B40 proposals:
 - (5) *"let's force there to be an order on everything now. we bump the
   data store into a new version. then we can test the versioning too?"*:
   every link carries an order; a schema bump to v2 with a migration that
-  ranks existing links in their current displayed order. Scope, migration
-  trigger and test depth are **open with Ken**.
+  ranks existing links in their current displayed order. Then (K143):
+  **every relationship kind** is ordered and the `ranked` setting is
+  removed; **non-risky upgrade steps run automatically** (backup, upgrade,
+  one line saying so; risky steps still wait for `loctt migrate`); and
+  **full versioning tests** (upgrade correctness, idempotency, backup,
+  crash sentinel, too-new refusal naming the release, non-semver refusal,
+  CLI/MCP/web before and after, and the installed package).
 
 ### K140 · User bug report: `create --parent`; children can't be reordered
 
