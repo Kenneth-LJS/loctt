@@ -4,6 +4,30 @@ All notable changes to LocTT are documented here. The format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `loctt create --parent` (and MCP `create_task` with a parent) stored the
+  parent's key instead of linking properly; `loctt doctor --fix` repairs
+  trackers affected by it. A create with a parent now stores the parent's
+  id and adds the child link on the parent, exactly as `loctt link` does,
+  and a parent that doesn't exist or is archived is refused with nothing
+  created.
+
+### Added
+
+- `loctt doctor --repair-relationships` (MCP `doctor` with
+  `repair_relationships`, and a **Repair relationships** button in
+  Settings → Diagnostics): changes links stored as a task key to the
+  task's id, adds the missing side of one-sided links (refusing one that
+  would create a loop), and merges duplicate links. It never removes a
+  link.
+- `loctt doctor --fix` (MCP `doctor` with `fix`, and **Fix all** in
+  Diagnostics) runs every safe repair, then reports what is left.
+- `loctt show` and MCP `get_task` list relationships in the same order as
+  the web task page, and MCP returns each link's `rank`.
+
 ## [0.1.0] — Initial release
 
 First public release of LocTT — a local-first, single-user task tracker

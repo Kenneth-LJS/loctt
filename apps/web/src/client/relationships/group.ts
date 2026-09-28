@@ -9,6 +9,7 @@ import {
   effectiveInverseLabel,
   isSymmetricRelationship,
 } from "@loctt/contracts";
+import { compareRankedEdges } from "@loctt/core/task/relationship-order.js";
 
 /**
  * Turning a task's flat relationship array into the grouped, ordered
@@ -236,17 +237,11 @@ export function orderRows(
   ranked: boolean,
 ): readonly RelationshipRow[] {
   if (!ranked) return rows;
-  return [...rows].sort((a, b) => {
-    const aHas = a.rank !== undefined;
-    const bHas = b.rank !== undefined;
-    if (aHas !== bHas) return aHas ? -1 : 1;
-    if (a.rank !== undefined && b.rank !== undefined && a.rank !== b.rank) {
-      return a.rank < b.rank ? -1 : 1;
-    }
-    // REL-34. Explicit, not `sort`'s stability: see the module
-    // docstring for why the difference is the whole point.
-    return a.index - b.index;
-  });
+  // K141 6a: the comparator is core's, shared with `loctt show` and MCP
+  // `get_task` (`orderRelationships`), so the three cannot list a task's
+  // links in different orders. REL-34's explicit index tiebreak lives
+  // there.
+  return [...rows].sort(compareRankedEdges);
 }
 
 /**

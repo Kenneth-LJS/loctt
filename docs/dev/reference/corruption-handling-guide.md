@@ -180,10 +180,18 @@ another keyed-record config, follow that pattern, not the flat one.
 
 `loctt doctor` is **read-only by default** (it only reads and reports).
 There is no separate preview command and no `--dry-run` flag because the
-base command mutates nothing. Its **only** write is opt-in:
+base command mutates nothing. Its writes are opt-in flags:
 `--rebuild-index`, which repairs the key-index cache after out-of-band
-`key`/`key_history` edits. So: *preview is the default; acting is the
-flag.* Exit code is 1 if any check is `error`; warnings exit 0.
+`key`/`key_history` edits; `--repair-relationships` (K141), which
+rewrites key-valued link targets to ids, adds the missing side of
+one-sided links (refusing a loop) and merges identical links, never
+deleting one; and `--fix`, which runs every repair in core's
+`SAFE_FIXES` (those two). `restore-missing` (`init --repair`) is not
+"safe": it writes default config in place of the user's. So: *preview
+is the default; acting is the flag.* A new repair is a `DiagnosticFix`
+value, a doctor check carrying it as `fix`, a CLI flag, an MCP `doctor`
+option and a Diagnostics button (`POST /api/doctor/repair`), and runs
+**before** the checks so the report shows what is left. Exit code is 1 if any check is `error`; warnings exit 0.
 
 Doctor is exempt from the schema boot-guard, so it can report a version
 mismatch when every other command refuses to run.
@@ -196,7 +204,11 @@ mismatch when every other command refuses to run.
 - **label hex-color** drop (read raw, since the loader drops it)
 - **workflow drift** (a task holding a value workflow.yaml no longer
   defines), **dangling task references**, **relationship cycles**,
-  **cross-file inverse disagreement** (principle 1 / P-12 consistency)
+  **cross-file inverse disagreement** (principle 1 / P-12 consistency),
+  **key-valued link targets** and **duplicate links** — all three
+  repaired by `--repair-relationships` (K141; planner in
+  `task/relationship-repair.ts`, findings in `task/traversal.ts`
+  `relationshipFindings`, so doctor reports exactly what the repair does)
 - **config per-entry `broken` markers** — the A138/K28 degrade for
   projects, labels, milestones, sprints, saved views, list-view chips,
   calendar holidays, and workflow sub-lists. `checkDataIntegrity` runs

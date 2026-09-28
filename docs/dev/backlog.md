@@ -9,23 +9,6 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B39 · `create --parent` and a comprehensive relationship repair (K140, K141) — **in progress**
-
-- `createTask` resolves the parent (CLI and MCP accept a key or an ID;
-  every surface stores the ID), refuses a missing or archived parent with
-  `link`'s message before writing anything, and writes both sides through
-  the same code as `linkTask`.
-- `repairRelationships`: key-valued targets rewritten to the ID; every
-  one-sided link completed unless that would create a loop (reported);
-  unresolvable or ambiguous targets reported, never deleted; identical
-  duplicates merged; idempotent.
-- `loctt doctor --repair-relationships`, the MCP doctor option, a
-  Diagnostics button; `loctt doctor --fix` runs every safe repair then
-  reports what is left.
-- `loctt show` and MCP `get_task` list relationships in rank order; MCP
-  returns the order.
-- The two tests that encoded the bug are rewritten.
-
 ## B41 · Semver format versions, ordered links everywhere, automatic upgrades (K142, K143) — **todo** (after B39)
 
 - `.loctt/.schema-version` holds a semver (`0.1.0`); the code's format

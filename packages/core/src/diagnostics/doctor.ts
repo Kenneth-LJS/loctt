@@ -19,7 +19,9 @@ import { loadState } from "../state/state.js";
 import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasks } from "../task/load-all.js";
-import { findStructuralCycles,validateRelationships } from "../task/traversal.js";
+import type { RelationshipRepairPlan } from "../task/relationship-repair.js";
+import { planRelationshipRepair, repairActionCount, repairRelationships } from "../task/relationship-repair.js";
+import { findStructuralCycles, relationshipFindings } from "../task/traversal.js";
 import { loadAllUsers } from "../users/profile.js";
 import { fileExists } from "../utils/fs.js";
 import { checkDataIntegrity } from "./integrity.js";
@@ -42,7 +44,25 @@ export type CheckStatus = "ok" | "warn" | "error";
  * instead of pattern-matching the human `message` (K-diagnostics-repair).
  * Absent for the ~85% of findings that need a human decision or hand-edit.
  */
-export type DiagnosticFix = "rebuild-index" | "restore-missing";
+export type DiagnosticFix = "rebuild-index" | "restore-missing" | "repair-relationships";
+
+/**
+ * The repairs `doctor --fix` runs in one go (K141 4a): the ones that
+ * never guess. `rebuild-index` rewrites a derived cache.
+ * `repair-relationships` only completes what the data already says
+ * (a key rewritten to its task's id, the missing side of a link, one
+ * copy of an identical link) and never deletes a link.
+ *
+ * `restore-missing` is **not** in the set: it writes default config in
+ * place of a missing file, so a missing `workflow.yaml` comes back as
+ * the shipped default rather than the user's statuses and kinds, and a
+ * missing `state.yaml` restarts key counters at 1. That is a guess about
+ * the user's setup, which is why the web asks before it runs; it stays
+ * its own step (`loctt init --repair`, MCP `restore_missing`, the
+ * Diagnostics button), and `--fix` leaves its findings in the report
+ * (A357).
+ */
+export const SAFE_FIXES: readonly DiagnosticFix[] = ["rebuild-index", "repair-relationships"];
 
 export interface DiagnosticCheck {
   readonly name: string;
@@ -61,6 +81,77 @@ export interface DoctorOptions {
    * key↔id mapping changed).
    */
   readonly rebuildIndex?: boolean;
+  /**
+   * When true, run the relationship repair (K141) **before** the checks,
+   * so the report shows what is left afterwards.
+   */
+  readonly repairRelationships?: boolean;
+  /**
+   * When true, run every repair in {@link SAFE_FIXES} before the checks,
+   * then report what is left (K141 4a).
+   */
+  readonly fix?: boolean;
+}
+
+/**
+ * One sentence for what the relationship repair did, or that there was
+ * nothing to do. What it could not do is left to the checks that follow.
+ */
+export function describeRelationshipRepair(plan: RelationshipRepairPlan): string {
+  const parts: string[] = [];
+  if (plan.rewrites.length > 0) parts.push(`${String(plan.rewrites.length)} key(s) rewritten to ids`);
+  if (plan.inverses.length > 0) parts.push(`${String(plan.inverses.length)} missing side(s) added`);
+  if (plan.merges.length > 0) parts.push(`${String(plan.merges.length)} duplicate link(s) merged`);
+  if (parts.length === 0) return "nothing to repair";
+  return `repaired: ${parts.join(", ")}`;
+}
+
+/**
+ * Runs the requested repairs ahead of the checks. Skipped, with a line
+ * saying why, when the tracker's format is not the current one: a repair
+ * writes task files, and every other write refuses in that state too.
+ */
+async function* runRequestedRepairs(
+  locttDir: string,
+  options: DoctorOptions,
+  schemaOk: boolean,
+): AsyncGenerator<DiagnosticCheck> {
+  const wantIndex = options.fix === true;
+  const wantRelationships = options.fix === true || options.repairRelationships === true;
+  if (!wantIndex && !wantRelationships) return;
+  if (!schemaOk) {
+    yield {
+      name: "repairs",
+      status: "error",
+      message: "skipped. Resolve the schema version problem above first",
+    };
+    return;
+  }
+  if (wantIndex && (await fileExists(getTasksDir(locttDir)))) {
+    try {
+      const rebuilt = await rebuildKeyIndex(locttDir);
+      yield {
+        name: "key index rebuild",
+        status: "ok",
+        message: `rebuilt with ${Object.keys(rebuilt.entries).length} entry/entries`,
+      };
+    } catch (err) {
+      yield { name: "key index rebuild", status: "error", message: `failed: ${(err as Error).message}` };
+    }
+  }
+  if (wantRelationships) {
+    try {
+      const config = await loadWorkflowConfig(locttDir);
+      const plan = await repairRelationships(locttDir, config);
+      yield { name: "relationship repair", status: "ok", message: describeRelationshipRepair(plan) };
+    } catch (err) {
+      yield {
+        name: "relationship repair",
+        status: "error",
+        message: `didn't finish: ${(err as Error).message}. Run doctor again to see what's left`,
+      };
+    }
+  }
 }
 
 /**
@@ -171,7 +262,15 @@ export async function* runDoctorStream(
   // Schema version. Doctor is exempt from the boot guard precisely so it
   // can report this: every other command refuses to run on a mismatch,
   // and the guard's message is all the user would otherwise see.
-  yield* checkSchemaVersion(locttDir);
+  let schemaOk = true;
+  for await (const check of checkSchemaVersion(locttDir)) {
+    if (check.status === "error") schemaOk = false;
+    yield check;
+  }
+
+  // K141: requested repairs run before the checks, so what follows is
+  // the state after them — "run all at once, manually fix what's left".
+  yield* runRequestedRepairs(locttDir, options, schemaOk);
 
   // Check config directory
   if (!(await fileExists(getConfigDir(locttDir)))) {
@@ -379,15 +478,22 @@ export async function* runDoctorStream(
   // configs. Walk every task once and aggregate.
   if (workflowConfig) {
     try {
-      const relErrors = await validateRelationships(locttDir, workflowConfig);
+      const tasks = await loadAllTasks(locttDir);
+      const onDisk = new Set(await listTaskIds(locttDir));
+      const relErrors = relationshipFindings(tasks, workflowConfig, onDisk);
       if (relErrors.length > 0) {
+        // K141: say how many the relationship repair fixes, and tag the
+        // check with its `fix` so every surface can offer it.
+        const repairable = repairActionCount(planRelationshipRepair(tasks, workflowConfig, onDisk));
         yield ({
           name: "relationships",
           status: "warn",
-          message: `${relErrors.length} issue(s) found`,
+          message: repairable > 0
+            ? `${relErrors.length} issue(s) found. ${String(repairable)} can be fixed with loctt doctor --repair-relationships`
+            : `${relErrors.length} issue(s) found`,
+          ...(repairable > 0 ? { fix: "repair-relationships" as const } : {}),
         });
       }
-      const tasks = await loadAllTasks(locttDir);
       // Aggregate field-reference errors across tasks.
       const aux = {
         ...(projectsConfig !== undefined ? { projects: projectsConfig } : {}),
@@ -627,7 +733,8 @@ export async function* runDoctorStream(
     });
   }
 
-  if (options.rebuildIndex) {
+  // `--fix` already rebuilt the index before the checks.
+  if (options.rebuildIndex && options.fix !== true) {
     try {
       const rebuilt = await rebuildKeyIndex(locttDir);
       yield ({

@@ -102,6 +102,15 @@ there is only one.
 `--status`, `--priority`, and `--type` are validated against the
 workflow; an unknown value is an error.
 
+`--parent` accepts the parent's key, a former key, or its id, and links
+exactly as `loctt link <new> parent <parent>` would: the new task stores
+the parent's id, and the parent lists the new task as a child. A parent
+that doesn't exist (`Task not found: "NOPE-99"`) or is archived
+(`Cannot link to archived task T-1. Unarchive it first.`) is refused, and
+nothing is created. (In 0.2.1 and earlier, `--parent` stored the key and left the
+parent without the child link; `loctt doctor --repair-relationships`
+repairs trackers made that way.)
+
 ```bash
 loctt create "Fix login crash" --priority high --type bug --label urgent
 ```
@@ -140,6 +149,10 @@ lists. An empty result prints `No tasks found.`
 
 Show one task in full: its fields, relationships (with child progress),
 attachments, any health warnings, and its body.
+
+Relationships are listed in the same order as the web task page: kinds
+in `workflow.yaml` order, and within a ranked kind (such as children)
+by rank, then any unranked links in the order they were added.
 
 The body is printed **verbatim**, with no markdown rendering. Bodies
 written in the web editor may contain LocTT's markdown extensions, which
@@ -980,7 +993,7 @@ loctt restore tracker-backup.jsonl --dry-run
 | Command | Synopsis | Description |
 |---|---|---|
 | `info` | `loctt info` | A prose summary of the tracker. Safe to run before `init`. |
-| `doctor` | `loctt doctor [--rebuild-index]` | Run diagnostic checks. `--rebuild-index` rebuilds the key-lookup cache after out-of-band edits. |
+| `doctor` | `loctt doctor [--rebuild-index] [--repair-relationships] [--fix]` | Run diagnostic checks. `--rebuild-index` rebuilds the key-lookup cache after out-of-band edits. `--repair-relationships` repairs links (below). `--fix` runs every safe repair, then reports what is left. |
 | `schema` | `loctt schema` | Print the workflow config: prefix, statuses, priorities, types, relationships, custom fields. |
 | `migrate` | `loctt migrate [--dry-run] [--yes]` | Upgrade the tracker's schema. Backs up `.loctt/` first. |
 
@@ -995,6 +1008,34 @@ loctt doctor
 
 `doctor` exits `1` if any check is an error; warnings leave the exit code
 at `0`.
+
+**Repairing links.** `doctor` reports a link that is stored with a task's
+key instead of its id, a link that only one of its two tasks lists, and
+the same link stored twice. `loctt doctor --repair-relationships` fixes
+them before running the checks, so what it prints afterwards is what is
+left:
+
+- a link stored as a key (or former key) is changed to the task's id;
+- a one-sided link gets its other side, unless that would create a loop,
+  which is reported instead;
+- identical links on one task are merged into one.
+
+It never removes a link. A link to a task that doesn't exist, to a key
+more than one task has had, or to the task itself stays reported for you
+to fix. Running it again does nothing.
+
+```bash
+loctt doctor --repair-relationships
+```
+```
+  ✓ relationship repair: repaired: 26 key(s) rewritten to ids, 26 missing side(s) added
+  …
+```
+
+**`--fix`** runs every safe repair in one go (the key-index rebuild and
+the relationship repair), then the checks, so you can fix what is left
+by hand. Restoring missing files is not included, because it writes
+default settings in place of yours; run `loctt init --repair` for that.
 
 ---
 

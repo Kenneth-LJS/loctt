@@ -187,10 +187,10 @@ export type { ValidationError } from "./config/validation.js";
 export { WorkflowConfigError } from "./config/workflow.js";
 export { formatIfZodError } from "./config/zod-error.js";
 export type { SchemaStatus, TrackerInfo } from "./diagnostics/index.js";
-export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
+export type { CheckStatus, DiagnosticCheck, DiagnosticFix, DoctorOptions } from "./diagnostics/index.js";
 export type { IntegrityFinding, IntegritySeverity, IntegritySummary } from "./diagnostics/index.js";
 export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
-export { blockingFindings, checkDataIntegrity, computeIntegritySummary, runDoctor, runDoctorStream } from "./diagnostics/index.js";
+export { blockingFindings, checkDataIntegrity, computeIntegritySummary, describeRelationshipRepair, runDoctor, runDoctorStream, SAFE_FIXES } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
 export type { AppliedRekey, EnableGitOptions, EnableGitResult, FetchResult, FsProbe, FsProbeResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, MalformedSyncedTask, PreflightReport, PushResult, SyncFsAdvisory, SyncFsClass, SyncOutcome, SyncProgress } from "./git/index.js";
@@ -525,6 +525,17 @@ export {
   tallyStatusCategories,
 } from "./task/index.js";
 export { bodyToken, StaleBodyWriteError } from "./task/io.js";
+export type { OrderableEdge, RelationshipSide } from "./task/relationship-order.js";
+export { compareRankedEdges, orderRelationships, relationshipSides } from "./task/relationship-order.js";
+export type {
+  RelationshipInverseAdded,
+  RelationshipMerge,
+  RelationshipRefusal,
+  RelationshipRepairPlan,
+  RelationshipRewrite,
+  RelationshipUnresolved,
+} from "./task/relationship-repair.js";
+export { planRelationshipRepair, planRelationshipRepairOnDisk, repairActionCount, repairRelationships } from "./task/relationship-repair.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
 export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";

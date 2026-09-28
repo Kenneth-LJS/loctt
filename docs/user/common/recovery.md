@@ -81,10 +81,18 @@ unreadable files.
 - **Warnings** (exit code 0) are recoverable — dangling references,
   cycles, a stale key index, a saved view whose query no longer parses.
 
-Two repair options:
+Repair options:
 
+- **`loctt doctor --fix`** runs every safe repair below (the key-index
+  rebuild and the relationship repair), then reports what is left.
 - **`loctt doctor --rebuild-index`** rebuilds the key-lookup cache — the
   fix for the hand-edited-key case above.
+- **`loctt doctor --repair-relationships`** fixes links: one stored with
+  a task's key instead of its id is changed to the id, a link only one
+  task lists gets its other side (unless that would create a loop), and
+  duplicate links are merged. It never removes a link. This repairs
+  trackers where `loctt create --parent` (0.2.1 and earlier) stored the
+  parent's key.
 - **`loctt init --repair`** restores missing config files and directories
   from defaults without touching the ones that survive — for a tracker
   that lost, say, its `calendar.yaml`. Run `doctor --rebuild-index`

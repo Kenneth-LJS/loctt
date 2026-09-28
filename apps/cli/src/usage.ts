@@ -29,8 +29,12 @@ Commands:
                                    [--timezone <IANA tz>]  Workspace timezone; defaults to this
                                    machine's zone. Decides what "today" means in queries.
   info
-  doctor [--rebuild-index]         Run diagnostic checks; with --rebuild-index, rebuild
+  doctor [--rebuild-index] [--repair-relationships] [--fix]
+                                   Run diagnostic checks; with --rebuild-index, rebuild
                                    the key-lookup cache after out-of-band frontmatter edits
+                                   --repair-relationships: store link targets as ids, add
+                                   the missing side of one-sided links, merge duplicates
+                                   --fix: run every safe repair, then report what is left
   views [--archived <active|archived|all>]
                                    List saved views from queries.yaml
                                    --archived: active (default, hides archived)

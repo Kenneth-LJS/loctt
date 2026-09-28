@@ -280,7 +280,13 @@ describe("createTask", () => {
         ],
         custom_fields: [],
       };
-      const parentId = "01HZ0000000000000000000000";
+      // K140: the parent must exist. This test used to pass a made-up id
+      // and expect it stored verbatim, which is the bug itself: a create
+      // with a parent that does not exist is now refused.
+      const parent = await createTask({
+        locttDir, state, options: { project: "task", title: "parent" }, workflowConfig,
+      });
+      const parentId = parent.frontmatter.id;
       const task = await createTask({
         locttDir,
         state,
@@ -299,11 +305,14 @@ describe("createTask", () => {
     // dropping the caller's parent silently.
     it("falls back to 'parent' when no workflow config is given", async () => {
       const state = makeState();
-      const parentId = "01HZ0000000000000000000000";
+      // K140: a real parent, given by key. The old version passed a
+      // made-up id and expected it stored verbatim (the bug).
+      const parent = await createTask({ locttDir, state, options: { project: "task", title: "parent" } });
+      const parentId = parent.frontmatter.id;
       const task = await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "child", parent: parentId },
+        options: { project: "task", title: "child", parent: parent.frontmatter.key },
       });
       expect(task.frontmatter.relationships ?? []).toEqual([
         { type: "parent", target: parentId },

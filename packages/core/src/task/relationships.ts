@@ -7,7 +7,7 @@ import { withStateLock } from "../state/lock.js";
 import { CorruptFieldError } from "./health.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
-import { lookupById, TaskNotFoundError } from "./lookup.js";
+import { lookupById, lookupTask, TaskNotFoundError } from "./lookup.js";
 import { toFrontmatter, toMutable } from "./mutable.js";
 
 /**
@@ -231,6 +231,235 @@ function applyRelationships(
 }
 
 /**
+ * What {@link checkLinkTarget} needs to know about the edge being added.
+ *
+ * The source is described by value rather than read from disk, because
+ * `createTask` checks the link for a task that does not exist yet: the
+ * whole point is to refuse *before* the new task is written (K140).
+ */
+interface LinkTargetCheck {
+  readonly locttDir: string;
+  /** The source task's id (for a create, the id about to be written). */
+  readonly sourceId: string;
+  /** The source task's key, for messages. */
+  readonly sourceKey: string;
+  /** The source's current edges (empty for a task being created). */
+  readonly sourceRelationships: readonly TaskRelationship[];
+  readonly type: string;
+  /** The target task's **id**. Callers resolve keys first. */
+  readonly target: string;
+  readonly workflowConfig: WorkflowConfig | undefined;
+  readonly blockArchived: boolean;
+  /** The target, when the caller has already read it. */
+  readonly targetTask?: Task;
+  /** The field a refusal is attributed to (`parent` on create). */
+  readonly errorField?: string;
+}
+
+/** The target task and the inverse edge type, once a link is allowed. */
+interface CheckedLinkTarget {
+  /** Read only when needed: an archived check or an inverse to write. */
+  readonly targetTask: Task | undefined;
+  readonly inverseType: string | undefined;
+}
+
+/**
+ * Every check a new link must pass, with no lock and no write.
+ *
+ * Shared by `linkTask` and `createTask` so the two ways of making a
+ * link cannot drift (K140): `create --parent` used to skip all of this
+ * and write the parent's key verbatim with no inverse. The caller holds
+ * the state lock (`withStateLock` is not re-entrant, and `createTask`
+ * runs inside its caller's lock).
+ */
+async function checkLinkTarget(opts: LinkTargetCheck): Promise<CheckedLinkTarget> {
+  const { locttDir, sourceId, sourceKey, type, target, workflowConfig } = opts;
+  const fieldOpt: LocttErrorOptions = opts.errorField !== undefined ? { field: opts.errorField } : {};
+  const inverseType = findInverseType(workflowConfig, type);
+
+  if (sourceId === target) {
+    throw new RelationshipError(
+      `${sourceKey} is this task. A task can't link to itself.`,
+      fieldOpt,
+    );
+  }
+
+  let targetTask = opts.targetTask;
+  const readTarget = async (): Promise<Task> => {
+    targetTask ??= await readTask(locttDir, target);
+    return targetTask;
+  };
+
+  if (opts.blockArchived) {
+    const t = await readTarget();
+    if (t.frontmatter.archived === true) {
+      const alreadyLinked = opts.sourceRelationships.some(
+        r => r.type === type && r.target === target,
+      );
+      if (!alreadyLinked) {
+        throw new RelationshipError(
+          `Cannot link to archived task ${t.frontmatter.key}. Unarchive it first.`,
+          fieldOpt,
+        );
+      }
+    }
+  }
+
+  // Cycle detection for cycle-constrained relationships only. The user
+  // may pass either the forward (`r.key`) or inverse (`r.inverse`)
+  // direction as `type`; resolve to the canonical direction first
+  // so the walk runs against the right end of the edge.
+  if (workflowConfig) {
+    const resolved = resolveRelationshipDef(workflowConfig, type);
+    // `graph: acyclic` and `graph: tree` both forbid cycles; the
+    // difference is only whether the kind may be drawn as a tree.
+    if (resolved !== undefined && (resolved.def.graph === "acyclic" || resolved.def.graph === "tree")) {
+      // When the caller passed the inverse, the canonical edge is
+      // target → source; swap before walking so the cycle search
+      // starts from the right node.
+      const canonicalSource = resolved.isInverse ? target : sourceId;
+      const canonicalTarget = resolved.isInverse ? sourceId : target;
+      const cyclePath = await findStructuralCycle(
+        locttDir,
+        canonicalSource,
+        canonicalTarget,
+        resolved.def.key,
+      );
+      if (cyclePath) {
+        // Build a readable arrow trail using keys where possible.
+        // Look up the canonical source for the prefix; on inverse
+        // calls that's the target task, not the caller's source.
+        let canonicalSourceKey = sourceKey;
+        if (resolved.isInverse) {
+          try {
+            const src = await lookupById(locttDir, canonicalSource);
+            canonicalSourceKey = src.frontmatter.key;
+          } catch (err) {
+            if (!(err instanceof TaskNotFoundError)) throw err;
+            canonicalSourceKey = canonicalSource;
+          }
+        }
+        const keys: string[] = [canonicalSourceKey];
+        for (const id of cyclePath) {
+          if (id === canonicalSource) {
+            keys.push(canonicalSourceKey);
+            continue;
+          }
+          try {
+            const t = await lookupById(locttDir, id);
+            keys.push(t.frontmatter.key);
+          } catch (err) {
+            if (!(err instanceof TaskNotFoundError)) throw err;
+            keys.push(id);
+          }
+        }
+        throw new RelationshipError(
+          `cannot create cycle in relationship '${resolved.def.key}' (graph: ${resolved.def.graph}): ${keys.join(" -> ")}`,
+          fieldOpt,
+        );
+      }
+    }
+  }
+
+  if (inverseType) {
+    // The inverse is merged into the target's `relationships`, so a
+    // wrong-typed value there refuses rather than being overwritten.
+    assertRelationshipsReadable(await readTarget());
+  }
+
+  return { targetTask, inverseType };
+}
+
+/**
+ * Writes a task's new `relationships` (carrying its other health
+ * forward) and appends the given history. Lock-free: the caller holds
+ * the state lock. Shared by link, unlink, create and the repair.
+ */
+export async function persistRelationships(
+  locttDir: string,
+  task: Task,
+  relationships: TaskRelationship[],
+  now: string,
+  history: readonly HistoryEntry[],
+): Promise<Task> {
+  const updatedFrontmatter = applyRelationships(task.frontmatter, relationships, now);
+  const carried = carryRelHealth(task);
+  const result: Task = { frontmatter: updatedFrontmatter, body: task.body, ...(carried ? { health: carried } : {}) };
+  await writeTask(locttDir, task.frontmatter.id, result, new Set(["relationships", "updated_at"]));
+  if (history.length > 0) await appendHistory(locttDir, task.frontmatter.id, [...history]);
+  return result;
+}
+
+/**
+ * The link half of `createTask`'s `parent` option (K140).
+ *
+ * `prepareParentLink` resolves the parent (key, former key or id) and
+ * runs every check `linkTask` runs, **before** the new task is written;
+ * `commitParentLink` writes the inverse edge on the parent after it is.
+ * Together they produce what `create` followed by `link <new> <tree
+ * axis> <parent>` produces. Both are lock-free; `createTask`'s caller
+ * holds the state lock.
+ */
+export interface PreparedParentLink {
+  readonly type: string;
+  readonly parentId: string;
+  readonly checked: CheckedLinkTarget;
+}
+
+export async function prepareParentLink(opts: {
+  readonly locttDir: string;
+  readonly childId: string;
+  readonly childKey: string;
+  readonly parentRef: string;
+  readonly type: string;
+  readonly workflowConfig: WorkflowConfig | undefined;
+}): Promise<PreparedParentLink> {
+  let parent: Task;
+  try {
+    parent = await lookupTask(opts.locttDir, opts.parentRef);
+  } catch (err) {
+    // The same sentence `loctt link` prints for a target that does not
+    // exist, but as a validation failure on the `parent` field: this is
+    // a rejected create (400 at the field), not a missing page (404).
+    if (err instanceof TaskNotFoundError) {
+      throw new RelationshipError(err.message, { field: "parent" });
+    }
+    throw err;
+  }
+  const parentId = parent.frontmatter.id;
+  const checked = await checkLinkTarget({
+    locttDir: opts.locttDir,
+    sourceId: opts.childId,
+    sourceKey: opts.childKey,
+    sourceRelationships: [],
+    type: opts.type,
+    target: parentId,
+    workflowConfig: opts.workflowConfig,
+    blockArchived: true,
+    targetTask: parent,
+    errorField: "parent",
+  });
+  return { type: opts.type, parentId, checked };
+}
+
+export async function commitParentLink(
+  locttDir: string,
+  childId: string,
+  prepared: PreparedParentLink,
+  now: string,
+): Promise<void> {
+  const { targetTask, inverseType } = prepared.checked;
+  if (inverseType === undefined || targetTask === undefined) return;
+  const updated = addEdge(targetTask.frontmatter.relationships ?? [], inverseType, childId);
+  if (updated === null) return;
+  await persistRelationships(locttDir, targetTask, updated, now, [{
+    timestamp: now,
+    kind: "link_added",
+    meta: { type: inverseType, target: childId },
+  }]);
+}
+
+/**
  * Adds a relationship to a task (and the inverse on the target, if defined).
  *
  * Bilateral: writes the forward edge on `taskId` and, when the workflow config
@@ -260,7 +489,6 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
   // concurrent linkTask calls could each see "no cycle yet" and both
   // commit, producing a cycle.
   return withStateLock(locttDir, async () => {
-    const inverseType = findInverseType(workflowConfig, type);
     const now = new Date().toISOString();
 
     // Forward side
@@ -269,94 +497,24 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     // rather than being overwritten (§ 3.2, A135).
     assertRelationshipsReadable(task);
 
-    if (task.frontmatter.id === target) {
-      throw new RelationshipError(
-        `${task.frontmatter.key} is this task. A task can't link to itself.`,
-      );
-    }
-
-    if (blockArchived) {
-      const targetTask = await readTask(locttDir, target);
-      if (targetTask.frontmatter.archived === true) {
-        const alreadyLinked = (task.frontmatter.relationships ?? []).some(
-          r => r.type === type && r.target === target,
-        );
-        if (!alreadyLinked) {
-          throw new RelationshipError(
-            `Cannot link to archived task ${targetTask.frontmatter.key}. Unarchive it first.`,
-          );
-        }
-      }
-    }
-
-    // Cycle detection for cycle-constrained relationships only. The user
-    // may pass either the forward (`r.key`) or inverse (`r.inverse`)
-    // direction as `type`; resolve to the canonical direction first
-    // so the walk runs against the right end of the edge.
-    if (workflowConfig) {
-      const resolved = resolveRelationshipDef(workflowConfig, type);
-      // `graph: acyclic` and `graph: tree` both forbid cycles; the
-      // difference is only whether the kind may be drawn as a tree.
-      if (resolved !== undefined && (resolved.def.graph === "acyclic" || resolved.def.graph === "tree")) {
-        // When the caller passed the inverse, the canonical edge is
-        // target → source; swap before walking so the cycle search
-        // starts from the right node.
-        const canonicalSource = resolved.isInverse ? target : taskId;
-        const canonicalTarget = resolved.isInverse ? taskId : target;
-        const cyclePath = await findStructuralCycle(
-          locttDir,
-          canonicalSource,
-          canonicalTarget,
-          resolved.def.key,
-        );
-        if (cyclePath) {
-          // Build a readable arrow trail using keys where possible.
-          // Look up the canonical source for the prefix; on inverse
-          // calls that's the target task, not the caller's `taskId`.
-          let sourceKey = task.frontmatter.key;
-          if (resolved.isInverse) {
-            try {
-              const src = await lookupById(locttDir, canonicalSource);
-              sourceKey = src.frontmatter.key;
-            } catch (err) {
-              if (!(err instanceof TaskNotFoundError)) throw err;
-              sourceKey = canonicalSource;
-            }
-          }
-          const keys: string[] = [sourceKey];
-          for (const id of cyclePath) {
-            if (id === canonicalSource) {
-              keys.push(sourceKey);
-              continue;
-            }
-            try {
-              const t = await lookupById(locttDir, id);
-              keys.push(t.frontmatter.key);
-            } catch (err) {
-              if (!(err instanceof TaskNotFoundError)) throw err;
-              keys.push(id);
-            }
-          }
-          throw new RelationshipError(
-            `cannot create cycle in relationship '${resolved.def.key}' (graph: ${resolved.def.graph}): ${keys.join(" -> ")}`,
-          );
-        }
-      }
-    }
-
     const forwardExisting = task.frontmatter.relationships ?? [];
+    const { targetTask: inverseTask, inverseType } = await checkLinkTarget({
+      locttDir,
+      sourceId: task.frontmatter.id,
+      sourceKey: task.frontmatter.key,
+      sourceRelationships: forwardExisting,
+      type,
+      target,
+      workflowConfig,
+      blockArchived,
+    });
+
     const forwardUpdatedRels = addEdge(forwardExisting, type, target);
 
     // Inverse side. Skip when there's no inverse defined.
-    let inverseTask: Task | undefined;
-    let inverseUpdatedRels: TaskRelationship[] | null = null;
-
-    if (inverseType) {
-      inverseTask = await readTask(locttDir, target);
-      assertRelationshipsReadable(inverseTask);
-      const inverseExisting = inverseTask.frontmatter.relationships ?? [];
-      inverseUpdatedRels = addEdge(inverseExisting, inverseType, taskId);
-    }
+    const inverseUpdatedRels = inverseType && inverseTask
+      ? addEdge(inverseTask.frontmatter.relationships ?? [], inverseType, taskId)
+      : null;
 
     // If neither side needed to change, the relationship already fully exists.
     if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
@@ -366,29 +524,17 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     }
 
     // Persist forward side
-    let result: Task;
-    if (forwardUpdatedRels !== null) {
-      const updatedFrontmatter = applyRelationships(task.frontmatter, forwardUpdatedRels, now);
-      const carried = carryRelHealth(task);
-      result = { frontmatter: updatedFrontmatter, body: task.body, ...(carried ? { health: carried } : {}) };
-      await writeTask(locttDir, taskId, result, new Set(["relationships", "updated_at"]));
-      await appendHistory(locttDir, taskId, [{
+    const result = forwardUpdatedRels !== null
+      ? await persistRelationships(locttDir, task, forwardUpdatedRels, now, [{
         timestamp: now,
         kind: "link_added",
         meta: { type, target },
-      }]);
-    } else {
-      result = task;
-    }
+      }])
+      : task;
 
     // Persist inverse side
     if (inverseUpdatedRels !== null && inverseTask && inverseType) {
-      const updatedInverse = applyRelationships(inverseTask.frontmatter, inverseUpdatedRels, now);
-      const carriedInv = carryRelHealth(inverseTask);
-      await writeTask(locttDir, target,
-        { frontmatter: updatedInverse, body: inverseTask.body, ...(carriedInv ? { health: carriedInv } : {}) },
-        new Set(["relationships", "updated_at"]));
-      await appendHistory(locttDir, target, [{
+      await persistRelationships(locttDir, inverseTask, inverseUpdatedRels, now, [{
         timestamp: now,
         kind: "link_added",
         meta: { type: inverseType, target: taskId },

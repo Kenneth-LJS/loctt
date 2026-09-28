@@ -30,6 +30,10 @@
       "types": "./dist/config/color.d.ts",
       "import": "./dist/config/color.js"
     },
+    "./task/relationship-order.js": {
+      "types": "./dist/task/relationship-order.d.ts",
+      "import": "./dist/task/relationship-order.js"
+    },
     "./query/filters.js": {
       "types": "./dist/query/filters.d.ts",
       "import": "./dist/query/filters.js"

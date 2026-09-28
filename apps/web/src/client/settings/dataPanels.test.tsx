@@ -971,6 +971,55 @@ describe("DiagnosticsPanel", () => {
     await waitFor(() => { expect(posts.length).toBe(1); });
     expect(posts[0]).toEqual({ action: "restore-missing" });
   });
+
+  // K141: the relationship repair and "Fix all" (REL-C7).
+  const repairFetch = (checks: unknown[], posts: unknown[]) =>
+    (url: unknown, init?: unknown): Promise<Response> => {
+      const u = String(url);
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (u.includes("/api/doctor/repair") && method === "POST") {
+        const body = JSON.parse((init as RequestInit).body as string) as { action: string };
+        posts.push(body);
+        return Promise.resolve(new Response(JSON.stringify({
+          action: body.action,
+          relationships: { rewritten: 3, added: 3, merged: 0 },
+        }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      return Promise.resolve(ndjsonResponse(checks));
+    };
+
+  it("Repair relationships shows for a fix:repair-relationships finding and confirms before POSTing", async () => {
+    const posts: unknown[] = [];
+    fetchMock.mockImplementation(repairFetch([
+      { name: "relationships", status: "warn", message: "3 issue(s) found. 6 can be fixed with loctt doctor --repair-relationships", fix: "repair-relationships" },
+    ], posts));
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("diagnostics-fix-repair-relationships"));
+    await screen.findByTestId("diagnostics-repair-relationships-confirm");
+    expect(posts.length).toBe(0);
+    fireEvent.click(screen.getByTestId("diagnostics-repair-relationships-confirm-button"));
+    await waitFor(() => { expect(posts.length).toBe(1); });
+    expect(posts[0]).toEqual({ action: "repair-relationships" });
+    // With only one safe repair on offer, "Fix all" would be a second
+    // button doing the same thing, so it is not shown.
+    expect(screen.queryByTestId("diagnostics-fix-all")).toBeNull();
+  });
+
+  it("Fix all shows when more than one safe repair can act, and POSTs fix-all after a confirm", async () => {
+    const posts: unknown[] = [];
+    fetchMock.mockImplementation(repairFetch([
+      { name: "key index", status: "warn", message: "1 stale entry", fix: "rebuild-index" },
+      { name: "relationships", status: "warn", message: "1 issue(s) found", fix: "repair-relationships" },
+      { name: "queries.yaml", status: "warn", message: "missing", fix: "restore-missing" },
+    ], posts));
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("diagnostics-fix-all"));
+    await screen.findByTestId("diagnostics-fix-all-confirm");
+    expect(posts.length).toBe(0);
+    fireEvent.click(screen.getByTestId("diagnostics-fix-all-confirm-button"));
+    await waitFor(() => { expect(posts.length).toBe(1); });
+    expect(posts[0]).toEqual({ action: "fix-all" });
+  });
 });
 
 /**

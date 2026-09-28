@@ -48,7 +48,7 @@ import {
   PutWorkflowRequestSchema,
   ValidateQueryRequestSchema,
 } from "@loctt/contracts";
-import type { ListOptions } from "@loctt/core";
+import type { ListOptions, RelationshipRepairPlan } from "@loctt/core";
 import {
   abandonReconcile,
   appendTaskBody,
@@ -191,6 +191,7 @@ import {
   reorderBoardRank,
   ReorderError,
   reorderRelationship,
+  repairRelationships,
   requireSupportedSchema,
   resolveCommentMentionsContext,
   resolveLocttDir,
@@ -1730,15 +1731,41 @@ export function createWebApp(options: WebAppOptions) {
     //    index (stale/orphan/target-missing). Idempotent, cache-only.
     //  - "restore-missing" → initLoctt({repair:true}): recreates missing
     //    core config/state files with defaults; never overwrites survivors.
-    // Deliberately NOT a blanket "repair all" — core has no such function
-    // and ~85% of findings need a human decision or hand-edit.
+    //  - "repair-relationships" → repairRelationships (K141): key-valued
+    //    link targets to ids, missing sides added, duplicates merged.
+    //  - "fix-all" → every SAFE repair (rebuild-index + repair-relationships),
+    //    the web's `loctt doctor --fix`. restore-missing is not in it: it
+    //    writes default config, which is a guess (see SAFE_FIXES in core).
     const r = await parseJsonBodyWithSchema(req, res, DoctorRepairRequestSchema);
     if (r === undefined) return;
+    const relationshipsSummary = (plan: RelationshipRepairPlan): NonNullable<DoctorRepairResponse["relationships"]> => ({
+      rewritten: plan.rewrites.length,
+      added: plan.inverses.length,
+      merged: plan.merges.length,
+    });
     try {
       if (r.action === "rebuild-index") {
         const index = await rebuildKeyIndex(locttDir);
         const entries = Object.keys(index.entries).length;
         json(res, { action: r.action, entries } satisfies DoctorRepairResponse);
+        return;
+      }
+      // K141: the relationship repair, and "fix all" = every safe repair
+      // (core's SAFE_FIXES: rebuild-index, then repair-relationships),
+      // the same set `loctt doctor --fix` and MCP `doctor {fix:true}` run.
+      if (r.action === "repair-relationships") {
+        const plan = await repairRelationships(locttDir);
+        json(res, { action: r.action, relationships: relationshipsSummary(plan) } satisfies DoctorRepairResponse);
+        return;
+      }
+      if (r.action === "fix-all") {
+        const index = await rebuildKeyIndex(locttDir);
+        const plan = await repairRelationships(locttDir);
+        json(res, {
+          action: r.action,
+          entries: Object.keys(index.entries).length,
+          relationships: relationshipsSummary(plan),
+        } satisfies DoctorRepairResponse);
         return;
       }
       // restore-missing: gap-fill only. `initLoctt` with repair recreates

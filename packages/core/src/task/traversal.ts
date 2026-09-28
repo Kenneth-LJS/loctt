@@ -1,7 +1,9 @@
 import type { Task, WorkflowConfig } from "@loctt/contracts";
 import { relationshipTypeKeys } from "@loctt/contracts";
 
+import { listTaskIds } from "./list-ids.js";
 import { loadAllTasks } from "./load-all.js";
+import { planRelationshipRepair } from "./relationship-repair.js";
 import { findInverseType } from "./relationships.js";
 
 /** Validates that all relationship targets exist and types are valid. */
@@ -20,62 +22,117 @@ export async function validateRelationships(
   config: WorkflowConfig,
 ): Promise<readonly RelationshipValidationError[]> {
   const tasks = await loadAllTasks(locttDir);
+  const onDisk = new Set(await listTaskIds(locttDir));
+  return relationshipFindings(tasks, config, onDisk);
+}
+
+/**
+ * The per-edge findings behind {@link validateRelationships}, over tasks
+ * already loaded. Pure, so doctor and the repair agree on every edge:
+ * each finding says whether the relationship repair fixes it (K141).
+ */
+export function relationshipFindings(
+  tasks: readonly Task[],
+  config: WorkflowConfig,
+  onDiskIds: ReadonlySet<string> = new Set(),
+): RelationshipValidationError[] {
   const taskIds = new Set(tasks.map(t => t.frontmatter.id));
   const byId = new Map(tasks.map(t => [t.frontmatter.id, t]));
   const validTypes = new Set(
     config.relationships.flatMap(relationshipTypeKeys),
   );
+  const plan = planRelationshipRepair(tasks, config, onDiskIds);
+  const rewriteOf = new Map(plan.rewrites.map(r => [`${r.taskId}\u0000${r.from}`, r]));
+  const unresolvedOf = new Map(plan.unresolved.map(u => [`${u.taskId}\u0000${u.index}`, u]));
+  const refusalOf = new Map(plan.refused.map(r => [`${r.taskId}\u0000${r.type}\u0000${r.target}`, r]));
 
   const errors: RelationshipValidationError[] = [];
 
   for (const task of tasks) {
+    const id = task.frontmatter.id;
     const rels = task.frontmatter.relationships ?? [];
+    const seenPairs = new Set<string>();
     for (const [i, rel] of rels.entries()) {
       if (!validTypes.has(rel.type)) {
         errors.push({
-          taskId: task.frontmatter.id,
+          taskId: id,
           field: `relationships[${i}].type`,
           message: `unknown relationship type "${rel.type}"`,
         });
       }
       if (!taskIds.has(rel.target)) {
-        errors.push({
-          taskId: task.frontmatter.id,
-          field: `relationships[${i}].target`,
-          message: `target task "${rel.target}" does not exist`,
-        });
+        const rewrite = rewriteOf.get(`${id}\u0000${rel.target}`);
+        const unresolved = unresolvedOf.get(`${id}\u0000${i}`);
+        let message: string;
+        if (rewrite !== undefined) {
+          // K140: what `create --parent KEY` wrote before 0.3.
+          message =
+            `target "${rel.target}" is a task key, not a task id. `
+            + `The relationship repair rewrites it to ${rewrite.toKey}'s id.`;
+        } else if (unresolved?.reason === "ambiguous") {
+          message =
+            `target "${rel.target}" is a key more than one task has had, so it `
+            + `can't be matched to one task. Replace it with the right task's id.`;
+        } else if (unresolved?.reason === "self") {
+          message =
+            `target "${rel.target}" is this task's own key. A task can't link `
+            + `to itself. Remove this link.`;
+        } else {
+          message = `target task "${rel.target}" does not exist`;
+        }
+        errors.push({ taskId: id, field: `relationships[${i}].target`, message });
         // The inverse check below needs the target to exist.
         continue;
       }
 
+      // REL-26 / K141 (3a): the same link stored twice. Reported once,
+      // on the second copy; the repair merges them.
+      const pair = `${rel.type}\u0000${rel.target}`;
+      if (seenPairs.has(pair)) {
+        errors.push({
+          taskId: id,
+          field: `relationships[${i}]`,
+          message:
+            `"${rel.type}" to "${rel.target}" is stored more than once. `
+            + `The relationship repair merges the copies.`,
+        });
+        continue;
+      }
+      seenPairs.add(pair);
+
       // P-12: a relationship implies its inverse on the target. LocTT
       // writes both sides itself, so a one-sided edge means the file
-      // was hand-edited or arrived through a `git pull` — and it is
-      // invisible from the other end. The task that blocks something
-      // shows the edge; the task being blocked does not, so nobody
-      // working on it can see why it is stuck.
+      // was hand-edited, arrived through a `git pull`, or was written by
+      // `create --parent` before K140 — and it is invisible from the
+      // other end.
       //
-      // Reported, not repaired. Which side the user meant is not
-      // knowable from here: adding the inverse and deleting the
-      // forward edge are both defensible, and guessing writes data
-      // nobody asked for.
+      // Repaired, not only reported (K141, Ken's ruling, reversing the
+      // `17fae3f` rule that guessing the intended side writes data
+      // nobody asked for): the side that exists is taken as the intent
+      // and the missing side is added, unless that would make a loop.
       if (!validTypes.has(rel.type)) continue;
       const inverse = findInverseType(config, rel.type);
       if (inverse === undefined) continue;
       const target = byId.get(rel.target);
       if (target === undefined) continue;
       const hasBackEdge = (target.frontmatter.relationships ?? []).some(
-        r => r.type === inverse && r.target === task.frontmatter.id,
+        r => r.type === inverse && r.target === id,
       );
       if (!hasBackEdge) {
+        const refusal = refusalOf.get(`${id}\u0000${rel.type}\u0000${rel.target}`);
+        const advice = refusal?.reason === "loop"
+          ? `Adding it would create a loop, so the relationship repair leaves it. `
+            + `Remove one of the links in the loop.`
+          : refusal?.reason === "target_unreadable"
+            ? `That task's links couldn't be read, so the relationship repair `
+              + `leaves it. Fix that task's file first.`
+            : `The relationship repair adds the missing side.`;
         errors.push({
-          taskId: task.frontmatter.id,
+          taskId: id,
           field: `relationships[${i}]`,
           message:
             `"${rel.type}" points at "${rel.target}", but that task has no `
-            + `matching "${inverse}" back to this one. The relationship is `
-            + `only visible from one side. Re-run the link, or remove this `
-            + `edge, to make both ends agree.`,
+            + `matching "${inverse}" back to this one. ${advice}`,
         });
       }
     }

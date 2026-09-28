@@ -1,9 +1,9 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1066,
-    "ui": 961,
-    "surface": 105,
+    "total": 1069,
+    "ui": 962,
+    "surface": 107,
     "resolved": 4
   },
   "cases": [
@@ -11101,6 +11101,43 @@
       "resolved": false
     },
     {
+      "id": "REL-C6",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-relationships.md",
+      "line": 94,
+      "title": "Creating a task with a parent links it exactly as `link` would.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "REL-C7",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-relationships.md",
+      "line": 127,
+      "title": "`doctor` finds and repairs links a tracker cannot fix any other way.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P5",
+        "P11"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
       "id": "SET-1",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-settings.md",
@@ -11972,6 +12009,24 @@
       "severity": "minor",
       "principles": [
         "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-56",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-settings.md",
+      "line": 475,
+      "title": "Diagnostics offers the relationship repair and \"Fix all\" when they can act.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P4",
+        "P5",
+        "P10"
       ],
       "surfaces": [
         "UI"

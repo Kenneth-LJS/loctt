@@ -23055,6 +23055,92 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A357 · `create --parent` links properly; comprehensive relationship repair; ordered relationships on every surface (B39)
+
+#### A357 · B39 implementation calls (create --parent, relationship repair, ordering)
+
+**Date:** 2026-09-28 · **Agent-made** (under K140, K141).
+
+**Context.** B39 implements K141's rulings. Several calls the rulings did
+not settle had to be made to build it.
+
+**Decisions.**
+1. **Shared link checks.** `linkTask`'s checks (self-link, archived
+   target, cycle, target `relationships` readable) moved into lock-free
+   `checkLinkTarget` in `task/relationships.ts`. `createTask` uses it via
+   `prepareParentLink` (runs **before** the new task is written) and
+   `commitParentLink` (writes the parent's inverse after). Writes share
+   `persistRelationships`. `createTask`'s callers already hold the state
+   lock (not re-entrant), so nothing new takes it.
+2. **Missing parent error.** `RelationshipError` (code
+   `validation_failed`, `field: "parent"`, `data_state: not_saved`) with
+   `TaskNotFoundError`'s exact sentence (`Task not found: "<ref>"`), so
+   CLI/MCP print `link`'s text and the web returns 400 at the field
+   (K141 6). Archived and cycle refusals carry `field: "parent"` too.
+3. **Key counter on refusal.** Unchanged by construction: `allocateKey`
+   only changes in-memory state and every caller saves state after
+   `createTask` returns, and all parent checks run before `writeTask`.
+4. **No rank on the new edges** (K141 7): `link` assigns none either.
+5. **ID rewrite and duplicate merge write no history entry.** No
+   existing kind says "same link, stored correctly"; a `link_removed` +
+   `link_added` pair would tell the activity feed a link was removed and
+   re-added, which did not happen. The added missing side gets
+   `link_added` (K141 5). `updated_at` is bumped on every repaired task,
+   as `link` does.
+6. **All identical duplicates are merged**, not only those a rewrite
+   creates (REL-26 duplicates from hand-edits too). First stored position
+   kept; its rank, else the first rank among the copies. doctor now
+   reports a stored duplicate as a finding so the repair never does
+   something doctor did not report.
+7. **Unresolvable targets.** `missing` (no task), `ambiguous` (a key held
+   by more than one task, current or former), `self` (the key is the
+   task's own) are reported and kept. A target naming an on-disk but
+   unreadable task is treated as an id, not a key.
+8. **Tasks with unreadable `relationships`** (any `health` on the field)
+   are skipped as sources and as receivers of a missing side, reported as
+   `target_unreadable` refusals.
+9. **Links of an unknown type are not completed**: which side is missing
+   is not knowable without the definition.
+10. **`--fix` = rebuild-index + repair-relationships** (core
+    `SAFE_FIXES`). `restore-missing` is excluded: it writes default
+    config in place of a missing file (a missing `workflow.yaml` comes
+    back as the shipped default; a missing `state.yaml` restarts counters
+    at 1), a guess about the user's setup, which is why the web confirms
+    it. It stays its own step (`init --repair`, MCP `restore_missing`,
+    its button). Repairs requested on doctor run **before** the checks
+    and are skipped when the schema version check fails.
+11. **Web "Fix all" shows only when more than one safe fix can act**;
+    with one it would be a second button doing the same thing. Repair
+    relationships and Fix all both confirm first (they write task files).
+12. **Shared order.** `task/relationship-order.ts` (browser-safe, core
+    subpath export) holds `orderRelationships` and `compareRankedEdges`;
+    the web's `orderRows` uses the comparator, CLI `show` and MCP
+    `get_task` use `orderRelationships`. `resolveRelationships` stays in
+    stored order (the web zips it with the stored array by position) and
+    now carries `rank`.
+13. **Pre-existing lint errors fixed** to meet the 0/0 gate:
+    `tools/screenshots/` (plain Node scripts in no tsconfig) added to
+    eslint ignores; `BodyRenderedView.test.tsx` import order and one
+    justified `unbound-method` disable.
+
+**Alternatives considered.** A per-edge lock-taking repair (rejected: one
+lock per pass is simpler and the pass is small); a new history kind
+(rejected: contract change for a one-off repair); including
+`restore-missing` in `--fix` (rejected, above).
+
+**To revert.** (1–3) restore `createTask`'s parent block to push the raw
+ref (the bug) or change `prepareParentLink`'s error wrapping; (5) add
+entries in `repairRelationships`; (6) restrict merging to pairs a rewrite
+produced in `planRelationshipRepair` and drop the duplicate finding in
+`relationshipFindings`; (10) edit `SAFE_FIXES` in
+`diagnostics/doctor.ts` and the web's copy in `DiagnosticsPanel.tsx`
+plus `fix-all` in `server.ts`; (11) change `canFixAll`; (12) delete the
+module and inline the comparator back into `group.ts`; (13) revert the
+two lint edits.
+
+**Follow-up.** `docs/dev/known-gaps.md` G1: a link stored as an
+ambiguous key still can't be unlinked from any surface.
+
 ### A356 · Wave-4 review fixes (UI rebuild instructions, missing-client refusal test, lightbox focus, docs)
 
 #### A356 · Review findings: doc corrections, ONB-C8 unit test, lightbox focus-return fix (m1/m2/m4/m5/m6/m7, M1/M2)

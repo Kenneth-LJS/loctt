@@ -269,3 +269,53 @@ async function taskDirFor(root: string, key: string): Promise<string> {
   }
   throw new Error(`no task dir for ${key}`);
 }
+
+// @verifies SET-56
+// @verifies REL-C7
+//
+// K140/K141: a link stored as a task key (what `create --parent KEY`
+// wrote before the fix) renders on the task page as a broken row, and
+// the web cannot remove it: unlink resolves the key to the id, which the
+// stored key never matches. Diagnostics offers the repair; after it the
+// task page shows the parent.
+test("SET-56: Repair relationships fixes a key-valued link, and the task page shows the parent", async ({ page, tracker }) => {
+  const [parent, child] = await tracker.seed([{ title: "The parent" }, { title: "The child" }]);
+  if (parent === undefined || child === undefined) throw new Error("seed returned no keys");
+  const file = path.join(await taskDirFor(tracker.root, child), "task.md");
+  const text = await readFile(file, "utf8");
+  await writeFile(
+    file,
+    text.replace(/\n---\n/, `\nrelationships:\n  - type: parent\n    target: ${parent}\n---\n`),
+    "utf8",
+  );
+
+  // Before: a broken row naming the key as if it were a missing id.
+  await page.goto(`${tracker.baseURL}/tasks/${child}`);
+  await expect(page.getByTestId("relationship-broken")).toBeVisible();
+
+  await page.goto(`${tracker.baseURL}/settings/diagnostics`);
+  await expect(page.locator('[data-testid="diagnostics-check-relationships"]')).toHaveAttribute("data-check-status", "warn");
+  // Only one safe repair can act here, so there is no "Fix all".
+  await expect(page.getByTestId("diagnostics-fix-all")).toHaveCount(0);
+  await page.getByTestId("diagnostics-fix-repair-relationships").click();
+  await expect(page.getByTestId("diagnostics-repair-relationships-confirm")).toBeVisible();
+  await page.getByTestId("diagnostics-repair-relationships-confirm-button").click();
+  // The checks re-run. Wait for the last check to land as a pass (before
+  // the repair it was a warning naming the child's file); an empty list
+  // mid-run would otherwise satisfy the absence checks below.
+  await expect(page.getByTestId("diagnostics-check-data-integrity")).toHaveAttribute("data-check-status", "ok");
+  await expect(page.getByTestId("diagnostics-fix-repair-relationships")).toHaveCount(0);
+  await expect(page.locator('[data-testid="diagnostics-check-relationships"]')).toHaveCount(0);
+
+  // Far end: the child stores the parent's id, and the parent lists it.
+  const after = await readFile(file, "utf8");
+  expect(after).not.toMatch(new RegExp(`target: ${parent}$`, "m"));
+  const parentFile = await readFile(path.join(await taskDirFor(tracker.root, parent), "task.md"), "utf8");
+  expect(parentFile).toMatch(/type: child/);
+
+  // And the task page shows the parent, not a broken row.
+  await page.goto(`${tracker.baseURL}/tasks/${child}`);
+  await expect(page.getByTestId("relationships-panel")).toBeVisible();
+  await expect(page.getByTestId("relationship-broken")).toHaveCount(0);
+  await expect(page.locator('[data-testid="relationship-row"]').filter({ hasText: parent })).toHaveCount(1);
+});

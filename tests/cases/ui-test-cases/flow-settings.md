@@ -471,3 +471,10 @@ search, and no saved views over archived items.
 > `MilestonesPanel.test.tsx`, `ProjectsPanel.test.tsx`,
 > `SavedViewsPanel.test.tsx`, `SprintsPanel.test.tsx`,
 > `UsersPanel.test.tsx`) — see `docs/dev/backlog.md` B9.
+
+### SET-56 · M4 · major · P4 P5 P10
+**Diagnostics offers the relationship repair and "Fix all" when they can act.** Settings → Diagnostics on a tracker with a link stored as a task key (K141 4a).
+
+- A "Repair relationships" button shows only when a check carries the `repair-relationships` fix. It asks for confirmation (it writes task files), then runs the same repair as `loctt doctor --repair-relationships` and re-runs the checks.
+- After the repair, the task page shows the link to the right task rather than a broken row, and the Diagnostics relationships warning is gone.
+- A "Fix all" button shows when more than one safe repair can act. It asks for confirmation, then runs the same repairs as `loctt doctor --fix` (key index rebuild and the relationship repair, not restoring missing files) and re-runs the checks.

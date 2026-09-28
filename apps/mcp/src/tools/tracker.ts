@@ -54,10 +54,12 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "doctor",
-    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message,fix?}]}. Branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. A check's optional `fix` names the programmatic repair for it: \"rebuild-index\" (pass rebuild_index:true) or \"restore-missing\" (pass restore_missing:true). Pass `rebuild_index: true` to rebuild the key-lookup cache (recovery for out-of-band frontmatter edits); pass `restore_missing: true` to recreate missing core config/state files with defaults (existence-guarded: never overwrites surviving data).",
+    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message,fix?}]}. Branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. A check's optional `fix` names the programmatic repair for it: \"rebuild-index\" (pass rebuild_index:true), \"restore-missing\" (pass restore_missing:true) or \"repair-relationships\" (pass repair_relationships:true). Pass `rebuild_index: true` to rebuild the key-lookup cache (recovery for out-of-band frontmatter edits); pass `restore_missing: true` to recreate missing core config/state files with defaults (existence-guarded: never overwrites surviving data); pass `repair_relationships: true` to rewrite links stored as a task key to the task's id, add the missing side of every one-sided link (refused when it would create a loop), and merge identical links, never deleting a link. Pass `fix: true` to run every safe repair (rebuild_index and repair_relationships, not restore_missing) before the checks, so the checks report what is left.",
     inputSchema: {
       rebuild_index: z.boolean().optional().describe("If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's key or key_history."),
       restore_missing: z.boolean().optional().describe("If true, recreate any missing core config/state files with defaults (initLoctt repair). Existence-guarded: surviving files and tasks are untouched."),
+      repair_relationships: z.boolean().optional().describe("If true, run the relationship repair before the checks: key-valued link targets are rewritten to the task's id, every one-sided link gets its missing side (unless that would create a loop), identical links are merged. No link is ever deleted."),
+      fix: z.boolean().optional().describe("If true, run every safe repair (rebuild_index and repair_relationships) before the checks, then report what is left. restore_missing is not included because it writes default config in place of missing files."),
     },
     handler: async ({ root }, args) => {
       const rebuildIndex = args["rebuild_index"] === true;
@@ -69,7 +71,14 @@ export const TOOLS: readonly ToolDef[] = [
       if (args["restore_missing"] === true) {
         await initLoctt(root, { repair: true });
       }
-      const checks = await runDoctor(root, { rebuildIndex });
+      // K141 4a: `fix` runs every safe repair first; `repair_relationships`
+      // runs the relationship repair alone. Both run before the checks,
+      // inside core, so the result lists what is left.
+      const checks = await runDoctor(root, {
+        rebuildIndex,
+        ...(args["repair_relationships"] === true ? { repairRelationships: true } : {}),
+        ...(args["fix"] === true ? { fix: true } : {}),
+      });
       // Structured, not prose (ONB-C7). An agent deciding whether to
       // proceed had to substring-match "[error]" in a human sentence —
       // which silently stops working the moment the wording changes, and

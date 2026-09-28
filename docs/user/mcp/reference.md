@@ -154,10 +154,10 @@ tools.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `get_task` | One task, optionally with body and a `body_token` for safe writes. | `ref`, `include_body` (default true) |
+| `get_task` | One task, optionally with body and a `body_token` for safe writes. Relationships are listed in the web task page's order (kinds in workflow order; within a ranked kind by `rank`, then unranked links in the order they were added), and each ranked link carries its `rank`. | `ref`, `include_body` (default true) |
 | `list_tasks` | Query/filter tasks. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `archived` (`active` default / `archived` / `all`) |
 | `export_tasks` | Export matching tasks as CSV or JSON (a report, not a backup). | `format`, `query`, `view`, `project`, `columns`, `include_body`, `include_archived` |
-| `create_task` | Create a task. | `title`, `project`, `status`, `priority`, `task_type`, `assignee`, `reporter`, `due_date`, `start_date`, `estimate`, `milestone`, `sprint`, `labels`, `body`, `parent` |
+| `create_task` | Create a task. `parent` (key or id) links it under the parent exactly as `link_tasks` would: the parent's id is stored and the parent gets the child link. A parent that doesn't exist or is archived is refused and nothing is created. | `title`, `project`, `status`, `priority`, `task_type`, `assignee`, `reporter`, `due_date`, `start_date`, `estimate`, `milestone`, `sprint`, `labels`, `body`, `parent` |
 | `update_task` | Set one writable field. | `ref`, `field`, `value` |
 | `unset_field` | Clear one field. | `ref`, `field` |
 | `bulk_update_tasks` | Set or clear one field across many tasks in one operation. | `refs` (≤500), `field`, `value` (omit to clear) |
@@ -530,7 +530,7 @@ web UI (Settings → Sync), or MCP:
 | Tool | Purpose | Key params |
 |---|---|---|
 | `info` | Prose summary of the tracker. | — |
-| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index` or `restore-missing`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data). | `rebuild_index`, `restore_missing` |
+| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index`, `restore-missing` or `repair-relationships`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data); `repair_relationships` changes links stored as a task key to the task's id, adds the missing side of one-sided links (refusing one that would create a loop) and merges identical links, never deleting a link; `fix` runs every safe repair (`rebuild_index` and `repair_relationships`, not `restore_missing`). Repairs run before the checks, so the checks report what is left. | `rebuild_index`, `restore_missing`, `repair_relationships`, `fix` |
 | `init` | Bootstrap a new tracker. An empty `.loctt/` folder is filled in like a missing one. | `prefix`, `project_label`, `no_docs`, `timezone` |
 | `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a schema upgrade. | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |

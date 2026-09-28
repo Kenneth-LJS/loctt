@@ -86,3 +86,69 @@ surface, **then** both remove it and both refuse the same invalid names.
 **Given** a source file with a 300-character basename, **when**
 `loctt attach T-1 <path>` runs, **then** it reports the filename and the
 limit, leaving no partial file.
+
+---
+
+## C. Create with a parent, and the relationship repair
+
+### REL-C6 · blocker · P1 P10 · CLI MCP UI
+**Creating a task with a parent links it exactly as `link` would.**
+`loctt create --parent <ref>`, MCP `create_task` with `parent`, and
+`POST /api/tasks` with `parent`.
+
+> **Amended (K140, Ken 2026-09-28).** A user of 0.2.1 reported:
+> *"loctt create --parent GAME-4 writes the raw key into the task file
+> instead of the task ID, and doesn't add the child link on the parent.
+> doctor then reports 26 broken references, and unlink can't remove
+> them."*
+
+- The parent may be given as its key, a former key (`key_history`), or
+  its id (CLI and MCP; K141: every surface stores the id).
+- The new task stores the parent's **id** on the configured tree axis,
+  and the parent gains the inverse (`child`) edge, with the `link_added`
+  history entry `link` writes. The result is identical to `create`
+  followed by `link <new> <tree axis> <parent>`.
+- `loctt show` on both tasks names the other; `loctt doctor` reports no
+  relationship finding; `loctt unlink` removes both sides.
+- A parent that does not exist is refused with `link`'s sentence
+  (`Task not found: "<ref>"`); on the web this is a 400
+  `validation_failed` at the `parent` field. An archived parent is
+  refused with `link`'s sentence. Nothing is written when refused: no
+  task file, and no key used up.
+- `loctt show` and MCP `get_task` list a task's relationships in the web
+  task page's order (kinds in workflow order; within a ranked kind by
+  rank, then unranked in stored order), and MCP returns each edge's
+  `rank` (K141 6a).
+
+**Given** tasks T-1..T-4, **when** `loctt create child --parent T-4`
+runs, **then** the child stores T-4's id, T-4 lists the child, `doctor`
+is clean and `loctt unlink <child> parent T-4` removes both sides.
+
+### REL-C7 · blocker · P1 P5 P11 · CLI MCP UI
+**`doctor` finds and repairs links a tracker cannot fix any other way.**
+`loctt doctor --repair-relationships`, `loctt doctor --fix`, MCP
+`doctor` with `repair_relationships` / `fix`, and the Diagnostics panel.
+(K141, Ken's rulings 2a, 3a, 4a.)
+
+- A link whose target is a task's key (or former key) rather than its id
+  is reported by `doctor`, naming the task file, and the repair rewrites
+  it to the id, keeping its rank.
+- Every one-sided link is reported and the repair adds the missing side
+  (with `link_added` on the task that gains it). When adding it would
+  create a loop on an `acyclic` or `tree` kind, the repair refuses and
+  `doctor` says so.
+- Identical links on one task are merged into one.
+- A target that resolves to no task, to a key more than one task has
+  held, or to the task itself is reported and **never deleted**. A task
+  whose links could not be read is left untouched.
+- `doctor` tags the finding with the `repair-relationships` fix; the
+  repair runs before the checks, so what `doctor` prints afterwards is
+  what is left. A second run repairs nothing and changes no file.
+- `--fix` runs every safe repair (key index rebuild and the relationship
+  repair) and then reports what is left; restoring missing files is not
+  one of them.
+
+**Given** a tracker where three children store `parent: GAME-4` and
+GAME-4 lists none of them, **when** `loctt doctor --repair-relationships`
+runs, **then** each child stores GAME-4's id, GAME-4 lists all three,
+`doctor` is clean, and running the repair again changes nothing.

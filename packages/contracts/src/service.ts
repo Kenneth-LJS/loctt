@@ -441,11 +441,20 @@ export interface DoctorCheckResponse {
 
 /** Response for `POST /api/doctor/repair`. */
 export interface DoctorRepairResponse {
-  readonly action: "rebuild-index" | "restore-missing";
-  /** rebuild-index: the number of key-index entries after the rebuild. */
+  readonly action: "rebuild-index" | "restore-missing" | "repair-relationships" | "fix-all";
+  /** rebuild-index / fix-all: the number of key-index entries after the rebuild. */
   readonly entries?: number;
   /** restore-missing: the number of files recreated. */
   readonly created?: number;
+  /**
+   * repair-relationships / fix-all: what the relationship repair changed
+   * (K141). What it could not repair is reported by the next doctor run.
+   */
+  readonly relationships?: {
+    readonly rewritten: number;
+    readonly added: number;
+    readonly merged: number;
+  };
 }
 
 /**

@@ -9,6 +9,8 @@ import { allocateKey } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
+import type { PreparedParentLink } from "./relationships.js";
+import { commitParentLink, prepareParentLink } from "./relationships.js";
 import { invalidValueError, resolveEntityRef } from "./update.js";
 import { todayDateString } from "./update.js";
 
@@ -63,7 +65,9 @@ export interface CreateTaskParams {
 /**
  * Creates a new task on disk and updates key allocation state.
  *
- * Caller is responsible for persisting the updated state afterwards.
+ * Caller is responsible for persisting the updated state afterwards,
+ * and must hold the state lock: with a `parent`, this also writes the
+ * inverse edge on the parent task (K140), under the caller's lock.
  * Returns the created task.
  */
 export async function createTask(params: CreateTaskParams): Promise<Task> {
@@ -119,11 +123,31 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   // Without workflow config there is nothing to resolve the axis from,
   // so we fall back to "parent" — the shipped default's key — rather
   // than dropping the caller's parent silently.
+  //
+  // K140: the parent is resolved and checked exactly as `linkTask`
+  // does it (the shared `prepareParentLink`), *before* anything is
+  // written. This used to push `options.parent` verbatim, so
+  // `loctt create --parent GAME-4` stored the key "GAME-4" as the
+  // target and never wrote the `child` edge on the parent: doctor
+  // reported a broken reference, the parent did not list the child,
+  // and unlink could not remove the edge from any surface. A missing
+  // or archived parent now refuses the create, and nothing is written
+  // (the key counter lives in `state`, which the caller only saves
+  // after this returns).
   const relationships: { type: string; target: string }[] = [];
+  let parentLink: PreparedParentLink | undefined;
   if (options.parent !== undefined) {
     const treeType = workflowConfig?.relationships.find(r => r.graph === "tree")?.key
       ?? "parent";
-    relationships.push({ type: treeType, target: options.parent });
+    parentLink = await prepareParentLink({
+      locttDir,
+      childId: id,
+      childKey: key,
+      parentRef: options.parent,
+      type: treeType,
+      workflowConfig,
+    });
+    relationships.push({ type: treeType, target: parentLink.parentId });
   }
 
   const frontmatter: TaskFrontmatter = {
@@ -224,6 +248,12 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   await appendHistory(locttDir, id, [
     { timestamp: now, kind: "created", after: { frontmatter, body: task.body } },
   ]);
+  // The parent's side of the link, with the `link_added` entry `link`
+  // writes on the target. The child's own `created` entry already
+  // records the edge, so it gets no separate `link_added` (K141).
+  if (parentLink !== undefined) {
+    await commitParentLink(locttDir, id, parentLink, now);
+  }
   // Invalidate any in-process "key not found" verdicts cached by
   // lookupByKey — the new task's key/key_history may now resolve.
   clearLookupCaches(locttDir);

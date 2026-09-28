@@ -35,6 +35,7 @@ import {
   loadProjectsConfig,
   loadState,
   lookupTask,
+  orderRelationships,
   readHistory,
   resolveCommentMentionsContext,
   resolveProjectIdForUser,
@@ -88,7 +89,7 @@ function treeChildSideKey(
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
-    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token`. Pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}). It is category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
+    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. Relationships are listed in the same order as the web task page: kinds in workflow order, and within a ranked kind by `rank` (carried on each ranked edge), then unranked edges in stored order. When the body is included the result carries `body_token`. Pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}). It is category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -114,9 +115,14 @@ export const TOOLS: readonly ToolDef[] = [
         // corrupt title, when that is why it is absent, still rides in
         // `health` below so the agent can repair it.
         title: model.task.frontmatter.title ?? model.task.frontmatter.key,
-        relationships: model.relationships.map(r => ({
+        // K141 6a: listed in the web's order, from the one core sort
+        // (kinds in workflow.yaml order, ranked kinds by rank, then
+        // unranked in stored order), with each edge's `rank` so an agent
+        // can see the order and pass neighbours to reorder_relationship.
+        relationships: orderRelationships(model.relationships, workflowConfig).map(r => ({
           type: r.type,
           target: r.missing ? r.target : r.resolvedKey ?? r.target,
+          ...(r.rank !== undefined ? { rank: r.rank } : {}),
           // Title and status save the agent a get_task per edge to
           // learn what a linked task actually is.
           ...(r.resolvedTitle !== undefined ? { title: r.resolvedTitle } : {}),
@@ -449,10 +455,12 @@ export const TOOLS: readonly ToolDef[] = [
       sprint: z.string().optional().describe("Sprint id or name."),
       labels: z.array(z.string()).optional(),
       parent: z.string().optional().describe(
-        "Parent task key or id. Pre-links the new task under the "
+        "Parent task key or id. Links the new task under the "
         + "configured tree relationship (the workflow's `graph: tree` "
-        + "axis), so a create can build a hierarchy without a follow-up "
-        + "link_tasks call.",
+        + "axis) exactly as link_tasks would: the parent's id is stored "
+        + "and the parent gets the matching child link. A parent that "
+        + "does not exist or is archived is refused, and nothing is "
+        + "created.",
       ),
     },
     handler: async ({ locttDir }, args) => {

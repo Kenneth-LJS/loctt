@@ -235,6 +235,14 @@ problems and reports what it finds. It runs the same checks as
 `loctt doctor` on the command line, so you can use whichever is closer to
 hand — the results are the same.
 
+When a problem has an automatic fix, a button for it appears above the
+list: **Rebuild key index**, **Restore missing files**, or **Repair
+relationships** (links stored with a task's key instead of its id, links
+only one task lists, and duplicate links; no link is ever removed).
+**Fix all** appears when more than one safe fix applies and runs them
+together, like `loctt doctor --fix`. The buttons that change your files
+ask first, and the checks run again when a fix finishes.
+
 **A note on filesystem safety.** LocTT's file locks are POSIX *advisory*
 locks, which are not safe on network or sync-service filesystems. If the
 tracker sits inside iCloud Drive, Dropbox, OneDrive, or on an NFS/SMB

@@ -26,6 +26,7 @@ import {
   loadWorkflowConfig,
   lookupTask,
   moveTaskToProject,
+  orderRelationships,
   readHistory,
   readTaskBody,
   resolveCommentMentionsContext,
@@ -485,7 +486,10 @@ export async function show(args: string[], root: string): Promise<void> {
   if (fm.archived) console.log(`Archived: ${fm.archived_at}`);
   if (model.relationships.length > 0) {
     console.log(`Relationships:`);
-    for (const r of model.relationships) {
+    // K141 6a: the web's order (kinds in workflow.yaml order, ranked
+    // kinds by rank, then unranked in stored order), from the one core
+    // sort, so `show` and the task page list children identically.
+    for (const r of orderRelationships(model.relationships, workflowConfig)) {
       // DEG-C5: mirror the four target states core resolves (and the web
       // renders, DEG-15), not the two (missing vs healthy) this used to
       // collapse them into. A corrupt-but-present target linked as ⚠, and
