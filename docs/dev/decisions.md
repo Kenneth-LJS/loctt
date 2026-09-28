@@ -22685,6 +22685,19 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K151 · No `1` anywhere, git branches included; sync orders incoming links
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+B41 (A361 call 7) let git sync treat a branch whose `.schema-version` is
+the old integer `1` as "older" so 0.2.x-published branches could still
+sync. Ken: *"just assume we no longer have git branches holding the old 1.
+at all"*: the exception is removed; a branch holding `1` is refused like
+any other non-semver version (K142). And for G8 (a synced branch bringing
+links without ranks) he chose the recommendation: **sync assigns ranks to
+any unranked incoming links as part of applying the branch**, using the
+same step as the 0.1.0 → 0.3.0 upgrade, so doctor has nothing left over.
+
 ### K150 · Add/remove for multi-value fields; open choice fields; create-on-the-fly is explicit everywhere
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**

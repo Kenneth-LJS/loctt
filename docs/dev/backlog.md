@@ -21,6 +21,13 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 - Full versioning tests across core, CLI, MCP, web and the installed
   package.
 
+## B46 · Git sync: refuse `1`, order incoming links (K151) — **todo** (fix round)
+
+- Remove A361's git-sync exception for an integer `1` schema version on
+  the remote branch; refuse it like any non-semver version.
+- Sync ranks unranked incoming links with the upgrade's ranking step;
+  close G8 in known-gaps.md; tests red-proven.
+
 ## B45 · Add/remove for multi-value fields; open choice fields (K150) — **todo** (after B41)
 
 - Core list add/remove under the lock for labels and every `multi` custom
