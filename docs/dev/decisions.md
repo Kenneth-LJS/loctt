@@ -22699,10 +22699,9 @@ multiple…). for MCP, its the text instruction to give to the agent"*, with
 get the test one by one, and to run pre/post condition checks"*. On error
 cases the post-check proves *"nothing changed, or we got the right error
 state"*. Asked the open calls, he chose:
-- **Both MCP modes from the same tests:** each test carries the exact MCP
-  call (scripted, runs in every gate) and a plain-English instruction for
-  an agent-driven run started on demand, served one test at a time by a
-  helper script that runs the pre/post checks.
+- **Both MCP modes from the same tests** (later reversed: agent mode
+  dropped, see below): each test carries the exact MCP call (scripted,
+  runs in every gate).
 - **Checks read the tracker files directly** (plain YAML, no core import)
   so a core bug cannot vouch for itself; `loctt doctor` runs after every
   test; error cases assert that no file changed.
@@ -22712,9 +22711,13 @@ state"*. Asked the open calls, he chose:
 - The seed must match the code's format version, and the runner refuses
   otherwise, pointing at `npm run seed:upgrade`.
 - *"always run cli version first before mcp"*: every test runs the CLI
-  first, then MCP; an MCP result after a CLI failure is marked as such, and
-  agent mode only hands out a test whose CLI run passed, so an agent
-  failure isolates MCP handling and tool descriptions.
+  first, then scripted MCP; an MCP result after a CLI failure is marked as
+  such. (Scripted MCP drives `loctt mcp` directly with no AI model, so it
+  costs no tokens.)
+- **Agent mode dropped.** Told that scripted MCP tests the server without
+  an AI and that agent mode only adds whether an agent reads the tool
+  descriptions correctly, Ken: *"ok drop agent mode then."* Any future
+  agent-driven check belongs with the existing `tests/llm` harness.
 
 ### K143 · Ordering scope, automatic upgrades, full versioning tests
 

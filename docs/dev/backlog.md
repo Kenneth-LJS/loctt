@@ -33,13 +33,11 @@ ancestor pages refresh after a reorder.
   realistic data across every entity, pinned to the current format;
   `npm run seed:upgrade`.
 - One YAML file per test (`tests/runthrough/cases/<slug>.yaml`): id, name,
-  description, pre, CLI command(s), MCP call, MCP plain-English prompt,
+  description, pre, CLI command(s), MCP call,
   post (or expected error + "nothing changed"); plus scenario tests.
 - A runner (`npm run test:runthrough`): fresh seed copy per test, CLI and
   scripted MCP, pre/post checks that read files directly, doctor after
   every test, failure names the step and the diff. Part of every gate.
-- An agent mode: a preamble plus a helper script that hands an agent one
-  test at a time and runs its pre/post checks.
 - Initial coverage: create (incl. with parent), edit fields, link/unlink,
   rerank, bulk set/archive/delete, move project, archive/unarchive,
   comments, attachments, views, search/list queries, sprints, milestones,
