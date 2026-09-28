@@ -22685,6 +22685,25 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K148 · IDs are recognised by their shape; names may not be ID-shaped
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Context: storage holds IDs; the runthrough found `list --query "labels =
+urgent"` returns nothing because queries match entity fields by ID only.
+Ken asked how an ID is told apart from a name, proposed a `#[id]` sigil
+(declined over shell comments and names like "Sprint #12"), then a length
+limit (declined: 25 characters rejects ordinary names), then an `id:`
+prefix. Shown the ULID shape (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`), he chose
+the shape rule with no prefix: *"sure. then during creation we need to do
+a check for this too"*.
+
+- A value that matches the ULID shape is an ID; anything else is a name.
+- Creating or renaming a label, user, milestone, sprint, project or saved
+  view with an ID-shaped name is refused ("That looks like an ID; choose a
+  different name.") on every surface.
+- No characters are banned in names; no prefix exists.
+
 ### K147 · Deleting a task removes the other side of its links (G4)
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
