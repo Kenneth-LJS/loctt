@@ -22685,6 +22685,28 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K150 · Add/remove for multi-value fields; open choice fields; create-on-the-fly is explicit everywhere
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Ken asked whether multi-select custom fields could get add/remove like
+labels, whether users can create single/multi-select fields, and whether
+those can allow *"custom-adding as we go"*. Chosen:
+- **Add/remove for labels and every multi-value custom field** (CLI
+  `loctt set <task> <field> --add x --remove y`; MCP `update_task`
+  `add`/`remove` maps; core applies them to the current list under the
+  lock; adding a present value or removing an absent one is a no-op).
+  Replace still works.
+- **Choice (enum) fields get an "allow new values" option, off by
+  default.** Off keeps today's behaviour (listed values only).
+- On *"so on labels, we allow making new ones, right? JIRA-style? can we
+  do the same across all?"*: yes. One model for labels and every open
+  choice field: the web picker shows **"Create 'x'"** as a separate row
+  (as labels already do); the CLI creates an unknown value only with
+  `--create`; MCP only with `create_missing: true`. Otherwise an unknown
+  value is refused (K148). This brings labels on CLI/MCP to the same
+  level. Ken: *"sounds good. yes"*.
+
 ### K149 · No exact-ID fallback for non-ID-shaped input
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
