@@ -37,14 +37,16 @@ describe("loctt info reports schema status", () => {
     });
   });
 
-  // K143: info describes; it does not upgrade (doctor neither). The
-  // next command that opens the tracker does.
-  it("reports an older tracker as upgrading on the next command, and leaves it as it is", async () => {
+  // K154 (was K143's "the next command upgrades it", the superseded
+  // rule): info describes and never writes, and says what to run.
+  it("reports an older tracker as needing an upgrade, and leaves it as it is", async () => {
     await withTmpLoctt(async ({ root }) => {
       await writeFile(path.join(root, ".loctt/.schema-version"), "0.1.0\n", "utf-8");
       const res = await runCli(["info"], { cwd: root });
       expect(res.exitCode).toBe(0);
-      expect(res.stdout).toMatch(/Schema: 0\.1\.0, this build reads 0\.3\.0\. The next command upgrades it, or run 'loctt migrate'/);
+      expect(res.stdout).toContain(
+        "Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)",
+      );
       const { readFile } = await import("node:fs/promises");
       expect((await readFile(path.join(root, ".loctt/.schema-version"), "utf-8")).trim()).toBe("0.1.0");
     });

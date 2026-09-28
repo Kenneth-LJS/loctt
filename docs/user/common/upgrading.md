@@ -21,9 +21,10 @@ with the argument `mcp` (or `npx -y loctt mcp`). See the
 [MCP reference](../mcp/reference.md).
 
 Most upgrades need nothing more. Occasionally a new version changes the
-on-disk format of `.loctt/`. When the change is safe to make on its own,
-LocTT makes it the first time you use the tracker; when it is not, it asks
-you to run `loctt migrate`.
+on-disk format of `.loctt/`. LocTT never makes that change on its own:
+every surface stops and tells you, and you upgrade the tracker when you
+choose (`loctt migrate`, the **Upgrade** button in the web UI, or by
+asking your agent to). A backup is made first.
 
 ## Format versions
 
@@ -53,33 +54,73 @@ Change it once, by hand, to `0.1.0`:
 printf '0.1.0\n' > .loctt/.schema-version
 ```
 
-The next command then upgrades the tracker to `0.3.0` as described below.
-Do the same on every machine and every clone of the tracker.
+Then upgrade it to `0.3.0` as described below (`loctt migrate`). Do the
+same on every machine and every clone of the tracker.
 
-## Automatic upgrades
+## Upgrading a tracker
 
-When your tracker is older than your `loctt` and every step of the upgrade
-is safe, the first command that opens it upgrades it and then runs as
-normal. That is any CLI command (except `init`, `migrate`, `doctor` and
-`info`, which describe the tracker without changing it), the first MCP
-tool call (except `init` and `migrate_schema`), or the first request the
-web UI makes. It:
-
-1. backs up your whole `.loctt/` to a sibling directory, named like
-   `.loctt.backup-v0.1.0-<timestamp>-<id>/`;
-2. runs the upgrade steps;
-3. says so in one line:
+When your tracker is older than your `loctt`, every command, tool call and
+web request refuses to run and changes nothing:
 
 ```
-Upgraded this tracker from 0.1.0 to 0.3.0 (backup: /path/to/.loctt.backup-v0.1.0-…).
+Error: This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).
 ```
 
-The CLI prints the line on stderr, so `--format json` output stays clean.
-MCP adds it after the tool's own result (and to the server's log). The web
-UI shows it above the app until you dismiss it.
+Upgrading is always your decision, on every surface. On a tracker shared
+through git, whoever upgrades first moves everyone to the new format, so
+it is worth agreeing when to do it.
 
-If two commands open the tracker at the same moment, it is upgraded once;
-the other waits for it and carries on.
+`loctt doctor` and `loctt info` still run, and say the same thing
+(`needs upgrading from 0.1.0 to 0.3.0`). Neither writes anything while an
+upgrade is pending: doctor's repairs (`--fix`, `--rebuild-index`,
+`--repair-relationships`) are skipped and say why.
+
+### From the terminal: `loctt migrate`
+
+```bash
+loctt migrate
+```
+
+It shows what it will do, then asks:
+
+```
+This tracker needs upgrading from 0.1.0 to 0.3.0.
+
+Steps:
+  1. 0.1.0 → 0.3.0  Save the order of every task's links
+     Each task's links keep the order they are shown in today, and that order is saved so you can rearrange them. …
+
+Before any step runs, .loctt/ is copied to a backup beside it:
+  /path/to/.loctt.backup-v0.1.0-<date and time>
+
+Upgrade this tracker now? [y/N]
+```
+
+- `loctt migrate --dry-run` shows the same preview and changes nothing.
+- `loctt migrate --yes` skips the question, for scripts. Without a
+  terminal and without `--yes`, it refuses (exit 2) and names the flag.
+- A step that could reshape data in a way you should look at first is
+  tagged `[risky]` in the preview. It is upgraded the same way.
+
+### In the web UI: the Upgrade button
+
+`loctt ui` on an older tracker shows one screen and nothing else: the
+versions, "A backup is made first.", the steps (under **What changes**),
+and an **Upgrade** button. It backs up, upgrades and reloads the app. If
+an upgrade stops part-way, the screen shows the backup to restore from.
+
+### From an agent: MCP
+
+Every tool returns the same message as the CLI. LocTT tells agents not to
+call `migrate_schema` unless you asked them to upgrade the tracker, but to
+tell you it needs upgrading and ask. When you agree, the agent previews
+the plan (`migrate_schema` without `confirm`), shows it to you, and then
+runs it (`confirm: true`). MCP `info` and `doctor` report the pending
+upgrade without writing.
+
+If two upgrades start at once (two terminals, or the web button and a
+terminal), the tracker is upgraded once; the other says it is already
+current, or that another process is upgrading it.
 
 ### The 0.1.0 → 0.3.0 upgrade
 
@@ -90,31 +131,10 @@ tasks list exactly as before. It also removes the `ranked:` lines from
 because every kind of link is now ordered. Task files change only in their
 `relationships`; `updated_at` and the task history are left alone.
 
-## Upgrades that need `loctt migrate`
-
-A step that could lose or reshape data in a way you should see first is
-marked risky, and is never run automatically. Every command then refuses
-and points you to:
-
-```bash
-loctt migrate
-```
-
-Preview first — this changes nothing on disk:
-
-```bash
-loctt migrate --dry-run
-```
-
-It prints your current version, the target version, and each step that
-would run (a risky step is tagged). A real `loctt migrate` then prompts
-before applying, unless you pass `--yes`. You can also run `loctt migrate`
-yourself for a safe upgrade, to see the plan before it happens.
-
 ## The safety model
 
 **An upgrade backs up your whole `.loctt/` before it changes anything**,
-automatic or not. The backup is a complete copy in a sibling directory
+from any surface. The backup is a complete copy in a sibling directory
 next to your tracker, named like `.loctt.backup-v0.1.0-<timestamp>-<id>/`.
 LocTT never deletes it; you remove it yourself once you've confirmed the
 upgrade is good.
@@ -127,8 +147,8 @@ run the `loctt` you had before. That is the rollback.
 is left partly upgraded and marked in-progress
 (`.loctt/.schema-migration-in-progress`, which names the backup), and every
 command refuses to run rather than guess at a half-applied state. Recover
-by restoring the backup directory over `.loctt/` and removing that file;
-the next command then upgrades the clean copy again.
+by restoring the backup directory over `.loctt/` and removing that file,
+then run `loctt migrate` again on the clean copy.
 
 So the discipline is simple: **let it back up, keep that backup until
 you're sure, and it is your undo.**
@@ -152,4 +172,5 @@ branch, and LocTT keeps the two sides from corrupting each other:
 
 The rule: **everyone on a shared tracker upgrades `loctt` on their own
 machine** (editing `.schema-version` from `1` to `0.1.0` first when coming
-from 0.2.x). The sync moves tasks, not format changes.
+from 0.2.x), and runs `loctt migrate` when the team agrees. The sync moves
+tasks, not format changes.

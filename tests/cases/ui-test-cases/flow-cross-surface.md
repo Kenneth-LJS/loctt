@@ -306,20 +306,24 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - The app shell and navigation still render; the banner is always visible. Every `/api/` request returns 409 while the mismatch stands (`server.ts` schema guard), so data views show an explained error rather than a spinner, an empty list, or partial content.
 
 ### XS-35 · M1 · blocker · P4 P7
-**Recorded version less than current: run `loctt migrate`.** Write a `.schema-version` below `CURRENT_SCHEMA_VERSION` and load the UI.
+**Recorded version less than current: the Upgrade screen, and nothing else.** Write a `.schema-version` below `CURRENT_SCHEMA_VERSION` and load the UI.
 
-- The banner shows the `outdated` kind and states both numbers.
-- Through M1–M3 the banner tells the user to run `loctt migrate` in the terminal, quoting the exact command — the M1.1 banner is read-only by design.
-- The command shown is copyable, and the message says a backup of `.loctt/` is taken automatically so the user knows the risk profile before running it.
-- The app shell and navigation still render under the banner; gating is enforced server-side, not by the client. Every `/api/` request returns 409 while the mismatch stands, so the UI never reads tasks against a schema it does not understand — and never silently shows partial data either.
+- The Upgrade screen shows the `outdated` kind and states both numbers.
+- The server's refusal (409, kind `outdated`) carries "This tracker needs upgrading from <from> to <to>. Run `loctt migrate` (a backup is made first)." and the `loctt migrate` command. The screen adapts it to its Upgrade button.
+- The screen says a backup is made first, so the user knows the risk profile before upgrading.
+- The shell does not render: the Upgrade screen replaces it (K154). Gating is still enforced server-side, not by the client. Every `/api/` request returns 409 while the mismatch stands, so the UI never reads tasks against a schema it does not understand — and never silently shows partial data either.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). Nothing works until the tracker is upgraded, so the shell no longer renders under a banner, and no request upgrades it on its own.
 
 ### XS-36 · M4 · blocker · P4 P7
-**The M4 "Migrate now" button runs the real migration and clears the banner.** With an `outdated` schema in M4, click Migrate now.
+**The Upgrade button runs the real migration and reloads the app.** With an `outdated` schema, click Upgrade.
 
 - The button calls `POST /api/migrate` (core `migrateToCurrent`), shows a busy state, and is not double-clickable.
-- Before running, the UI states what will happen: a backup copy of `.loctt/` is written to a sibling directory and the schema is stepped up to the current version.
-- On success the banner clears, `schema_status` reports `current`, and `loctt schema` / `loctt info` agree from the terminal.
+- Before running, the screen states what will happen: the versions, that a backup is made first, and the steps in plain words.
+- On success the app reloads into the shell, `schema_status` reports `current`, and `loctt info` agrees from the terminal.
 - On failure the message names the step that failed and the backup directory path, and tells the user the tracker was left mid-migration and needs investigation — it does not offer "try again" as the only option.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). The two-step Migrate now / Run migration control became one Upgrade button on the Upgrade screen, which reloads on success.
 
 ### XS-37 · M1 · blocker · P4 P5 P7
 **The `.schema-migration-in-progress` sentinel blocks every boot and must not be one-click "fixed".** Create the sentinel file and load the UI.

@@ -193,10 +193,11 @@ value, a doctor check carrying it as `fix`, a CLI flag, an MCP `doctor`
 option and a Diagnostics button (`POST /api/doctor/repair`), and runs
 **before** the checks so the report shows what is left. Exit code is 1 if any check is `error`; warnings exit 0.
 
-Doctor is exempt from the schema boot-guard, so it can report a version
-mismatch when every other command refuses to run. It does not run the
-automatic upgrade either (K143): for an older tracker it says the next
-command upgrades it. `.schema-version` itself is object-fatal for the
+Doctor is exempt from the schema boot-guard (CLI and MCP), so it can
+report a version mismatch when every other command refuses to run. It
+never writes to a tracker whose schema is not current (K154): for an
+older tracker it says it needs upgrading and to run `loctt migrate`, and
+every requested repair is skipped, saying why. `.schema-version` itself is object-fatal for the
 whole tracker, never guessed at: a value that is not a format version
 (including 0.2.x's `1`) or an empty file is refused with what the file
 must hold (`readSchemaVersion`), newer is refused naming the release, and

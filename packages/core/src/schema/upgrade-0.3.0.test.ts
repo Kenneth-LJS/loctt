@@ -1,7 +1,13 @@
 /**
- * The first real format upgrade, 0.1.0 → 0.3.0 (K142, K143), on the
- * frozen 0.1.0 seed (`tests/fixtures/trackers/seed-0.1.0`), and the
- * automatic-upgrade machinery around it (`upgradeIfSafe`).
+ * The first real format upgrade, 0.1.0 → 0.3.0 (K142), on the frozen
+ * 0.1.0 seed (`tests/fixtures/trackers/seed-0.1.0`), and the guard
+ * around it. Upgrades are intentional (K154): the guard
+ * (`requireSupportedSchema`) refuses an older tracker and never writes;
+ * only `migrateToCurrent` (behind `loctt migrate`, `migrate_schema` and
+ * the web Upgrade button) upgrades.
+ *
+ * Rewritten for K154: this file asserted K143's automatic upgrade
+ * (`upgradeIfSafe` upgrading on first open), the superseded rule.
  *
  * The expected order is computed here from the raw files with the 0.1.0
  * rule written out independently (A357's rule before K143: a kind set
@@ -10,6 +16,7 @@
  * for itself.
  *
  * @verifies ONB-C12
+ * @verifies ONB-C20
  * @verifies ONB-C13
  * @verifies ONB-C14
  * @verifies ONB-C16
@@ -25,9 +32,9 @@ import { parse as parseYaml } from "yaml";
 
 import { runDoctor } from "../diagnostics/doctor.js";
 import { getSchemaMigrationInProgressPath } from "../paths/index.js";
-import { requireSupportedSchema, upgradeIfSafe, upgradeNotice } from "./migrate.js";
+import { migrateToCurrent, planMigration, requireSupportedSchema } from "./migrate.js";
 import { rankEveryLink } from "./steps/rank-every-link.js";
-import { SchemaUnmigratableError } from "./version.js";
+import { SchemaUnmigratableError, SchemaUpgradeRequiredError } from "./version.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FROZEN = resolve(here, "../../../../tests/fixtures/trackers/seed-0.1.0/.loctt");
@@ -119,7 +126,81 @@ async function backups(): Promise<string[]> {
   return (await readdir(root)).filter(n => n.startsWith(".loctt.backup-v0.1.0-"));
 }
 
-describe("0.1.0 → 0.3.0 on the frozen seed", () => {
+describe("the guard on an older tracker (K154)", () => {
+  it("refuses with the upgrade message and writes nothing, no backup either", async () => {
+    const original = await snapshot(locttDir);
+    const err = await requireSupportedSchema(locttDir).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SchemaUpgradeRequiredError);
+    expect((err as Error).message).toBe(
+      "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+    );
+    expect(await snapshot(locttDir)).toEqual(original);
+    expect(await backups()).toEqual([]);
+  });
+
+  it("refuses the same way when a step is risky: risk changes the preview, not the trigger", async () => {
+    vi.doMock("./migrations.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("./migrations.js")>();
+      return {
+        ...actual,
+        findMigrationPath: (from: string, to: string) => (from === to ? [] : [{
+          from: "0.1.0", to: "0.3.0", description: "rewrite everything", risky: true, apply: () => Promise.resolve(),
+        }]),
+      };
+    });
+    vi.resetModules();
+    const fresh = await import("./migrate.js");
+    await expect(fresh.requireSupportedSchema(locttDir)).rejects.toThrow(
+      "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+    );
+    const plan = await fresh.planMigration(locttDir);
+    expect(plan.steps.map(st => st.risky)).toEqual([true]);
+    expect(await backups()).toEqual([]);
+    vi.doUnmock("./migrations.js");
+  });
+
+  it("says another process is upgrading it, not that it crashed, while that upgrade holds the lock", async () => {
+    const { withMigrationLock } = await import("./lock.js");
+    const { writeFile } = await import("node:fs/promises");
+    await withMigrationLock(locttDir, async () => {
+      // Before the first step's sentinel, then with it: neither is a crash.
+      await expect(requireSupportedSchema(locttDir)).rejects.toThrow("This tracker is being upgraded by another loctt process.");
+      await writeFile(getSchemaMigrationInProgressPath(locttDir), "from: 0.1.0\nto: 0.3.0\nbackup: x\n", "utf-8");
+      await expect(requireSupportedSchema(locttDir)).rejects.toThrow("This tracker is being upgraded by another loctt process.");
+    });
+    // The lock gone and the sentinel left: that one is a crash.
+    await expect(requireSupportedSchema(locttDir)).rejects.toThrow(/interrupted mid-run/);
+  });
+});
+
+describe("doctor and info on an older tracker (K154: read-only)", () => {
+  it("doctor reports the upgrade, skips every requested repair saying why, and writes nothing", async () => {
+    const original = await snapshot(locttDir);
+    const checks = await runDoctor(root, { fix: true, rebuildIndex: true, repairRelationships: true });
+    const byName = new Map(checks.map(c => [c.name, c]));
+    expect(byName.get("schema version")).toEqual({
+      name: "schema version",
+      status: "error",
+      message: "needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a backup is made first)",
+    });
+    expect(byName.get("repairs")?.message).toBe(
+      "skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again",
+    );
+    expect(checks.some(c => c.name === "key index rebuild" || c.name === "relationship repair")).toBe(false);
+    expect(await snapshot(locttDir)).toEqual(original);
+    expect(await backups()).toEqual([]);
+  });
+
+  it("info reports the upgrade as outdated and writes nothing", async () => {
+    const original = await snapshot(locttDir);
+    const { getTrackerInfo } = await import("../diagnostics/info.js");
+    const info = await getTrackerInfo(root);
+    expect(info.schemaStatus).toEqual({ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" });
+    expect(await snapshot(locttDir)).toEqual(original);
+  });
+});
+
+describe("0.1.0 → 0.3.0 on the frozen seed (migrateToCurrent)", () => {
   it("ranks every link in the order 0.1.0 showed it, backs up first, and leaves doctor clean", async () => {
     const before = await shownOrder010(locttDir);
     const original = await snapshot(locttDir);
@@ -131,16 +212,14 @@ describe("0.1.0 → 0.3.0 on the frozen seed", () => {
     }
     expect([...before].some(([k, v]) => JSON.stringify(stored.get(k)) !== JSON.stringify(v))).toBe(true);
 
-    const result = await upgradeIfSafe(locttDir);
-    expect(result?.from).toBe("0.1.0");
-    expect(result?.to).toBe("0.3.0");
-    expect(upgradeNotice(result!)).toBe(
-      `Upgraded this tracker from 0.1.0 to 0.3.0 (backup: ${result?.backupPath ?? ""}).`,
-    );
+    const result = await migrateToCurrent(locttDir);
+    expect(result.from).toBe("0.1.0");
+    expect(result.to).toBe("0.3.0");
+    expect(result.steps.map(st => st.changes)).toEqual([expect.stringMatching(/keep the order they are shown in today/)]);
 
     // The backup is the tracker as it was, byte for byte.
     expect(await backups()).toHaveLength(1);
-    expect(await snapshot(result?.backupPath ?? "")).toEqual(original);
+    expect(await snapshot(result.backupPath ?? "")).toEqual(original);
 
     // Every link has a rank, and each group lists as it was shown.
     for (const edges of (await edgesByTask(locttDir)).values()) {
@@ -150,58 +229,29 @@ describe("0.1.0 → 0.3.0 on the frozen seed", () => {
 
     expect((await readFile(join(locttDir, ".schema-version"), "utf-8")).trim()).toBe("0.3.0");
     expect(await readFile(join(locttDir, "config", "workflow.yaml"), "utf-8")).not.toMatch(/ranked:/);
+    await expect(requireSupportedSchema(locttDir)).resolves.toBeUndefined();
     // The seed's baseline finding (the key index is not checked in) is
     // the only one left.
     const findings = (await runDoctor(root)).filter(c => c.status !== "ok");
     expect(findings.map(c => c.name)).toEqual(["key index"]);
   });
 
-  it("changes nothing the second time, through the guard or the step itself", async () => {
-    await upgradeIfSafe(locttDir);
+  it("changes nothing the second time, through migrate or the step itself", async () => {
+    await migrateToCurrent(locttDir);
     const after = await snapshot(locttDir);
 
-    expect(await upgradeIfSafe(locttDir)).toBeNull();
+    expect((await migrateToCurrent(locttDir)).steps).toEqual([]);
     await rankEveryLink(locttDir);
     expect(await snapshot(locttDir)).toEqual(after);
     expect(await backups()).toHaveLength(1);
   });
 
-  it("upgrades once when two opens race, and the other finds it current", async () => {
-    const results = await Promise.all([upgradeIfSafe(locttDir), upgradeIfSafe(locttDir), upgradeIfSafe(locttDir)]);
-    expect(results.filter(r => r !== null)).toHaveLength(1);
+  it("upgrades once when two upgrades race, and the others find it current", async () => {
+    const results = await Promise.all([migrateToCurrent(locttDir), migrateToCurrent(locttDir), migrateToCurrent(locttDir)]);
+    expect(results.filter(r => r.steps.length > 0)).toHaveLength(1);
     expect(await backups()).toHaveLength(1);
     await expect(requireSupportedSchema(locttDir)).resolves.toBeUndefined();
   });
-});
-
-describe("an open while another process is mid-upgrade", () => {
-  // The step outlasts the migration lock's own retries (about 2.5s), so
-  // the second open has to wait for the first rather than fail on the
-  // lock or read the first's live sentinel as a crash.
-  it("waits for it, runs no step itself, and finds the tracker current", async () => {
-    let runs = 0;
-    vi.doMock("./migrations.js", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("./migrations.js")>();
-      return {
-        ...actual,
-        findMigrationPath: (from: string, to: string) => (from === to ? [] : [{
-          from: "0.1.0", to: "0.3.0", description: "slow",
-          apply: async () => { runs += 1; await new Promise(r => { setTimeout(r, 4000); }); },
-        }]),
-      };
-    });
-    vi.resetModules();
-    const { upgradeIfSafe: open } = await import("./migrate.js");
-    const first = open(locttDir);
-    await new Promise(r => { setTimeout(r, 300); });
-    const second = open(locttDir);
-    const [a, b] = await Promise.all([first, second]);
-    expect(runs).toBe(1);
-    expect(a?.to).toBe("0.3.0");
-    expect(b).toBeNull();
-    expect(await backups()).toHaveLength(1);
-    vi.doUnmock("./migrations.js");
-  }, 20_000);
 });
 
 describe("a crash part-way through the upgrade", () => {
@@ -221,7 +271,7 @@ describe("a crash part-way through the upgrade", () => {
       };
     });
     vi.resetModules();
-    const { upgradeIfSafe: upgradeWithCrash } = await import("./migrate.js");
+    const { migrateToCurrent: upgradeWithCrash } = await import("./migrate.js");
 
     await expect(upgradeWithCrash(locttDir)).rejects.toThrow("disk went away");
 
@@ -235,14 +285,15 @@ describe("a crash part-way through the upgrade", () => {
     vi.doUnmock("../task/io.js");
     vi.resetModules();
     const fresh = await import("./migrate.js");
-    const err = await fresh.upgradeIfSafe(locttDir).catch((e: unknown) => e);
+    const err = await fresh.requireSupportedSchema(locttDir).catch((e: unknown) => e);
     expect(err).toBeInstanceOf((await import("./version.js")).SchemaUnmigratableError);
     expect((err as Error).message).toMatch(/interrupted mid-run/);
     expect((err as SchemaUnmigratableError).remedy).toMatch(/Restore from the backup named in/);
+    await expect(fresh.migrateToCurrent(locttDir)).rejects.toThrow(/interrupted mid-run/);
   });
 });
 
-describe("what upgradeIfSafe refuses", () => {
+describe("what the guard refuses, writing nothing", () => {
   const write = async (content: string): Promise<void> => {
     const { writeFile } = await import("node:fs/promises");
     await writeFile(join(locttDir, ".schema-version"), content, "utf-8");
@@ -250,7 +301,7 @@ describe("what upgradeIfSafe refuses", () => {
 
   it("a tracker newer than the code, naming the release to install", async () => {
     await write("9.9.9\n");
-    await expect(upgradeIfSafe(locttDir)).rejects.toThrow("This tracker needs loctt 9.9.9 or newer.");
+    await expect(requireSupportedSchema(locttDir)).rejects.toThrow("This tracker needs loctt 9.9.9 or newer.");
   });
 
   it.each([
@@ -260,24 +311,12 @@ describe("what upgradeIfSafe refuses", () => {
   ])("%j, saying what the file must hold", async (content, message) => {
     await write(content);
     const original = await snapshot(locttDir);
-    await expect(upgradeIfSafe(locttDir)).rejects.toThrow(message);
+    const err = await requireSupportedSchema(locttDir).catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(message);
+    // The remedy names `loctt migrate` as the step after writing the file.
+    expect((err as SchemaUnmigratableError).remedy).toMatch(/write 0\.1\.0\. Then run 'loctt migrate'/);
     expect(await snapshot(locttDir)).toEqual(original);
     expect(await backups()).toEqual([]);
-  });
-
-  it("a path with a risky step, which waits for `loctt migrate`", async () => {
-    vi.doMock("./migrations.js", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("./migrations.js")>();
-      return {
-        ...actual,
-        findMigrationPath: () => [{ from: "0.1.0", to: "0.3.0", description: "rewrite everything", risky: true, apply: () => Promise.resolve() }],
-      };
-    });
-    vi.resetModules();
-    const { upgradeIfSafe: guarded } = await import("./migrate.js");
-    await expect(guarded(locttDir)).rejects.toThrow(/needs your go-ahead \(rewrite everything\)\. Run `loctt migrate`/);
-    expect(await backups()).toEqual([]);
-    vi.doUnmock("./migrations.js");
   });
 });
 
@@ -293,10 +332,10 @@ describe("a recorded version between known formats (M1)", () => {
     await write(`${recorded}\n`);
     const before = await shownOrder010(locttDir);
 
-    const result = await upgradeIfSafe(locttDir);
-    expect(result?.from).toBe(recorded);
-    expect(result?.to).toBe("0.3.0");
-    expect(result?.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0"]);
+    const result = await migrateToCurrent(locttDir);
+    expect(result.from).toBe(recorded);
+    expect(result.to).toBe("0.3.0");
+    expect(result.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0"]);
     expect((await readdir(root)).filter(n => n.startsWith(`.loctt.backup-v${recorded}-`))).toHaveLength(1);
 
     for (const edges of (await edgesByTask(locttDir)).values()) {
@@ -304,30 +343,27 @@ describe("a recorded version between known formats (M1)", () => {
     }
     expect(await listedOrder030(locttDir)).toEqual(before);
     expect((await readFile(join(locttDir, ".schema-version"), "utf-8")).trim()).toBe("0.3.0");
-    expect(await upgradeIfSafe(locttDir)).toBeNull();
+    await expect(requireSupportedSchema(locttDir)).resolves.toBeUndefined();
   });
 
-  it("planMigration and the strict guard read 0.2.1 as format 0.1.0", async () => {
+  it("planMigration and the guard read 0.2.1 as format 0.1.0, naming 0.2.1 as written", async () => {
     await write("0.2.1\n");
-    const { planMigration } = await import("./migrate.js");
     const plan = await planMigration(locttDir);
     expect(plan.from).toBe("0.2.1");
     expect(plan.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0"]);
     await expect(requireSupportedSchema(locttDir)).rejects.toThrow(
-      "This tracker's format is 0.2.1. This build reads 0.3.0. Run `loctt migrate` to upgrade.",
+      "This tracker needs upgrading from 0.2.1 to 0.3.0. Run `loctt migrate` (a backup is made first).",
     );
   });
 
   it("0.0.9 is below every format: refused, not offered `loctt migrate`, and nothing written", async () => {
     await write("0.0.9\n");
     const original = await snapshot(locttDir);
-    const err = await upgradeIfSafe(locttDir).catch((e: unknown) => e);
+    const err = await requireSupportedSchema(locttDir).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SchemaUnmigratableError);
     expect((err as Error).message).toBe(".schema-version holds 0.0.9, which is not a LocTT format. The first format is 0.1.0.");
     expect((err as SchemaUnmigratableError).remedy).toMatch(/^Put the tracker's format version in \.schema-version: 0\.1\.0 /);
-    expect((err as SchemaUnmigratableError).remedy).not.toMatch(/loctt (migrate|init)/);
     expect(await snapshot(locttDir)).toEqual(original);
-    const { planMigration, migrateToCurrent } = await import("./migrate.js");
     await expect(planMigration(locttDir)).rejects.toMatchObject({ name: "SchemaUnmigratableError" });
     await expect(migrateToCurrent(locttDir)).rejects.toMatchObject({ name: "SchemaUnmigratableError" });
   });
@@ -337,7 +373,7 @@ describe("a recorded version between known formats (M1)", () => {
   // 0.3.1 (A366 call 1).
   it("0.3.1 is above this build's format: refused, naming the release", async () => {
     await write("0.3.1\n");
-    await expect(upgradeIfSafe(locttDir)).rejects.toThrow("This tracker needs loctt 0.3.1 or newer.");
+    await expect(requireSupportedSchema(locttDir)).rejects.toThrow("This tracker needs loctt 0.3.1 or newer.");
   });
 });
 

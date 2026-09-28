@@ -189,7 +189,7 @@ export { formatIfZodError } from "./config/zod-error.js";
 export type { SchemaStatus, TrackerInfo } from "./diagnostics/index.js";
 export type { CheckStatus, DiagnosticCheck, DiagnosticFix, DoctorOptions } from "./diagnostics/index.js";
 export type { IntegrityFinding, IntegritySeverity, IntegritySummary } from "./diagnostics/index.js";
-export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
+export { computeSchemaStatus, describeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
 export { blockingFindings, checkDataIntegrity, computeIntegritySummary, describeRelationshipRepair, runDoctor, runDoctorStream, SAFE_FIXES } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
@@ -397,9 +397,9 @@ export {
   requireSupportedSchema,
   SchemaTooNewError,
   SchemaUnmigratableError,
+  SchemaUpgradeRequiredError,
   SchemaVersionError,
-  upgradeIfSafe,
-  upgradeNotice,
+  upgradeRequiredMessage,
   withMigrationLock,
   writeSchemaVersion,
 } from "./schema/index.js";

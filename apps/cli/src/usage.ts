@@ -149,7 +149,7 @@ Commands:
   git <enable|disable|status|publish|sync|reconcile>
   config <get|set|unset|list> [key] [value]
   config usage                     Count tasks referencing each workflow key
-  migrate [--yes] [--dry-run]      Upgrade the tracker schema to the current version
+  migrate [--yes] [--dry-run]      Upgrade the tracker's format: preview, then confirm
   backup <file> [--no-history]     Write a whole-tracker JSONL backup
   restore <file...>                Restore a backup. Bare refuses a non-empty tracker;
     [--merge | --overwrite]        --merge adds only absent ids, --overwrite replaces

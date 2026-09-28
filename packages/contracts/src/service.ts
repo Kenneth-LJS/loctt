@@ -353,19 +353,6 @@ export interface TrackerInfoResponse {
     readonly renamed: number;
   };
   /**
-   * An automatic format upgrade this server ran on first use (K143):
-   * the tracker was at `from`, a non-risky upgrade brought it to `to`,
-   * and `.loctt/` was backed up to `backup` first. `line` is the one
-   * sentence every surface prints ("Upgraded this tracker from 0.1.0 to
-   * 0.3.0 (backup: …)."). A notice, not a prompt: nothing is left to do.
-   */
-  readonly completedUpgrade?: {
-    readonly from: string;
-    readonly to: string;
-    readonly backup?: string;
-    readonly line: string;
-  };
-  /**
    * Display-only label for the workspace the server is serving, shown
    * in the sidebar footer so the user can see which tracker they're
    * looking at. Deliberately NOT a raw absolute path: paths under the
@@ -543,6 +530,8 @@ export interface MigrationStepResponse {
   readonly description: string;
   /** True when the step is non-trivially destructive. */
   readonly risky?: boolean;
+  /** What the step changes, in plain words, for the preview (K154). */
+  readonly changes?: string;
 }
 
 /**

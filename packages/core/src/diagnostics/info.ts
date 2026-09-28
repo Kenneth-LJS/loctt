@@ -6,7 +6,7 @@ import { loadQueriesConfig } from "../config/queries.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { isEmptyTracker, missingCoreFiles } from "../init/core-files.js";
 import { getSchemaMigrationInProgressPath, resolveLocttDir } from "../paths/index.js";
-import { compareFormatVersions, CURRENT_SCHEMA_VERSION, isFormatVersion, readSchemaVersion } from "../schema/index.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION, isFormatVersion, readSchemaVersion, upgradeRequiredMessage } from "../schema/index.js";
 import { formatForRecordedVersion } from "../schema/migrations.js";
 import { loadState } from "../state/state.js";
 import { listTaskIds } from "../task/list-ids.js";
@@ -175,6 +175,40 @@ export async function computeSchemaStatus(locttDir: string): Promise<SchemaStatu
   }
   if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) === 0) return { kind: "current", version: onDisk };
   return { kind: "outdated", on_disk: onDisk, current: CURRENT_SCHEMA_VERSION };
+}
+
+/**
+ * One line for each schema state, shared by CLI `loctt info` and MCP
+ * `info` so the two describe one condition the same way. An older
+ * tracker gets K154's sentence: the same one every refusal carries.
+ */
+export function describeSchemaStatus(status: SchemaStatus): string {
+  switch (status.kind) {
+    case "current":
+      return `${status.version} (current)`;
+    case "outdated":
+      return upgradeRequiredMessage(status.on_disk, status.current)
+        .replace(/^This tracker needs/, "needs")
+        .replace(/\.$/, "");
+    case "future":
+      return `${status.on_disk}, this build reads ${status.current}`
+        + `. This tracker needs loctt ${status.on_disk} or newer`;
+    case "missing":
+      return `not recorded. This tracker predates schema versioning`;
+    case "interrupted": {
+      // The backup path is the recovery, so it leads. Everything else
+      // here is context for it.
+      const versions = status.from !== undefined && status.to !== undefined
+        ? ` (${status.from} → ${status.to})`
+        : "";
+      const backup = status.backup !== undefined
+        ? ` Restore from ${status.backup}, remove ${status.sentinel_path}, then re-run.`
+        : ` The sentinel at ${status.sentinel_path} names the backup to restore from.`;
+      return `a migration${versions} was interrupted and did not finish.${backup}`;
+    }
+    case "unknown":
+      return `unreadable: ${status.message}`;
+  }
 }
 
 /**

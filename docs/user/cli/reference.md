@@ -32,20 +32,19 @@ repeats these tables.
   stack traces.
 - **Format versions and upgrades.** `.loctt/.schema-version` holds the
   tracker's format version, the `loctt` release that introduced it
-  (`0.3.0`). A tracker in an older format whose upgrade has no risky step
-  is upgraded by the first command that opens it: `.loctt/` is backed up
-  first and one line goes to stderr, `Upgraded this tracker from 0.1.0 to
-  0.3.0 (backup: <path>).`, then the command runs. A risky step is not run
-  automatically; commands refuse and point you to `loctt migrate`. A
-  tracker in a newer format is refused with `This tracker needs loctt
-  <version> or newer.`; a file holding anything but a format version
-  (including 0.2.x's `1`) is refused, saying what it must hold. A
-  version between two formats stands for the older one (`0.2.1` is format
-  `0.1.0` and is upgraded like it); one below `0.1.0` is not a LocTT
-  format and is refused. `init`,
-  `migrate`, `doctor`, `info`, `mcp`, `ui`, `help` and `--version` do not
-  upgrade (`mcp` and `ui` upgrade on their first request). See
-  [Upgrading](../common/upgrading.md).
+  (`0.3.0`). Upgrading a tracker is always deliberate: on a tracker in an
+  older format every command refuses with `This tracker needs upgrading
+  from 0.1.0 to 0.3.0. Run \`loctt migrate\` (a backup is made first).`
+  (exit 1) and writes nothing, whether or not a step is risky, until you
+  run `loctt migrate`. A tracker in a newer format is refused with `This
+  tracker needs loctt <version> or newer.`; a file holding anything but a
+  format version (including 0.2.x's `1`) is refused, saying what it must
+  hold. A version between two formats stands for the older one (`0.2.1`
+  is format `0.1.0` and is upgraded like it); one below `0.1.0` is not a
+  LocTT format and is refused. `init`, `migrate`, `doctor`, `info`,
+  `help` and `--version` are not refused (`doctor` and `info` report the
+  pending upgrade and write nothing); `mcp` and `ui` start and refuse
+  each request the same way. See [Upgrading](../common/upgrading.md).
 - **Names and IDs.** Wherever a command takes a label, user, milestone,
   sprint or project, it takes its name or its ID, and so does
   `--query` (`labels = urgent`). A value shaped like an ID
@@ -1113,7 +1112,7 @@ loctt restore tracker-backup.jsonl --dry-run
 | `info` | `loctt info` | A prose summary of the tracker. Safe to run before `init`. |
 | `doctor` | `loctt doctor [--rebuild-index] [--repair-relationships] [--fix]` | Run diagnostic checks. `--rebuild-index` rebuilds the key-lookup cache after out-of-band edits. `--repair-relationships` repairs links (below). `--fix` runs every safe repair, then reports what is left. |
 | `schema` | `loctt schema` | Print the workflow config: prefix, statuses, priorities, types, relationships, custom fields. |
-| `migrate` | `loctt migrate [--dry-run] [--yes]` | Upgrade the tracker's format. Backs up `.loctt/` first. Needed for a risky step; a safe upgrade also runs on its own on first use. Prints `This tracker is already at format 0.3.0. Nothing to do.` when current. |
+| `migrate` | `loctt migrate [--dry-run] [--yes]` | Upgrade the tracker's format, the only way it is upgraded from the terminal. Shows a preview (from → to, each step and what it changes, `[risky]` on a risky step, where the backup goes), then asks `Upgrade this tracker now? [y/N]`. Backs up `.loctt/` first. `--dry-run` shows the preview only. `--yes` skips the question; without a terminal and without `--yes` it refuses naming the flag (exit 2). Prints `This tracker is already at format 0.3.0. Nothing to do.` when current. |
 
 ```bash
 loctt doctor
@@ -1127,9 +1126,13 @@ loctt doctor
 `doctor` exits `1` if any check is an error; warnings leave the exit code
 at `0`.
 
-`doctor` does not upgrade an older tracker; its `schema version` check
-says so (`on disk 0.1.0, this build reads 0.3.0. The next command that
-opens it upgrades it (with a backup), or run loctt migrate`). A `ranked:`
+`doctor` never writes to an older tracker; its `schema version` check
+says so (`needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a
+backup is made first)`), and any repair you ask for (`--fix`,
+`--rebuild-index`, `--repair-relationships`) is skipped with `skipped.
+This tracker needs upgrading first. Run loctt migrate, then run the
+repair again`. `info` prints `Schema: needs upgrading from 0.1.0 to
+0.3.0. Run \`loctt migrate\` (a backup is made first)`. A `ranked:`
 line left on a relationship in `workflow.yaml` is reported as a warning
 (`workflow.yaml retired settings`): it no longer does anything and can be
 removed.

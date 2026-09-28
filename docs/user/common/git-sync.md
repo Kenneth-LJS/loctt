@@ -96,7 +96,8 @@ Per file, sync:
   is no rule for it
 
 `.schema-version` is never taken from the branch. Format upgrades happen
-on each machine (automatically, or through `loctt migrate`), so a machine
+on each machine, when its user runs `loctt migrate` (or the web Upgrade
+button), so a machine
 running a newer LocTT cannot push a version bump onto one running an older
 release. A branch whose `.schema-version` is newer than this `loctt`
 reads, or is not a format version at all (the old `1` included), is

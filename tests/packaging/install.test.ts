@@ -12,7 +12,8 @@
  *   workspace registers, and reading the tracker the CLI made;
  * - the version-skew guard: a tracker from a newer LocTT is refused by
  *   the CLI and by `loctt mcp`, naming the release to install;
- * - the automatic upgrade: a 0.1.0 tracker is upgraded on first use.
+ * - intentional upgrades (K154): a 0.1.0 tracker is refused, then
+ *   upgraded by `loctt migrate --yes`.
  *
  * Before A352, `loctt ui` from an installed CLI answered `/` with a 404
  * because the CLI shipped no client. Inside the monorepo it passed.
@@ -24,7 +25,7 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import { cp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -219,15 +220,30 @@ describe("the published `loctt` package installs and runs on its own (RR-B4)", (
   }, 60_000);
 
   // @verifies ONB-C19
-  it("upgrades a 0.1.0 tracker on first use, printing the line, and runs the command (K143)", async () => {
+  // K154 (rewritten: this asserted K143's automatic upgrade on first use,
+  // the superseded rule).
+  it("refuses a 0.1.0 tracker, writing nothing, until `loctt migrate --yes` upgrades it", async () => {
     const old = await outsideTmp("loctt-pack-old-");
     cleanup.push(old);
     await cp(FROZEN_SEED, path.join(old, ".loctt"), { recursive: true });
+    const versionOf = async (): Promise<string> =>
+      (await readFile(path.join(old, ".loctt", ".schema-version"), "utf8")).trim();
+
+    const refused = await run(cliBin(), ["list", "--limit", "1"], old);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+    );
+    expect(await versionOf()).toBe("0.1.0");
+    expect((await readdir(old)).filter(n => n.startsWith(".loctt.backup-"))).toEqual([]);
+
+    const migrate = await run(cliBin(), ["migrate", "--yes"], old);
+    expect(migrate.code, migrate.stderr).toBe(0);
+    expect(migrate.stdout).toContain("Upgraded this tracker from 0.1.0 to 0.3.0.");
+    expect(await versionOf()).toBe("0.3.0");
+    expect((await readdir(old)).filter(n => n.startsWith(".loctt.backup-v0.1.0-"))).toHaveLength(1);
+
     const list = await run(cliBin(), ["list", "--limit", "1"], old);
     expect(list.code, list.stderr).toBe(0);
-    expect(list.stderr).toMatch(/^Upgraded this tracker from 0\.1\.0 to 0\.3\.0 \(backup: .+\.loctt\.backup-v0\.1\.0-.+\)\.$/m);
-    expect((await readFile(path.join(old, ".loctt", ".schema-version"), "utf8")).trim()).toBe("0.3.0");
-    const again = await run(cliBin(), ["list", "--limit", "1"], old);
-    expect(again.stderr).not.toMatch(/Upgraded/);
   }, 60_000);
 });

@@ -1045,10 +1045,10 @@ in and never changed once published.
 | Empty file | `SchemaUnmigratableError`: "`.schema-version` is empty. It must hold a format version such as 0.3.0." |
 | Missing | Returns `null` (treated as legacy / fresh directory) |
 | Newer than `CURRENT_SCHEMA_VERSION` | `SchemaTooNewError`: "This tracker needs loctt <version> or newer." |
-| Older | Upgraded on first use when every step is non-risky (`upgradeIfSafe`, K143); otherwise refused, pointing at `loctt migrate` |
+| Older | `SchemaUpgradeRequiredError`: "This tracker needs upgrading from X to Y. Run `loctt migrate` (a backup is made first)." on every surface, nothing written, risky step or not (K154). Upgraded only by `loctt migrate`, MCP `migrate_schema` or the web Upgrade button |
 
 Upgrade steps (`packages/core/src/schema/migrations.ts`) are keyed by
-semver `from`/`to`. The first is **0.1.0 → 0.3.0** (not risky,
+semver `from`/`to`. The first is **0.1.0 → 0.3.0** (not marked risky,
 `schema/steps/rank-every-link.ts`): every link gets a rank in the order
 0.1.0 showed it, each type's links are stored in that order, and the
 retired `ranked` keys are removed from `workflow.yaml`.

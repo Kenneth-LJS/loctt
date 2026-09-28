@@ -19,9 +19,10 @@
  *    before running any migrations and stamps `.schema-version`
  *    only after each step succeeds.
  *
- * A step that is not `risky` runs automatically the first time any
- * surface opens a tracker that needs it (K143, `upgradeIfSafe`); a
- * risky step waits for `loctt migrate`.
+ * No step runs on its own (K154): every surface refuses an older
+ * tracker until the user upgrades it deliberately (`loctt migrate`, MCP
+ * `migrate_schema`, the web Upgrade button). `risky` only marks a step
+ * in the preview so the user sees it before confirming.
  */
 
 import { rankEveryLink } from "./steps/rank-every-link.js";
@@ -39,8 +40,14 @@ export interface Migration {
   readonly from: string;
   /** Target format version (semver), newer than `from`. */
   readonly to: string;
-  /** Short, human-readable summary shown in logs. */
+  /** Short, human-readable summary: one line in a preview. */
   readonly description: string;
+  /**
+   * What the step changes, in plain words, for the preview a user reads
+   * before confirming an upgrade (K154): `loctt migrate`, MCP
+   * `migrate_schema` and the web Upgrade banner all show it.
+   */
+  readonly changes?: string;
   /** Whether this migration is non-trivially destructive or risky. */
   readonly risky?: boolean;
   /**
@@ -59,7 +66,10 @@ const MIGRATIONS: readonly Migration[] = [
   {
     from: "0.1.0",
     to: "0.3.0",
-    description: "Give every link a rank, in the order it is shown today",
+    description: "Save the order of every task's links",
+    changes: "Each task's links keep the order they are shown in today, and that order is saved "
+      + "so you can rearrange them. Task files and workflow.yaml are rewritten. "
+      + "Titles, descriptions, dates and history don't change.",
     apply: rankEveryLink,
   },
 ];

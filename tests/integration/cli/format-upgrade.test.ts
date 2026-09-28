@@ -10,21 +10,30 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
 /**
  * Format versions through the real CLI binary and MCP server (K142,
- * K143): the automatic 0.1.0 → 0.3.0 upgrade on first use, the one line
- * each surface shows, the refusals, the crash sentinel, and two opens at
- * once. The upgrade's data correctness is tested in core
- * (`schema/upgrade-0.3.0.test.ts`) and in the runthrough.
+ * K154): an older tracker is refused on every surface with the upgrade
+ * message and nothing is written, until the user upgrades it on purpose
+ * (`loctt migrate`, which previews and asks). Also the refusals, the
+ * crash sentinel, and two upgrades at once. The upgrade's data
+ * correctness is tested in core (`schema/upgrade-0.3.0.test.ts`) and in
+ * the runthrough.
+ *
+ * Rewritten for K154: the first describe asserted K143's automatic
+ * upgrade on first use (the one line on stderr, the extra MCP content
+ * item), the superseded rule.
  *
  * @verifies ONB-C12
  * @verifies ONB-C13
  * @verifies ONB-C14
  * @verifies ONB-C16
+ * @verifies ONB-C20
+ * @verifies ONB-C21
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const FROZEN = path.join(repoRoot, "tests/fixtures/trackers/seed-0.1.0/.loctt");
 
-const LINE = /^Upgraded this tracker from 0\.1\.0 to 0\.3\.0 \(backup: (.+\.loctt\.backup-v0\.1\.0-[^)]+)\)\.$/m;
+const REFUSAL =
+  "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).";
 
 async function frozenSeed(root: string): Promise<void> {
   await cp(FROZEN, path.join(root, ".loctt"), { recursive: true });
@@ -36,22 +45,99 @@ const versionOf = async (root: string): Promise<string> =>
 const backupsIn = async (root: string): Promise<string[]> =>
   (await readdir(root)).filter(n => n.startsWith(".loctt.backup-v0.1.0-"));
 
-describe("automatic upgrade on first use", () => {
-  it("CLI: the first command upgrades, prints the line on stderr, and runs; the next says nothing", async () => {
+/** Every file under `root`, path → content: "nothing was written". */
+async function fingerprint(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const walk = async (d: string): Promise<void> => {
+    for (const e of await readdir(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) await walk(p);
+      else out.set(p.slice(root.length), await readFile(p, "utf8"));
+    }
+  };
+  await walk(root);
+  return out;
+}
+
+describe("an older tracker is refused until the user upgrades it (K154)", () => {
+  it("CLI: reads and writes are refused with the message, exit 1, nothing written", async () => {
     await withTmpLoctt(async ({ root }) => {
       await frozenSeed(root);
-      const first = await runCli(["list", "--limit", "1"], { cwd: root });
-      expect(first.exitCode, first.stderr).toBe(0);
-      const m = LINE.exec(first.stderr);
-      expect(m, first.stderr).not.toBeNull();
-      expect(first.stdout).not.toMatch(/Upgraded/);
+      const before = await fingerprint(root);
+      for (const args of [["list"], ["show", "WEB-9"], ["create", "New task"], ["set", "WEB-9", "priority", "high"]]) {
+        const res = await runCli(args, { cwd: root });
+        expect(res.exitCode, args.join(" ")).toBe(1);
+        expect(res.stderr, args.join(" ")).toContain(`Error: ${REFUSAL}`);
+        expect(res.stdout, args.join(" ")).toBe("");
+      }
+      expect(await fingerprint(root)).toEqual(before);
+    }, { init: false });
+  });
+
+  it("MCP: tools return the message, nothing written", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await frozenSeed(root);
+      const before = await fingerprint(root);
+      const client = await startMcpClient(root);
+      try {
+        for (const [tool, args] of [["list_tasks", {}], ["create_task", { title: "x" }], ["get_task", { ref: "WEB-9" }]] as const) {
+          const res = await client.callTool(tool, args);
+          expect(res.isError, tool).toBe(true);
+          expect(res.content.map(c => c.text), tool).toEqual([`Error: ${REFUSAL}`]);
+        }
+      } finally {
+        await client.close();
+      }
+      expect(await fingerprint(root)).toEqual(before);
+    }, { init: false });
+  });
+
+  it("doctor and info describe it and write nothing, even asked to repair", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await frozenSeed(root);
+      const before = await fingerprint(root);
+      const doctor = await runCli(["doctor", "--fix", "--rebuild-index"], { cwd: root });
+      expect(doctor.stdout).toContain(
+        "✗ schema version: needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a backup is made first)",
+      );
+      expect(doctor.stdout).toContain(
+        "✗ repairs: skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again",
+      );
+      expect(doctor.stdout).toContain("! workflow.yaml retired settings: 'ranked' on blocks, 'ranked' on parent no longer does anything");
+      const info = await runCli(["info"], { cwd: root });
+      expect(info.stdout).toContain("Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)");
+      expect(await fingerprint(root)).toEqual(before);
+    }, { init: false });
+  });
+
+  it("loctt migrate: previews, refuses without --yes off a terminal, --dry-run changes nothing, --yes upgrades", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await frozenSeed(root);
+      const before = await fingerprint(root);
+
+      const dry = await runCli(["migrate", "--dry-run"], { cwd: root });
+      expect(dry.exitCode, dry.stderr).toBe(0);
+      expect(dry.stdout).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+      expect(dry.stdout).toContain("1. 0.1.0 → 0.3.0  Save the order of every task's links");
+      expect(dry.stdout).toContain(".loctt.backup-v0.1.0-<date and time>");
+      expect(dry.stdout).toContain("Dry run. Nothing was changed.");
+
+      const noYes = await runCli(["migrate"], { cwd: root });
+      expect(noYes.exitCode).toBe(2);
+      expect(noYes.stderr).toContain("Pass --yes");
+      expect(await fingerprint(root)).toEqual(before);
+
+      const yes = await runCli(["migrate", "--yes"], { cwd: root });
+      expect(yes.exitCode, yes.stderr).toBe(0);
+      expect(yes.stdout).toContain("Upgraded this tracker from 0.1.0 to 0.3.0.");
+      const backup = /Backup written to (.+)/.exec(yes.stdout)?.[1] ?? "";
+      expect(await backupsIn(root)).toEqual([path.basename(backup)]);
+      expect((await readFile(path.join(backup, ".schema-version"), "utf8")).trim()).toBe("0.1.0");
       expect(await versionOf(root)).toBe("0.3.0");
-      expect(await backupsIn(root)).toEqual([path.basename(m?.[1] ?? "")]);
-      expect((await readFile(path.join(m?.[1] ?? "", ".schema-version"), "utf8")).trim()).toBe("0.1.0");
 
-      const second = await runCli(["list", "--limit", "1"], { cwd: root });
-      expect(second.stderr).not.toMatch(/Upgraded/);
-
+      const list = await runCli(["list", "--limit", "1"], { cwd: root });
+      expect(list.exitCode, list.stderr).toBe(0);
+      expect(list.stderr).toBe("");
       const doctor = await runCli(["doctor"], { cwd: root });
       expect(doctor.stdout.split("\n").filter(l => /^ {2}[!✗]/.test(l))).toEqual([
         "  ! key index: no index on disk. Will rebuild on next lookup",
@@ -59,50 +145,20 @@ describe("automatic upgrade on first use", () => {
     }, { init: false });
   });
 
-  it("MCP: the first tool call upgrades and carries the line after its own content", async () => {
-    await withTmpLoctt(async ({ root }) => {
-      await frozenSeed(root);
-      const client = await startMcpClient(root);
-      try {
-        const first = await client.callTool("list_tasks", { limit: 1 });
-        expect(first.isError).toBeFalsy();
-        const texts = first.content.map(c => c.text ?? "");
-        expect(texts[0]).not.toMatch(/Upgraded/);
-        expect(texts[texts.length - 1]).toMatch(LINE);
-        const second = await client.callTool("list_tasks", { limit: 1 });
-        expect(second.content.some(c => (c.text ?? "").startsWith("Upgraded"))).toBe(false);
-      } finally {
-        await client.close();
-      }
-      expect(await versionOf(root)).toBe("0.3.0");
-      expect(await backupsIn(root)).toHaveLength(1);
-    }, { init: false });
-  });
-
-  it("doctor and info describe an older tracker without upgrading it", async () => {
-    await withTmpLoctt(async ({ root }) => {
-      await frozenSeed(root);
-      const doctor = await runCli(["doctor"], { cwd: root });
-      expect(doctor.stdout).toContain(
-        "✗ schema version: on disk 0.1.0, this build reads 0.3.0. The next command that opens it upgrades it (with a backup), or run loctt migrate",
-      );
-      expect(doctor.stdout).toContain("! workflow.yaml retired settings: 'ranked' on blocks, 'ranked' on parent no longer does anything");
-      await runCli(["info"], { cwd: root });
-      expect(await versionOf(root)).toBe("0.1.0");
-      expect(await backupsIn(root)).toEqual([]);
-    }, { init: false });
-  });
-
-  it("two commands opening the tracker at once upgrade it once", async () => {
+  it("two `loctt migrate --yes` at once upgrade it once, and the other says why it did nothing", async () => {
     await withTmpLoctt(async ({ root }) => {
       await frozenSeed(root);
       const results = await Promise.all([
-        runCli(["list", "--limit", "1"], { cwd: root, timeout: 60_000 }),
-        runCli(["list", "--limit", "1"], { cwd: root, timeout: 60_000 }),
-        runCli(["show", "WEB-9"], { cwd: root, timeout: 60_000 }),
+        runCli(["migrate", "--yes"], { cwd: root, timeout: 60_000 }),
+        runCli(["migrate", "--yes"], { cwd: root, timeout: 60_000 }),
       ]);
-      for (const r of results) expect(r.exitCode, r.stderr).toBe(0);
-      expect(results.filter(r => LINE.test(r.stderr))).toHaveLength(1);
+      expect(results.filter(r => r.exitCode === 0 && r.stdout.includes("Upgraded this tracker from 0.1.0 to 0.3.0."))).toHaveLength(1);
+      // The other found it done, or found it mid-upgrade and said so
+      // (never "interrupted", never a second run).
+      const other = results.find(r => !r.stdout.includes("Upgraded this tracker"));
+      expect(`${other?.stdout ?? ""}${other?.stderr ?? ""}`).toMatch(
+        /already at format 0\.3\.0|being upgraded by another loctt process/,
+      );
       expect(await backupsIn(root)).toHaveLength(1);
       expect(await versionOf(root)).toBe("0.3.0");
     }, { init: false });

@@ -184,38 +184,60 @@ describe("the guard names which schema state it refused for", () => {
 
   /**
    * @verifies XS-35
+   * @verifies ONB-C13
+   * @verifies ONB-C20
    *
-   * `outdated` is reachable since 0.3.0 (a 0.1.0 tracker), and
-   * `computeSchemaStatus` reports it with both versions. The guard does
-   * not refuse it: the 0.1.0 → 0.3.0 step is not risky, so the first
-   * API request upgrades the tracker and `/api/info` carries the notice
-   * (K143). The banner's `outdated` copy is for a path with a risky
-   * step, and is covered where the banner is tested.
+   * K154 (rewritten: this asserted K143's automatic upgrade on the first
+   * API request and the `completedUpgrade` notice, the superseded rule).
+   * An older tracker is refused by every route, reads included, with
+   * kind `outdated`, both versions and the upgrade message, and nothing
+   * is written. Only `/api/migrate` (the banner's Upgrade button)
+   * upgrades it.
    */
-  it("reports `outdated` for 0.1.0, and the first request upgrades it and says so (K143)", async () => {
-    const { computeSchemaStatus } = await import("@loctt/core");
+  it("refuses every route on 0.1.0 as `outdated`, writes nothing, and only /api/migrate upgrades it", async () => {
+    const { readdir, readFile } = await import("node:fs/promises");
     const { root, base } = await harness();
     await writeFile(join(root, ".loctt/.schema-version"), "0.1.0\n", "utf8");
-    expect(await computeSchemaStatus(join(root, ".loctt"))).toEqual({
-      kind: "outdated", on_disk: "0.1.0", current: "0.3.0",
-    });
-
-    const res = await fetch(`${base}/api/info`);
-    expect(res.status).toBe(200);
-    const info = await res.json() as {
-      schemaStatus: { kind: string };
-      completedUpgrade?: { from: string; to: string; backup?: string; line: string };
+    const fingerprint = async (): Promise<Map<string, string>> => {
+      const out = new Map<string, string>();
+      const walk = async (d: string): Promise<void> => {
+        for (const e of await readdir(d, { withFileTypes: true })) {
+          const p = join(d, e.name);
+          if (e.isDirectory()) await walk(p);
+          else out.set(p.slice(root.length), await readFile(p, "utf8"));
+        }
+      };
+      await walk(root);
+      return out;
     };
-    expect(info.schemaStatus.kind).toBe("current");
-    expect(info.completedUpgrade?.from).toBe("0.1.0");
-    expect(info.completedUpgrade?.to).toBe("0.3.0");
-    expect(info.completedUpgrade?.line).toBe(
-      `Upgraded this tracker from 0.1.0 to 0.3.0 (backup: ${info.completedUpgrade?.backup ?? ""}).`,
-    );
-    // Held for the life of the server, like the rename notice, so a
-    // reload still shows it.
-    const again = await (await fetch(`${base}/api/info`)).json() as typeof info;
-    expect(again.completedUpgrade?.line).toBe(info.completedUpgrade?.line);
+    const before = await fingerprint();
+    const csrf = { "Content-Type": "application/json", "X-Loctt-Client": "test" };
+    const requests: [string, RequestInit][] = [
+      ["/api/info", {}],
+      ["/api/doctor", {}],
+      ["/api/tasks", {}],
+      ["/api/tasks", { method: "POST", headers: csrf, body: JSON.stringify({ title: "x" }) }],
+      ["/api/doctor/repair", { method: "POST", headers: csrf, body: JSON.stringify({ rebuildIndex: true }) }],
+    ];
+    for (const [path, init] of requests) {
+      const res = await fetch(`${base}${path}`, init);
+      expect(res.status, path).toBe(409);
+      const body = await res.json() as Envelope & { schema_status?: { on_disk?: string; current?: string } };
+      expect(body.schema_status, path).toEqual({ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" });
+      expect(body.message, path).toBe(
+        "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+      );
+      expect(body.recovery, path).toEqual({ kind: "command", command: "loctt migrate" });
+    }
+    expect(await fingerprint()).toEqual(before);
+
+    const migrated = await fetch(`${base}/api/migrate`, { method: "POST", headers: csrf });
+    expect(migrated.status).toBe(200);
+    const info = await fetch(`${base}/api/info`);
+    expect(info.status).toBe(200);
+    const body = await info.json() as { schemaStatus: { kind: string }; completedUpgrade?: unknown };
+    expect(body.schemaStatus.kind).toBe("current");
+    expect(body.completedUpgrade).toBeUndefined();
   });
 
   /**

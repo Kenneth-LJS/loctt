@@ -123,6 +123,24 @@ describe("AppBootstrap against a refused schema", () => {
   });
 
   /**
+   * @verifies ONB-C17
+   *
+   * K154: an older tracker is upgraded only on purpose, and every route
+   * refuses it until then, so the Upgrade screen replaces the shell:
+   * no sidebar, no routed page, nothing else to click.
+   */
+  it("renders only the Upgrade screen for an older tracker, not the shell", async () => {
+    MISMATCH = { kind: "outdated", on_disk: "0.1.0", current: "0.3.0" };
+    mount();
+
+    const screenEl = await screen.findByTestId("upgrade-required");
+    expect(screenEl.textContent).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+    expect(screen.getByRole("button", { name: "Upgrade" })).toBeTruthy();
+    expect(screen.queryByLabelText("Toggle sidebar")).toBeNull();
+    expect(screen.queryByText("list pane")).toBeNull();
+  });
+
+  /**
    * @verifies XS-33
    *
    * The kind comes from the envelope, so the four states stay
@@ -240,10 +258,10 @@ describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
     return qc;
   }
 
-  /** The schema banner specifically — `data-kind` is unique to it among
-   * this shell's several `role="alert"` elements (a sidebar data-load
-   * failure carries the same role). */
-  const findSchemaBanner = () => screen.findByText("Schema out of date.").then(el => el.closest("[data-kind]"));
+  /** The Upgrade screen (K154), which `outdated` gets instead of a
+   * banner: found by its test id, since a sidebar data-load failure
+   * carries the same `role="alert"`. */
+  const findSchemaBanner = () => screen.findByTestId("upgrade-required");
 
   // @verifies XS-38
   it("the banner clears on refetch once the on-disk schema is fixed, without remounting", async () => {
@@ -257,7 +275,7 @@ describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
     await qc.invalidateQueries({ queryKey: ["info"] });
 
     await screen.findByText("list pane");
-    expect(screen.queryByText("Schema out of date.")).toBeNull();
+    expect(screen.queryByTestId("upgrade-required")).toBeNull();
   });
 
   // @verifies XS-38
@@ -265,7 +283,7 @@ describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
     MISMATCH = null;
     const qc = mountWithClient();
     await screen.findByText("list pane");
-    expect(screen.queryByText("Schema out of date.")).toBeNull();
+    expect(screen.queryByTestId("upgrade-required")).toBeNull();
 
     // Equivalent of another process (CLI/MCP) bumping the schema, or the
     // build changing, while this session was already open and healthy.

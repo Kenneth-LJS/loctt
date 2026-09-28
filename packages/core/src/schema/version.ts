@@ -80,6 +80,33 @@ export class SchemaUnmigratableError extends SchemaVersionError {
 }
 
 /**
+ * The tracker's format is older than this build reads, and upgrading it
+ * is a deliberate step (K154): every surface refuses with this message
+ * until the user runs `loctt migrate`, MCP `migrate_schema`, or the web
+ * Upgrade button. Nothing upgrades on its own (K154 reversed K143's
+ * automatic upgrade).
+ *
+ * `from` is the version as written in `.schema-version` (`0.2.1` stays
+ * `0.2.1`, even though it reads as format `0.1.0`); `to` is
+ * `CURRENT_SCHEMA_VERSION`.
+ */
+export class SchemaUpgradeRequiredError extends SchemaVersionError {
+  readonly from: string;
+  readonly to: string;
+  constructor(from: string, to: string) {
+    super(upgradeRequiredMessage(from, to));
+    this.name = "SchemaUpgradeRequiredError";
+    this.from = from;
+    this.to = to;
+  }
+}
+
+/** K154's refusal, word for word, for every surface that shows it as text. */
+export function upgradeRequiredMessage(from: string, to: string): string {
+  return `This tracker needs upgrading from ${from} to ${to}. Run \`loctt migrate\` (a backup is made first).`;
+}
+
+/**
  * The tracker's format is newer than this build reads. The format
  * version is the `loctt` release that introduced it, so the message
  * names the release to install (K142).
@@ -102,11 +129,11 @@ export class SchemaTooNewError extends SchemaVersionError {
  * what to write instead. It names no command: `loctt migrate` needs a
  * readable version to start from, and `loctt init --repair` refuses a
  * tracker whose config and state are all present, so neither helps.
- * `0.1.0` is the safe guess: the next command upgrades from there.
+ * `0.1.0` is the safe guess: `loctt migrate` upgrades from there (K154).
  */
 export const SCHEMA_VERSION_REPAIR = `Put the tracker's format version in ${".schema-version"}: `
   + `0.1.0 for a tracker made by loctt 0.2.x or earlier (which wrote 1). `
-  + `If you don't know it, write 0.1.0. The next command upgrades the tracker from there.`;
+  + `If you don't know it, write 0.1.0. Then run 'loctt migrate' to upgrade the tracker from there.`;
 const REPAIR = SCHEMA_VERSION_REPAIR;
 
 /**

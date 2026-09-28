@@ -224,6 +224,7 @@ async function verifyStep(
   const output = result.output;
 
   if (result.earlyFailure) return [fail("action", result.earlyFailure)];
+  let skipDoctor = false;
 
   if (step.expect_error) {
     // The README promises `${…}` in any string; the expected message is
@@ -249,7 +250,15 @@ async function verifyStep(
     // bulk result (K153), whose `post` checks say what did.
     const partial = surface === "cli" && expected.cli?.partial === true;
     if (!partial) {
-      failures.push(...runChecks([{ tracker_unchanged: true }], c, surface, label, seed, state, before, output));
+      const unchanged = runChecks([{ tracker_unchanged: true }], c, surface, label, seed, state, before, output);
+      failures.push(...unchanged);
+      // An error step that changed nothing cannot have added a doctor
+      // finding: the tracker is the one the previous step (or the seed)
+      // left, which doctor already judged. Skipping the run matters for
+      // the 0.1.0 seed (K154): a refused command leaves it at 0.1.0,
+      // whose findings (the pending upgrade) the current seed's baseline
+      // does not have.
+      if (unchanged.length === 0) skipDoctor = true;
     }
   } else if (result.error) {
     failures.push(fail("action", `the action failed${result.error.exitCode !== undefined ? ` (exit ${result.error.exitCode})` : ""}:\n${result.error.message}`));
@@ -278,6 +287,7 @@ async function verifyStep(
     if (violations.length > 0) failures.push(fail("bilateral (touched links)", violations.join("\n")));
   }
 
+  if (skipDoctor) return failures;
   let findings: string[];
   try {
     findings = await doctorFindings(state.root);

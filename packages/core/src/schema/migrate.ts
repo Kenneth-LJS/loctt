@@ -12,6 +12,7 @@ import {
   compareFormatVersions,
   CURRENT_SCHEMA_VERSION,
   SchemaUnmigratableError,
+  SchemaUpgradeRequiredError,
   SchemaVersionError,
   writeSchemaVersion,
 } from "./version.js";
@@ -31,7 +32,7 @@ async function missingVersionError(locttDir: string): Promise<SchemaUnmigratable
       ? `Run 'loctt init --repair' to restore the missing files, .schema-version included. `
         + `'loctt migrate' cannot help: there is no recorded version to migrate from.`
       : `Create .schema-version holding the tracker's format version: 0.1.0 for a tracker made by `
-        + `loctt 0.2.x or earlier, or if you don't know it. The next command upgrades the tracker from there. `
+        + `loctt 0.2.x or earlier, or if you don't know it. Then run 'loctt migrate' to upgrade the tracker from there. `
         + `'loctt migrate' cannot help: there is no recorded version to migrate from.`,
   );
 }
@@ -41,6 +42,14 @@ function noUpgradePathError(recorded: string): SchemaUnmigratableError {
   return new SchemaUnmigratableError(
     `This build has no upgrade from format ${recorded} to ${CURRENT_SCHEMA_VERSION}.`,
     `Upgrade the tracker with the loctt release that follows ${recorded}, then open it with this one.`,
+  );
+}
+
+/** Another process holds the migration lock: its upgrade is running now. */
+function upgradeRunningError(): SchemaUnmigratableError {
+  return new SchemaUnmigratableError(
+    `This tracker is being upgraded by another loctt process.`,
+    `Wait for the upgrade to finish, then try again.`,
   );
 }
 
@@ -86,6 +95,9 @@ export async function planMigration(locttDir: string): Promise<MigrationPlan> {
   // early on an empty plan, so without the check here the sentinel was
   // reachable but never consulted on the one path that matters.
   const sentinel = getSchemaMigrationInProgressPath(locttDir);
+  // Another process's upgrade holds the lock: its sentinel is live, and
+  // the plan would describe a tracker that is changing under it.
+  if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
   if (await fileExists(sentinel)) {
     throw new SchemaUnmigratableError(
       `A schema migration was interrupted mid-run and cannot be resumed. `
@@ -141,6 +153,8 @@ export async function migrateToCurrent(
   // backup named in the sentinel is the recovery.
   const sentinel = getSchemaMigrationInProgressPath(locttDir);
   if (await fileExists(sentinel)) {
+    // A live sentinel (its lock held) is another process's upgrade.
+    if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
     throw new SchemaUnmigratableError(
       `A schema migration was interrupted mid-run and cannot be resumed. `
       + `See ${sentinel} for the backup it recorded.`,
@@ -247,16 +261,21 @@ export async function migrateToCurrent(
 }
 
 /**
- * Boot guard. Throws if the tracker's recorded schema version is
- * not exactly `CURRENT_SCHEMA_VERSION`. Use this at the top of
- * CLI/MCP/HTTP entry points to refuse all operations against a
- * tracker that needs migration.
+ * Boot guard. Every CLI command, MCP tool and web API route that opens
+ * a tracker calls this first, and refuses to run unless the tracker is
+ * at `CURRENT_SCHEMA_VERSION`. It never writes.
+ *
+ * Upgrades are intentional (K154): an older tracker is refused with
+ * "This tracker needs upgrading from X to Y. Run `loctt migrate` (a
+ * backup is made first)." whether or not its steps are risky, and is
+ * upgraded only by `loctt migrate`, MCP `migrate_schema` or the web
+ * Upgrade button (all `migrateToCurrent`).
  *
  * Errors:
- *  - Missing `.schema-version` → `SchemaVersionError` (tracker
- *    has no recorded format version).
- *  - Older than current → `SchemaVersionError` with guidance to
- *    run `loctt migrate`.
+ *  - Missing, empty or unreadable `.schema-version`, a version below
+ *    every format, or an interrupted migration →
+ *    `SchemaUnmigratableError` with the remedy that helps.
+ *  - Older than current → `SchemaUpgradeRequiredError`.
  *  - Newer than current → `SchemaTooNewError`.
  */
 export async function requireSupportedSchema(locttDir: string): Promise<void> {
@@ -265,6 +284,10 @@ export async function requireSupportedSchema(locttDir: string): Promise<void> {
   // (typically by restoring from the backup recorded in the sentinel).
   const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
   if (await fileExists(sentinelPath)) {
+    // A sentinel whose migration lock is held is another process's live
+    // upgrade (`loctt migrate`, `migrate_schema`, the web button), not a
+    // crash: say so instead of sending the user to restore a backup.
+    if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
     throw new SchemaUnmigratableError(
       `A schema migration was interrupted mid-run. ` +
       `See ${sentinelPath} for the recovery instructions and ` +
@@ -274,140 +297,9 @@ export async function requireSupportedSchema(locttDir: string): Promise<void> {
   }
   const { recorded, format } = await requireRecordedFormat(locttDir);
   if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) < 0) {
-    throw new SchemaVersionError(
-      `This tracker's format is ${recorded}. This build reads ${CURRENT_SCHEMA_VERSION}. ` +
-      `Run \`loctt migrate\` to upgrade.`,
-    );
-  }
-}
-
-/** The one line every surface shows after an automatic upgrade (K143). */
-export function upgradeNotice(result: MigrationResult): string {
-  return `Upgraded this tracker from ${result.from} to ${result.to}`
-    + `${result.backupPath !== undefined ? ` (backup: ${result.backupPath})` : ""}.`;
-}
-
-/** How long an automatic upgrade waits for another process's upgrade. */
-const WAIT_FOR_OTHER_UPGRADE_MS = 60_000;
-const POLL_MS = 100;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => { setTimeout(resolve, ms); });
-}
-
-/**
- * Waits while another process holds the migration lock. Returns false
- * when it is still held after the wait (a crashed holder's lock goes
- * stale after five minutes; a live upgrade of a large tracker could
- * still be running), true once it is free.
- */
-async function waitForOtherUpgrade(locttDir: string, deadline: number): Promise<boolean> {
-  while (await isMigrationLocked(locttDir)) {
-    if (Date.now() >= deadline) return false;
-    await sleep(POLL_MS);
-  }
-  return true;
-}
-
-function isLockContention(err: unknown): boolean {
-  return typeof err === "object" && err !== null
-    && ((err as { code?: unknown }).code === "ELOCKED"
-      || (err as { code?: unknown }).code === "conflict");
-}
-
-/**
- * Boot guard with automatic non-risky upgrades (K143).
- *
- * Every surface calls this where it used to call `requireSupportedSchema`,
- * on first use of a tracker:
- *
- *  - A tracker at `CURRENT_SCHEMA_VERSION` passes and returns null.
- *  - A tracker whose upgrade path is made only of steps that are not
- *    `risky` is upgraded here, through `migrateToCurrent` (backup of
- *    `.loctt/` first, the crash sentinel around each step), and the
- *    result is returned so the surface can show `upgradeNotice`.
- *  - A path with a risky step refuses exactly as before: `loctt migrate`.
- *  - Too new, missing, unreadable, or interrupted: the same refusals as
- *    `requireSupportedSchema`.
- *
- * Concurrency: two processes opening the same old tracker upgrade it
- * once. The second waits while the first holds the migration lock (the
- * sentinel the first writes is not mistaken for a crash while that lock
- * is held), then finds the tracker current and returns null.
- * `migrateToCurrent` re-reads the version inside its lock, so the second
- * never runs a step twice even when both pass the first check together.
- */
-/** The refusal when another process's upgrade outlasts the wait. */
-function stillUpgradingError(locttDir: string, waitMs: number): SchemaUnmigratableError {
-  return new SchemaUnmigratableError(
-    `Another loctt process is still upgrading the tracker in ${locttDir} after ${Math.round(waitMs / 1000)} seconds.`,
-    `Wait for that process to finish, then run the command again.`,
-  );
-}
-
-export async function upgradeIfSafe(locttDir: string): Promise<MigrationResult | null> {
-  const waitMs = WAIT_FOR_OTHER_UPGRADE_MS;
-  const deadline = Date.now() + waitMs;
-  const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
-  for (;;) {
-    const sentinel = await fileExists(sentinelPath);
-    const rf = await readRecordedFormat(locttDir).catch(() => undefined);
-    const behind = rf !== undefined && rf !== null
-      && (compareFormatVersions(rf.format, CURRENT_SCHEMA_VERSION) < 0 || rf.recorded !== CURRENT_SCHEMA_VERSION);
-
-    // Nothing to upgrade: current, too new, missing or unreadable. Refuse
-    // or pass exactly as the guard does, without waiting on any lock (a
-    // write racing a migration is refused by `withStateLock` itself).
-    if (!sentinel && !behind) {
-      await requireSupportedSchema(locttDir);
-      return null;
-    }
-
-    // Behind, or a sentinel: if another process is upgrading, its lock is
-    // held (and the sentinel is its live one, not a crash). Wait for it,
-    // then look again.
-    if (await isMigrationLocked(locttDir)) {
-      if (!(await waitForOtherUpgrade(locttDir, deadline))) throw stillUpgradingError(locttDir, waitMs);
-      continue;
-    }
-
-    // A sentinel nobody holds a lock for is a crashed upgrade.
-    if (sentinel || rf === undefined || rf === null) {
-      await requireSupportedSchema(locttDir);
-      return null;
-    }
-
-    const path = findMigrationPath(rf.format, CURRENT_SCHEMA_VERSION);
-    if (path === null) throw noUpgradePathError(rf.recorded);
-    const risky = path.filter(step => step.risky === true);
-    if (risky.length > 0) {
-      throw new SchemaVersionError(
-        `This tracker's format is ${rf.recorded}. This build reads ${CURRENT_SCHEMA_VERSION}. `
-        + `The upgrade includes a step that needs your go-ahead `
-        + `(${risky.map(step => step.description).join(", ")}). `
-        + `Run \`loctt migrate\` to upgrade.`,
-      );
-    }
-
-    try {
-      const result = await migrateToCurrent(locttDir);
-      return result.steps.length > 0 ? result : null;
-    } catch (err) {
-      // Another process started its upgrade between our check and ours:
-      // its lock is held, and the sentinel `migrateToCurrent` refused is
-      // that process's live one, not a crash. Go back to waiting for it,
-      // then re-read the version. The same for a lock-contention error
-      // from `migrateToCurrent`'s own lock.
-      if (await isMigrationLocked(locttDir).catch(() => false)) {
-        if (Date.now() >= deadline) throw stillUpgradingError(locttDir, waitMs);
-        continue;
-      }
-      if (isLockContention(err)) {
-        if (Date.now() >= deadline) throw stillUpgradingError(locttDir, waitMs);
-        await sleep(POLL_MS);
-        continue;
-      }
-      throw err;
-    }
+    // Between the lock and the first step's sentinel an upgrade is
+    // already under way; the version still reads old until it finishes.
+    if (await isMigrationLocked(locttDir)) throw upgradeRunningError();
+    throw new SchemaUpgradeRequiredError(recorded, CURRENT_SCHEMA_VERSION);
   }
 }

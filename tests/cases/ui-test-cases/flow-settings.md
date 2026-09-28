@@ -134,15 +134,17 @@ This case previously asserted the panels were read-only. That was an early draft
 - Re-running after fixing something in a terminal flips that check to pass without a page reload.
 
 ### SET-15 · M4 · blocker · P1 P7
-**The schema migrate button returns the schema to current.** `.schema-version` is one behind `CURRENT_SCHEMA_VERSION`, so the shell shows the `outdated` banner.
+**The schema migrate button returns the schema to current.** `.schema-version` is one behind `CURRENT_SCHEMA_VERSION`, so the app shows the Upgrade screen.
 
-- The banner's "Migrate now" is present for the `outdated` kind only.
-- Clicking it states what will happen before it runs: the from/to versions and that a backup snapshot of `.loctt/` is taken first.
+- The Upgrade button is present for the `outdated` kind only.
+- The screen states what will happen before it runs: the from/to versions, that a backup is made first, and the steps.
 - It POSTs to `/api/migrate`; on success the response reports the version moved from and to.
-- `.schema-version` now equals `CURRENT_SCHEMA_VERSION`, a `.loctt.backup-v<from>-<ts>-<rand>/` directory exists as a sibling, and the banner clears without a page reload.
+- `.schema-version` now equals `CURRENT_SCHEMA_VERSION`, a `.loctt.backup-v<from>-<ts>-<rand>/` directory exists as a sibling, and the app reloads into the shell.
 - The rest of the app becomes writable again in the same session — a status change on a task now succeeds.
 
 ## B. Edge cases
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). The screen's single Upgrade button replaced the banner's Migrate now, and a success reloads the app.
 
 ### B1. Workflow and custom fields
 
@@ -327,7 +329,9 @@ This case previously asserted the panels were read-only. That was an early draft
 - The result names the step that failed and the version the tracker is now on (the intermediate version stamped by the last successful step).
 - It reports where the backup snapshot lives, by absolute path.
 - It states that the sentinel is present and that the app will refuse to boot until it is resolved, and gives the CLI recovery path.
-- It does not report a partial success as success, and it does not clear the schema banner.
+- It does not report a partial success as success, does not offer Upgrade again (only Reload, which shows the recovery screen), and does not leave the Upgrade screen.
+
+> **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic upgrade (*"these stories are ai-created so i wouldnt completely treat is source of truth"*) and asked for a designed Upgrade banner (*"get ui agent to design banner if needed"*). The failure is shown on the Upgrade screen, with the backup path from the sentinel.
 
 ### SET-38 · M4 · major · P4 P7
 **Migrate is attempted while the migration lock is held by the CLI.** `loctt migrate` is running in a terminal.

@@ -29,6 +29,7 @@ export const MCP_INSTRUCTIONS = [
   "- Before writing any enum-valued field (status, priority, task_type, relationship types, custom fields), call get_workflow_config to discover the valid keys. Use the `list_*` tools (list_projects, list_labels, list_milestones, list_sprints, list_users) to discover valid references, list_views to discover saved views, and get_calendar for the timezone and working days that date queries depend on. Stored values are config keys, not human labels.",
   "- delete_* tools are hard and irreversible; they require confirm: true. Prefer the reversible archive_* tools, and unarchive_* to bring something back.",
   "- Call get_workflow_key_usage before proposing any deletion from workflow.yaml, so you know how many tasks a remap would touch.",
+  "- If a tool says the tracker needs upgrading, don't call migrate_schema unless the user asked you to upgrade the tracker. Tell the user it needs upgrading and ask. Upgrading changes the data format for everyone who shares the tracker.",
 ].join("\n");
 
 /**

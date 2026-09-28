@@ -53,7 +53,7 @@ client fetch the package with `npx`:
 
 ## How an agent works with the tracker
 
-Three rules shape every correct interaction, and they are the same three
+Four rules shape every correct interaction, and they are the same four
 the server tells the agent on connect:
 
 1. **Structured tools only — never hand-edit files.** Task metadata is
@@ -71,24 +71,33 @@ the server tells the agent on connect:
    `archive_*` / `unarchive_*` pair is almost always the right choice.
    Before removing anything from the workflow config, the agent calls
    `get_workflow_key_usage` to see how many tasks a change would touch.
+4. **Upgrading the tracker is the user's call.** If a tool says the
+   tracker needs upgrading, the agent does not call `migrate_schema`
+   unless you asked it to upgrade the tracker; it tells you and asks
+   ("Don't call migrate_schema unless the user asked you to upgrade the
+   tracker. Tell the user it needs upgrading and ask.", in the server
+   instructions and the tool's description).
 
-### Format versions and automatic upgrades
+### Format versions and upgrades
 
-The first tool call on a tracker in an older format whose upgrade has no
-risky step upgrades it (after backing up `.loctt/`) and then runs. That
-call's result ends with one extra text item, `Upgraded this tracker from
-0.1.0 to 0.3.0 (backup: <path>).`, after the tool's own content (so the
-first item is unchanged), and the server logs the same line to stderr.
-Later calls carry nothing. Every tool upgrades this way except `init` and
-`migrate_schema` (`info` and `doctor` included, unlike the CLI, where
-they describe the tracker without upgrading it). A risky step is not run
-automatically: those tools return an error pointing at `loctt migrate`
-(or `migrate_schema` with `confirm: true`). A
-tracker in a newer format is refused with `This tracker needs loctt
-<version> or newer.`; a `.schema-version` holding anything but a format
-version (including 0.2.x's `1`) is refused, saying what it must hold. A
-version between two formats stands for the older one (`0.2.1` is format
-`0.1.0` and is upgraded like it); one below `0.1.0` is refused. See
+Upgrading a tracker is always deliberate. On a tracker in an older
+format every tool returns an error and writes nothing: `This tracker
+needs upgrading from 0.1.0 to 0.3.0. Run \`loctt migrate\` (a backup is
+made first).` A risky step does not change that; it is only tagged in the
+preview. Four tools are not refused: `init`, `migrate_schema`, and the
+read-only `info` and `doctor`, which report the pending upgrade (`info`:
+`Schema: needs upgrading from 0.1.0 to 0.3.0. …`; `doctor`: a `schema
+version` error) and write nothing. Every repair `doctor` is asked for
+(`fix`, `rebuild_index`, `repair_relationships`, `restore_missing`) is
+skipped, saying why. The upgrade itself is `migrate_schema`: without
+`confirm` it previews (from → to, each step and what it changes,
+`[RISKY]`, where the backup goes); with `confirm: true`, after the user
+agrees, it backs up `.loctt/` and upgrades. A tracker in a newer format
+is refused with `This tracker needs loctt <version> or newer.`; a
+`.schema-version` holding anything but a format version (including
+0.2.x's `1`) is refused, saying what it must hold. A version between two
+formats stands for the older one (`0.2.1` is format `0.1.0` and is
+upgraded like it); one below `0.1.0` is refused. See
 [Upgrading](../common/upgrading.md).
 
 ### Names and IDs
@@ -566,10 +575,10 @@ web UI (Settings → Sync), or MCP:
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `info` | Prose summary of the tracker. | — |
-| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index`, `restore-missing` or `repair-relationships`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data); `repair_relationships` changes links stored as a task key to the task's id, adds the missing side of one-sided links (refusing one that would create a loop), merges identical links and ranks links that have no rank, never deleting a link; `fix` runs every safe repair (`rebuild_index` and `repair_relationships`, not `restore_missing`). Repairs run before the checks, so the checks report what is left. | `rebuild_index`, `restore_missing`, `repair_relationships`, `fix` |
+| `info` | Prose summary of the tracker, including its format (`Schema: 0.3.0 (current)`, or `needs upgrading from …`). Runs on a tracker that needs upgrading, and writes nothing. | — |
+| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index`, `restore-missing` or `repair-relationships`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data); `repair_relationships` changes links stored as a task key to the task's id, adds the missing side of one-sided links (refusing one that would create a loop), merges identical links and ranks links that have no rank, never deleting a link; `fix` runs every safe repair (`rebuild_index` and `repair_relationships`, not `restore_missing`). Repairs run before the checks, so the checks report what is left. Runs on a tracker that needs upgrading, reports it, and skips every repair. | `rebuild_index`, `restore_missing`, `repair_relationships`, `fix` |
 | `init` | Bootstrap a new tracker. An empty `.loctt/` folder is filled in like a missing one. | `prefix`, `project_label`, `no_docs`, `timezone` |
-| `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a format upgrade. Exempt from the upgrade on first use, so it can preview one. Versions are format versions (`Plan: 0.1.0 → 0.3.0`). | `confirm` |
+| `migrate_schema` | Preview (`confirm:false`, the default) or apply (`confirm:true`) a format upgrade: the only way an agent upgrades a tracker. Its description tells the agent not to call it unless the user asked to upgrade the tracker. The preview lists each step, what it changes and `[RISKY]`, and where the backup goes; apply backs up `.loctt/` first and returns `Upgraded this tracker from 0.1.0 to 0.3.0.` and the backup path. Not refused on an older tracker. | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |
 | `restore` | Restore a backup (`bare`/`merge`/`overwrite`). Requires `confirm` unless `dry_run`. | `files`, `mode`, `dry_run`, `confirm` |
 

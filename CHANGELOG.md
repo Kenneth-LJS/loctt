@@ -9,7 +9,8 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 This release changes the tracker format (to `0.3.0`). **Before you use it
 on a tracker made by `loctt` 0.2.x or earlier, change
 `.loctt/.schema-version` from `1` to `0.1.0` once** (on every machine and
-clone); the first command then upgrades the tracker, backing it up first.
+clone), then run `loctt migrate` (or press **Upgrade** in the web UI) to
+upgrade the tracker, which backs it up first.
 See [Upgrading](docs/user/common/upgrading.md).
 
 ### Breaking
@@ -93,11 +94,18 @@ See [Upgrading](docs/user/common/upgrading.md).
 
 ### Added
 
-- Automatic upgrades: when a new release changes the tracker format and
-  the change is safe, the first command (CLI), tool call (MCP) or page
-  load (web) upgrades the tracker, backs up `.loctt/` first, and says so
-  in one line: "Upgraded this tracker from 0.1.0 to 0.3.0 (backup: …)."
-  An upgrade that needs your review still waits for `loctt migrate`.
+- Intentional format upgrades: a tracker in an older format is refused on
+  every surface with "This tracker needs upgrading from 0.1.0 to 0.3.0.
+  Run `loctt migrate` (a backup is made first)." and nothing is written
+  until you upgrade it. `loctt migrate` shows a preview (each step in
+  plain words and where the backup goes) and asks before upgrading
+  (`--yes` for scripts, `--dry-run` to preview only; without a terminal
+  and without `--yes` it refuses). The web UI shows an **Upgrade** screen
+  in place of the app, whose button backs up, upgrades and reloads. MCP
+  tools return the same message, and the MCP instructions tell agents to
+  ask you before calling `migrate_schema`. `loctt doctor` and `info` (and
+  MCP `doctor`/`info`) report the pending upgrade and write nothing;
+  doctor's repairs are skipped until the tracker is upgraded.
 - `loctt doctor --repair-relationships` (MCP `doctor` with
   `repair_relationships`, and a **Repair relationships** button in
   Settings → Diagnostics): changes links stored as a task key to the

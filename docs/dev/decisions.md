@@ -23227,6 +23227,190 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A367 · Intentional upgrades everywhere; the Upgrade screen (B48, K154)
+
+#### A367 · Intentional upgrades everywhere (B48, K154)
+
+**Ticket:** B48 · **Date:** 2026-09-28 · **Agent-made** (under K154, K142, A361, A366, A333).
+
+**The situation.** K154 reverses K143: no surface upgrades a tracker on
+its own; every surface refuses an older tracker with "This tracker needs
+upgrading from X to Y. Run `loctt migrate` (a backup is made first).";
+`loctt migrate` previews and confirms; the web gets a designed Upgrade
+banner; MCP tells agents to ask first; doctor and info are read-only.
+The ruling left the calls below open.
+
+**What had to be decided.** How the pieces are shaped where K154 did not
+say.
+
+**Options considered.** (per call; the chosen one first)
+
+1. *The refusal in core.* (a) A new `SchemaUpgradeRequiredError`
+   (`schema/version.ts`, a `SchemaVersionError` with `from`/`to`) thrown
+   by `requireSupportedSchema`, with `upgradeRequiredMessage(from, to)`
+   as the one source of K154's sentence. `from` is the recorded version as
+   written (`0.2.1` stays `0.2.1`). (b) Keep a plain `SchemaVersionError`
+   with the new text: surfaces and tests could only match prose. (a)
+   chosen. `upgradeIfSafe`, `upgradeNotice`, the wait/poll helpers,
+   `stillUpgradingError`, `TrackerInfoResponse.completedUpgrade`, the
+   web `completedUpgradeNotice`, `UpgradeNotice.tsx` and its test are
+   deleted.
+2. *A live upgrade in another process.* Without `upgradeIfSafe`'s wait,
+   a command during someone's `loctt migrate` would read the live
+   sentinel as a crash ("interrupted mid-run", restore the backup).
+   (a) `requireSupportedSchema`, `planMigration` and `migrateToCurrent`'s
+   pre-check refuse with `SchemaUnmigratableError` "This tracker is being
+   upgraded by another loctt process." / "Wait for the upgrade to finish,
+   then try again." when the migration lock is held and the tracker is
+   behind or a sentinel is present. A current tracker never checks the
+   lock (SET-38's write-refusal path is unchanged). (b) Leave the
+   pre-K143 behaviour (a live upgrade reported as a crash). (a) chosen.
+3. *Which MCP tools the guard exempts.* K154 says every tool returns the
+   refusal and that MCP `doctor`/`info` report "needs upgrading" and never
+   write. (a) `info` and `doctor` join `init` and `migrate_schema` as
+   exempt, like the CLI's exempt `doctor`/`info`: `info` prints `Schema:
+   <describeSchemaStatus>` (moved from the CLI into core so both surfaces
+   print one sentence), `doctor` reports the schema check and skips every
+   repair. Every other tool returns the refusal. (b) Keep them guarded:
+   they would return only the refusal, and an agent asking "what is this
+   tracker" learns nothing else. The registry test's exempt list (it
+   asserted `init`, `migrate_schema` only) is updated and says why. As a
+   consequence MCP `info`/`doctor` now also run on a too-new, missing or
+   interrupted tracker, as the CLI's do; they write nothing there either.
+4. *Doctor while an upgrade is pending.* (a) The schema check says
+   "needs upgrading from X to Y. Run loctt migrate (a backup is made
+   first)"; every requested repair (`--fix`, `--repair-relationships`,
+   and now `--rebuild-index`, which ran after the checks regardless of
+   the schema before this) is skipped with "skipped. This tracker needs
+   upgrading first. Run loctt migrate, then run the repair again". MCP
+   `restore_missing` runs only on a current tracker or one whose
+   `.schema-version` is missing (restoring it is that repair's job);
+   otherwise it is skipped with the same sentence (or "Resolve the schema
+   version problem first"). The relationship check on a 0.1.0 tracker
+   still reports its unranked links ("N can be fixed with loctt doctor
+   --repair-relationships"), which the upgrade itself ranks. Not changed:
+   it is a report, and the repair it names says why it is skipped.
+5. *Web `/api/info` and `/api/doctor`.* (a) Stay behind the guard: they
+   answer 409 `schema_mismatch` with kind `outdated`, both versions, the
+   K154 message and `recovery: loctt migrate`, and write nothing. The
+   client learns the state from that envelope, as it did (ONB-C6). (b)
+   Exempt them like the CLI/MCP ones: the client boot path would have to
+   branch on a 200 carrying `outdated` as well as on the 409. (a) chosen:
+   read-only and reporting, with no client rework.
+6. *The web: a screen, not a banner over the shell.* Every API route
+   refuses an older tracker, so a banner over the shell would sit above
+   views that only show refusals. (a) `AppBootstrap` routes kind
+   `outdated` to `UpgradeRequired` (like `interrupted` to
+   `InterruptedMigration`): a brand bar (the header "can stay"; only its
+   brand does, since search, New task and the user menu would all be
+   refused) and one centered card. `SchemaBanner` keeps `future`,
+   `missing`, `unknown`, and throws on `outdated` like it does on
+   `interrupted`. The A333 synchronous in-flight guard moved with the
+   button. (b) Keep `SchemaBanner` with a bigger button: the shell under
+   it cannot do anything. SHL-13, SHL-36, XS-35, XS-36, SET-15 and SET-37
+   are amended to match.
+7. *The design.* Card: warn-toned round `arrowUp` badge, h1 "Upgrade
+   needed", "This tracker needs upgrading from 0.1.0 to 0.3.0.", "A
+   backup is made first.", a `Disclosure` "What changes (N step[s])"
+   (collapsed; each step's description, from → to, a warn "Risky" tag,
+   and its plain-words `changes`), a primary md **Upgrade** button
+   (32px, focused on mount, `loading` spinner, `aria-label` kept). The
+   container is `role="alert"` labelled by the h1. Success: "Upgraded to
+   0.3.0. Reloading…" and `window.location.reload()`. Failure, from the
+   envelope: after the backup (`data_state: unknown`) a danger `Callout`
+   "The upgrade didn't finish. <message>" / "The tracker may be partly
+   upgraded. Restore .loctt/ from this backup, then reload:" / the path
+   (from `schema_status.backup`, which `/api/migrate`'s failure now
+   carries), and **Reload** instead of Upgrade (reload shows the
+   recovery screen; SET-37: no bare retry); refused before anything ran:
+   the message, the detail, "Nothing was changed.", Upgrade kept; no
+   answer: "The server stopped responding." / "Reload to see whether the
+   upgrade finished." with Reload. The web text names no CLI command (the
+   button is the remedy, K154 "adapted to the button").
+8. *Steps in plain words.* (a) `Migration` gains an optional `changes`
+   sentence shown by `loctt migrate`, `migrate_schema`'s preview and the
+   web (`MigrationStepResponse.changes`). The 0.1.0 → 0.3.0 step's
+   description became "Save the order of every task's links" (was "Give
+   every link a rank, in the order it is shown today": "rank" is internal
+   lore). (b) Reword `description` only: one line cannot say what
+   changes. Optional so test fixtures that build `Migration`s need no
+   change.
+9. *`loctt migrate`'s prompt and refusal.* (a) Preview (versions, steps
+   with `[risky]`/`[deprecated]` and `changes`, the backup location as
+   `<.loctt>.backup-v<from>-<date and time>`), then `confirmHardDelete`'s
+   three outcomes: `y` upgrades; anything else "Not upgraded. Nothing was
+   changed." exit 0; no terminal and no `--yes` refused with "Pass --yes
+   to skip." exit 2. Before this, a non-interactive `loctt migrate`
+   printed the refusal and "Aborted." with exit 0. A second migrate that
+   waited for the lock and found the tracker current prints "already at
+   format X. Nothing to do." (it printed a success "from 0.3.0 to
+   0.3.0").
+10. *MCP wording.* `migrate_schema`'s description and a new
+    `MCP_INSTRUCTIONS` line carry "Don't call migrate_schema unless the
+    user asked you to upgrade the tracker. Tell the user it needs
+    upgrading and ask." (the instruction prefixes "If a tool says the
+    tracker needs upgrading," and adds that it changes the format for
+    everyone sharing the tracker). Preview now reads "This tracker needs
+    upgrading from X to Y (N step(s))." and ends "Show the user this
+    plan…"; apply reads "Upgraded this tracker from X to Y." (was
+    "Plan: …" / "Migrated X → Y.").
+11. *`SCHEMA_VERSION_REPAIR` and the missing-file remedy* said "The next
+    command upgrades the tracker from there", false under K154; they now
+    say "Then run 'loctt migrate' to upgrade the tracker from there."
+12. *Runthrough harness.* An `expect_error` step whose tracker is
+    unchanged no longer runs doctor (the tracker is the one the previous
+    step or seed left, already judged). Needed because a refused command
+    on the 0.1.0 seed leaves it at 0.1.0, whose findings the current
+    seed's baseline lacks. `upgrade-on-first-use` became
+    `upgrade-intentional` (refused, `migrate --yes` / `migrate_schema
+    confirm`, then the command runs).
+13. *Flaky TSK-17 (flow-task-body.spec.ts:343).* The test clicked the
+    paragraph and pressed End while `BodyEditor`'s rAF focus of the rich
+    surface could still land and reset the caret to the start. It now
+    waits for that focus, sets the DOM selection at the end of the last
+    text node, and polls that the collapsed selection is there before
+    typing. No product change.
+
+**Decided.** As chosen in 1–13.
+
+**Why.** One refusal, built in core and printed identically by three
+surfaces; nothing writes a tracker the user has not chosen to upgrade;
+the web shows the one action that can work; each failure says what
+happened, what it did to the data, and what to do (messaging.md).
+
+**To revert.**
+1. `SchemaUpgradeRequiredError`/`upgradeRequiredMessage` in
+   `packages/core/src/schema/version.ts`; the throw in
+   `requireSupportedSchema` (`schema/migrate.ts`). Restoring automatic
+   upgrades means restoring `upgradeIfSafe` and its callers (see A361's
+   revert list), which K154 forbids without Ken.
+2. `upgradeRunningError` and its three `isMigrationLocked` checks in
+   `schema/migrate.ts`.
+3. `exemptFromSchemaGuard: true` on `info`/`doctor` in
+   `apps/mcp/src/tools/tracker.ts`, the registry test's list, and the
+   `Schema:` line; `describeSchemaStatus` in `diagnostics/info.ts`.
+4. `SchemaCheckState` and the skip in `runRequestedRepairs` /
+   the final `rebuildIndex` in `diagnostics/doctor.ts`; `restoreSkipped`
+   in the MCP doctor handler.
+5. Nothing to revert in the server guard beyond (1); `/api/info` and
+   `/api/doctor` were never exempted.
+6. `AppBootstrap`'s `outdated` branch and
+   `apps/web/src/client/shell/UpgradeRequired.tsx`; `SchemaBanner`'s
+   `outdated` case (it threw before K154 only for `interrupted`).
+7. The copy in `UpgradeRequired.tsx`; `schema_status` in `/api/migrate`'s
+   failure envelope (`server.ts`).
+8. `Migration.changes`, `MigrationStepResponse.changes`, the step's
+   description in `schema/migrations.ts`.
+9. `apps/cli/src/commands/migrate.ts` (`confirmHardDelete` → the old
+   `confirmInteractive`).
+10. `apps/mcp/src/tools/tracker.ts` (`migrate_schema`), `MCP_INSTRUCTIONS`
+    in `apps/mcp/src/server.ts`.
+11. `SCHEMA_VERSION_REPAIR` (`version.ts`), `missingVersionError`
+    (`migrate.ts`).
+12. `skipDoctor` in `tests/runthrough/lib/execute.ts` and its README
+    paragraph; the case file.
+13. The caret block in `tests/ui/flow-task-body.spec.ts` (TSK-17 rich).
+
 ### A366 · Branch review fixes: format mapping, repair stamping, create/delete ordering, messages (fix/parent-and-child-order)
 
 #### A366 · Review fixes: recorded versions map to known formats, honest remedies, create/delete ordering, sync ranking, gate checks

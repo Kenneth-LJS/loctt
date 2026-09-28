@@ -50,7 +50,7 @@ describe("MCP tool registry", () => {
     }
   });
 
-  it("exactly two tools are exempt from the schema guard", () => {
+  it("exactly four tools are exempt from the schema guard", () => {
     // Deliberately an allowlist, not a rule: an exemption lets a tool
     // run against a tracker whose layout this build may not
     // understand, so each one must be justified here.
@@ -59,10 +59,16 @@ describe("MCP tool registry", () => {
     //   migrate_schema — IS the remedy for a mismatch; gating it
     //                    behind one makes an outdated tracker
     //                    unfixable from this surface
+    //   info, doctor   — read-only; they report a tracker that needs
+    //                    upgrading instead of refusing, like CLI
+    //                    `loctt info`/`loctt doctor` (K154). Doctor's
+    //                    repairs skip a tracker that is not current.
     //
-    // Anything else appearing in this list is a bug.
+    // Anything else appearing in this list is a bug. (This asserted
+    // only init and migrate_schema until K154 made info and doctor
+    // report on every surface.)
     const exempt = tools.filter(t => t.exemptFromSchemaGuard === true);
-    expect(exempt.map(t => t.name).sort()).toEqual(["init", "migrate_schema"]);
+    expect(exempt.map(t => t.name).sort()).toEqual(["doctor", "info", "init", "migrate_schema"]);
   });
 
   it("lookupTool returns the same instance listed", () => {

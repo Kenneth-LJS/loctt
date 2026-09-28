@@ -180,8 +180,8 @@ async function repairLoctt(
     // be from before 0.3.0. Stamping the current format over them would
     // skip the upgrade that ranks their links. Stamp current only when
     // the data provably is current (every link ranked, no retired
-    // `ranked` setting); otherwise the first format, so the next command
-    // upgrades from there (A366).
+    // `ranked` setting); otherwise the first format, so `loctt migrate`
+    // upgrades from there (A366, K154).
     const stamp = (await isProvablyRanked(locttDir)) ? CURRENT_SCHEMA_VERSION : (knownFormats()[0] ?? CURRENT_SCHEMA_VERSION);
     await writeFile(schemaPath, `${stamp}\n`, "utf-8");
     created.push(".schema-version");

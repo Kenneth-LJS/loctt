@@ -1,5 +1,5 @@
 /**
- * check_script for upgrade-on-first-use (K143): every link now has a
+ * check_script for upgrade-intentional (K142, K154): after the upgrade the user ran, every link has a
  * rank, and every group lists (by rank) exactly as 0.1.0 showed it —
  * computed from the frozen 0.1.0 seed with the 0.1.0 rule written out
  * here (a kind set `ranked: true` lists ranked links by rank, then

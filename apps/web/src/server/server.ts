@@ -193,6 +193,7 @@ import {
   ReorderError,
   reorderRelationship,
   repairRelationships,
+  requireSupportedSchema,
   resolveCommentMentionsContext,
   resolveEntityNamesContext,
   resolveLocttDir,
@@ -238,8 +239,6 @@ import {
   unsetConfigValue,
   unsetField,
   updateUser,
-  upgradeIfSafe,
-  upgradeNotice,
   UserError,
   validateQuery,
   validHistory,
@@ -1609,15 +1608,6 @@ export function createWebApp(options: WebAppOptions) {
     | { from: string; to: string; renamed: number }
     | undefined;
 
-  /**
-   * An automatic format upgrade this server ran (K143), for `/api/info`
-   * to report. Held for the life of the process, like the rename notice
-   * above and for the same reason: the request that ran the upgrade is
-   * rarely the one that can show it. The client shows it once per page
-   * load, until dismissed.
-   */
-  let completedUpgradeNotice: TrackerInfoResponse["completedUpgrade"];
-
   const server = createServer((req, res) => {
     void handleRequest(req, res);
   });
@@ -1661,9 +1651,6 @@ export function createWebApp(options: WebAppOptions) {
       // problem when the work is already done.
       ...(completedRenameNotice !== undefined
         ? { completedPrefixRename: completedRenameNotice }
-        : {}),
-      ...(completedUpgradeNotice !== undefined
-        ? { completedUpgrade: completedUpgradeNotice }
         : {}),
       cwd: displayPath(root),
       // Named here rather than in the client so the wizard's note and
@@ -5676,6 +5663,7 @@ export function createWebApp(options: WebAppOptions) {
           to: st.to,
           description: st.description,
           ...(st.risky === true ? { risky: true } : {}),
+          ...(st.changes !== undefined ? { changes: st.changes } : {}),
         })),
         taskCount: tasks.length,
       } satisfies MigrationPlanResponse);
@@ -5727,6 +5715,7 @@ export function createWebApp(options: WebAppOptions) {
           to: st.to,
           description: st.description,
           ...(st.risky === true ? { risky: true } : {}),
+          ...(st.changes !== undefined ? { changes: st.changes } : {}),
         })),
         ...(result.backupPath !== undefined ? { backupPath: result.backupPath } : {}),
       } satisfies MigrateResponse);
@@ -5748,10 +5737,15 @@ export function createWebApp(options: WebAppOptions) {
         });
         return;
       }
+      // A step failed after the backup: the sentinel names the backup,
+      // and `schema_status` (kind `interrupted`) carries it to the
+      // Upgrade banner, which shows where to restore from (K154).
+      const schemaStatus = await computeSchemaStatus(locttDir).catch(() => undefined);
       error(res, (err as Error).message, 409, {
         code: "schema_mismatch",
         data_state: "unknown",
         recovery: { kind: "command", command: "loctt migrate" },
+        ...(schemaStatus !== undefined ? { schema_status: schemaStatus } : {}),
       });
     }
   };
@@ -5913,21 +5907,12 @@ export function createWebApp(options: WebAppOptions) {
         (await trackerDirExists(locttDir))
       ) {
         try {
-          // K143: an older tracker whose upgrade has no risky step is
-          // upgraded by the first API request, after a backup. The one
-          // line is logged here and held for `/api/info`, which the app
-          // shell shows as a one-time notice.
-          const upgraded = await upgradeIfSafe(locttDir);
-          if (upgraded !== null) {
-            const line = upgradeNotice(upgraded);
-            completedUpgradeNotice = {
-              from: upgraded.from,
-              to: upgraded.to,
-              ...(upgraded.backupPath !== undefined ? { backup: upgraded.backupPath } : {}),
-              line,
-            };
-            console.log(line);
-          }
+          // K154: an older tracker is refused (409, `schema_mismatch`,
+          // kind `outdated`) and nothing is written; the app shows the
+          // Upgrade banner, whose button calls `/api/migrate`. Upgrading
+          // is the user's deliberate step, never a side effect of a
+          // request.
+          await requireSupportedSchema(locttDir);
         } catch (err) {
           if (err instanceof SchemaVersionError || err instanceof SchemaTooNewError) {
             // Nothing ran, so no write was attempted regardless of method

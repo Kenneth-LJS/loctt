@@ -13,7 +13,7 @@ import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
 import { readPrefixRenameState } from "../projects/prefix.js";
 import { isMigrationLocked } from "../schema/lock.js";
-import { findMigrationPath, readRecordedFormat, type RecordedFormat } from "../schema/migrations.js";
+import { readRecordedFormat, type RecordedFormat } from "../schema/migrations.js";
 import { compareFormatVersions, CURRENT_SCHEMA_VERSION, SchemaTooNewError } from "../schema/version.js";
 import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { readReconcileState } from "../state/reconcile.js";
@@ -119,19 +119,25 @@ export function describeRelationshipRepair(plan: RelationshipRepairPlan): string
 async function* runRequestedRepairs(
   locttDir: string,
   options: DoctorOptions,
-  schemaOk: boolean,
+  schema: SchemaCheckState,
 ): AsyncGenerator<DiagnosticCheck> {
   const wantIndex = options.fix === true;
   const wantRelationships = options.fix === true || options.repairRelationships === true;
-  if (!wantIndex && !wantRelationships) return;
-  if (!schemaOk) {
+  if (!wantIndex && !wantRelationships && options.rebuildIndex !== true) return;
+  if (!schema.ok) {
+    // K154: doctor never writes to a tracker that needs upgrading. The
+    // repairs would write task files in the old format, and upgrading
+    // is the user's deliberate step, never a side effect of doctor.
     yield {
       name: "repairs",
       status: "error",
-      message: "skipped. Resolve the schema version problem above first",
+      message: schema.upgradePending
+        ? "skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again"
+        : "skipped. Resolve the schema version problem above first",
     };
     return;
   }
+  if (!wantIndex && !wantRelationships) return;
   if (wantIndex && (await fileExists(getTasksDir(locttDir)))) {
     try {
       const rebuilt = await rebuildKeyIndex(locttDir);
@@ -167,8 +173,16 @@ async function* runRequestedRepairs(
  * the others cannot run in — a tracker this build refuses to open is
  * exactly when someone runs `doctor`.
  */
+/** What the schema check found, for the repairs that follow it. */
+interface SchemaCheckState {
+  ok: boolean;
+  /** An upgrade is pending (the tracker is older than this build). */
+  upgradePending: boolean;
+}
+
 async function* checkSchemaVersion(
   locttDir: string,
+  state: SchemaCheckState,
 ): AsyncGenerator<DiagnosticCheck> {
   const name = "schema version";
 
@@ -231,19 +245,15 @@ async function* checkSchemaVersion(
   const cmp = compareFormatVersions(rf.format, CURRENT_SCHEMA_VERSION);
 
   if (cmp < 0) {
-    // K143: doctor explains, it does not write, so it reports rather
-    // than upgrading. Any other command upgrades automatically when
-    // every step is safe; a risky step waits for `loctt migrate`.
-    const path = findMigrationPath(rf.format, CURRENT_SCHEMA_VERSION);
-    const automatic = path !== null && path.length > 0 && path.every(step => step.risky !== true);
+    // K154: doctor explains, it never writes, so it reports the upgrade
+    // rather than running it. Upgrading is always a deliberate step.
+    state.upgradePending = true;
     yield {
       name,
       status: "error",
       message:
-        `on disk ${onDisk}, this build reads ${CURRENT_SCHEMA_VERSION}. `
-        + (automatic
-          ? `The next command that opens it upgrades it (with a backup), or run loctt migrate`
-          : `Run loctt migrate`),
+        `needs upgrading from ${onDisk} to ${CURRENT_SCHEMA_VERSION}. `
+        + `Run loctt migrate (a backup is made first)`,
     };
     return;
   }
@@ -279,15 +289,15 @@ export async function* runDoctorStream(
   // Schema version. Doctor is exempt from the boot guard precisely so it
   // can report this: every other command refuses to run on a mismatch,
   // and the guard's message is all the user would otherwise see.
-  let schemaOk = true;
-  for await (const check of checkSchemaVersion(locttDir)) {
-    if (check.status === "error") schemaOk = false;
+  const schema: SchemaCheckState = { ok: true, upgradePending: false };
+  for await (const check of checkSchemaVersion(locttDir, schema)) {
+    if (check.status === "error") schema.ok = false;
     yield check;
   }
 
   // K141: requested repairs run before the checks, so what follows is
   // the state after them — "run all at once, manually fix what's left".
-  yield* runRequestedRepairs(locttDir, options, schemaOk);
+  yield* runRequestedRepairs(locttDir, options, schema);
 
   // Check config directory
   if (!(await fileExists(getConfigDir(locttDir)))) {
@@ -776,8 +786,9 @@ export async function* runDoctorStream(
     });
   }
 
-  // `--fix` already rebuilt the index before the checks.
-  if (options.rebuildIndex && options.fix !== true) {
+  // `--fix` already rebuilt the index before the checks. Skipped (and
+  // said so above) when the schema is not current: it writes.
+  if (options.rebuildIndex && options.fix !== true && schema.ok) {
     try {
       const rebuilt = await rebuildKeyIndex(locttDir);
       yield ({

@@ -1,6 +1,6 @@
 export { isMigrationLocked, withMigrationLock } from "./lock.js";
 export type { MigrationPlan, MigrationResult } from "./migrate.js";
-export { migrateToCurrent, planMigration, requireSupportedSchema, upgradeIfSafe, upgradeNotice } from "./migrate.js";
+export { migrateToCurrent, planMigration, requireSupportedSchema } from "./migrate.js";
 export type { Migration } from "./migrations.js";
 export { findMigrationPath, listMigrations } from "./migrations.js";
 export {
@@ -11,6 +11,8 @@ export {
   readSchemaVersion,
   SchemaTooNewError,
   SchemaUnmigratableError,
+  SchemaUpgradeRequiredError,
   SchemaVersionError,
+  upgradeRequiredMessage,
   writeSchemaVersion,
 } from "./version.js";

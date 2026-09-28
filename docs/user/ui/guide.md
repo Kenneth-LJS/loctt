@@ -7,6 +7,21 @@ with `loctt ui`; it serves on `http://localhost:<port>` and reads the same
 Screenshots below are marked with placeholders and captured against a
 representative tracker.
 
+## A tracker that needs upgrading
+
+When a new `loctt` changes the tracker's data format, the web UI does not
+upgrade it for you. Opening an older tracker shows one screen instead of
+the app: the two versions ("This tracker needs upgrading from 0.1.0 to
+0.3.0."), "A backup is made first.", the steps under **What changes**
+(click to open), and an **Upgrade** button. Nothing else works until the
+tracker is upgraded, because every part of the app would be refused.
+
+**Upgrade** copies `.loctt/` to a backup beside it, upgrades the tracker
+and reloads the app. If the upgrade stops part-way, the screen shows the
+backup to restore from and a **Reload** button, which opens the recovery
+screen. `loctt migrate` in a terminal does the same upgrade. See
+[Upgrading](../common/upgrading.md).
+
 ## The shell
 
 Every screen sits inside a fixed shell: a top header, a left sidebar, and

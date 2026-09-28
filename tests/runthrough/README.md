@@ -128,7 +128,11 @@ post:
   message }` (exit code defaults to 1; `message` is a substring of
   stdout+stderr) and `mcp: { message }` (a substring of the error
   result). An error step automatically asserts **the tracker is
-  unchanged**; add `post` checks only for anything else. `cli: {
+  unchanged**; add `post` checks only for anything else. Doctor does not
+  run after an error step that changed nothing: the tracker is the one
+  the previous step (or the seed) left, already judged. (A refused
+  command on the 0.1.0 seed leaves it at 0.1.0, whose pending upgrade is
+  not in the current seed's baseline, K154.) `cli: {
   partial: true }` is the exception: a bulk command that changed some
   tasks and exited non-zero for the rest (K153). Such a step must carry a
   `changed_only: { tasks: [refs], files: [paths] }` post check: nothing

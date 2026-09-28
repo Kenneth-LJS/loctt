@@ -16,10 +16,9 @@ import { access } from "node:fs/promises";
 import {
   getTrackerInfo,
   recoverInterruptedPrefixRename,
+  requireSupportedSchema,
   resolveLocttDir,
   SchemaUnmigratableError,
-  upgradeIfSafe,
-  upgradeNotice,
 } from "@loctt/core";
 import { z } from "zod";
 
@@ -110,23 +109,16 @@ export async function executeTool(
   }
 
   // Boot guard — refuse to run tools against a tracker whose
-  // schema doesn't match this MCP server's expectations. The agent
-  // sees a clear error pointing at `loctt migrate` rather than
-  // partial reads against an unfamiliar schema. `init` is the one
-  // legitimately tool that runs against a pre-version tracker; it
-  // sets `exemptFromSchemaGuard: true`.
-  // K143: an older tracker whose upgrade has no risky step is upgraded
-  // on the first tool call, after a backup. The one line saying so goes
-  // to stderr (the host's server log) and rides on that call's result,
-  // after its own content, so the agent can tell the user.
-  let upgradeLine: string | undefined;
+  // schema doesn't match this MCP server's expectations. An older
+  // tracker returns "This tracker needs upgrading from X to Y. Run
+  // `loctt migrate` (a backup is made first)." and nothing is written:
+  // upgrading is the user's deliberate step (K154), which an agent
+  // takes only when the user asked (`migrate_schema`). Exempt tools
+  // set `exemptFromSchemaGuard: true`: `init`, `migrate_schema`, and
+  // the read-only `info` and `doctor`, which report the state instead.
   if (!registered.exemptFromSchemaGuard && (await trackerNeedsSchemaCheck(root, locttDir))) {
     try {
-      const upgraded = await upgradeIfSafe(locttDir);
-      if (upgraded !== null) {
-        upgradeLine = upgradeNotice(upgraded);
-        process.stderr.write(`${upgradeLine}\n`);
-      }
+      await requireSupportedSchema(locttDir);
     } catch (err) {
       const message = (err as Error).message;
       return errorResult(err instanceof SchemaUnmigratableError ? `${message} ${err.remedy}` : message);
@@ -146,9 +138,7 @@ export async function executeTool(
     }
   }
 
-  const result = await validateAndRun(root, locttDir, name, registered.handler, args);
-  if (upgradeLine === undefined) return result;
-  return { ...result, content: [...result.content, { type: "text", text: upgradeLine }] };
+  return validateAndRun(root, locttDir, name, registered.handler, args);
 }
 
 /** Validates `args` against the tool's schema and runs its handler. */
