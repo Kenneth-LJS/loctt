@@ -22685,6 +22685,21 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K145 · Test suites: fold e2e journeys into the runthrough; integration keeps surface mechanics; doctor after every integration write
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Asked whether integration, e2e and runthrough should merge, and offered
+three changes, Ken: *"sure go with all three."*
+1. The e2e journeys become runthrough scenarios and `test:e2e` is
+   retired; the MCP tool-list snapshot (with its no-em-dash guard) moves
+   to integration.
+2. Integration stays, scoped to how each surface behaves (flags, output,
+   exit codes, error text, locks, git, stdin); new data-behaviour tests go
+   to the runthrough; existing integration tests move only when touched.
+3. A shared integration step runs `loctt doctor` after every test that
+   writes and fails on any new finding.
+
 ### K144 · Runthrough tests for CLI and MCP over a seed tracker
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**

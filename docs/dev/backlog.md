@@ -43,3 +43,15 @@ ancestor pages refresh after a reorder.
   comments, attachments, views, search/list queries, sprints, milestones,
   labels, users, settings, doctor repairs, and error cases.
 
+## B43 · Consolidate test suites (K145) — **todo** (after B42)
+
+- Rewrite each `tests/e2e` journey as a runthrough scenario (same steps,
+  same assertions, plus the automatic checks); move the MCP tool-list
+  snapshot and em-dash guard to `tests/integration`; delete `tests/e2e`,
+  its vitest config and the `test:e2e` script; update CONTRIBUTING,
+  build-loop.md and any gate lists.
+- A shared integration helper runs `loctt doctor` after each writing test
+  and fails on any finding the starting tracker did not have; red-prove it.
+- Document the split: integration = surface mechanics, runthrough = data
+  behaviour.
+

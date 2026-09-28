@@ -194,7 +194,8 @@ own claims, another agent's, and every decision record.
   "all suites green" on the strength of `npm run test` has verified
   perhaps half of what it changed. Before claiming a repo-wide change is
   done, run `npm run test`, `npm run test:integration`, `npm run
-  test:e2e`, and the Playwright UI suite — and say which you ran.
+  test:e2e`, `npm run test:runthrough`, and the Playwright UI suite —
+  and say which you ran.
 - **`page.on("pageerror")` distinguishes a component that crashes on
   render from one that renders nothing** — reasoning about data flow
   cannot; both give identical "element not found" output. A hook below
@@ -235,6 +236,8 @@ own claims, another agent's, and every decision record.
 
  9. SURFACE    Run the matching surface cases for CLI + MCP in this domain.
                GATE  npm run test:integration
+               GATE  npm run test:runthrough   (every runthrough case, CLI
+                     then scripted MCP, over the seed tracker — K144)
 
 10. COMMIT     One squashed commit. Update the ticket's status mark.
 ```
