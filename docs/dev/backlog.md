@@ -9,6 +9,20 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
+## B44 · Fix the runthrough's bugs and the name/ID rule (K147, K148) — **in progress**
+
+Ken: *"fix all, unless a design decision is needed"*.
+- G1 unlink a link stored as an ambiguous key; G2 `loctt set` typed custom
+  fields; G3 `loctt set` labels; G5/G6 the key index after delete and
+  create; G7 `show` prints names.
+- G4 (K147): delete removes the other side of every link, recorded in the
+  partners' history.
+- K148: IDs recognised by shape; ID-shaped names refused on create and
+  rename; names or IDs accepted by CLI, MCP and queries; CLI prints names,
+  MCP returns both; ambiguous and unmatched names refused with a message.
+- Each fixed gap leaves known-gaps.md; its runthrough case drops
+  `known_bug` and passes.
+
 ## B41 · Semver format versions, ordered links everywhere, automatic upgrades (K142, K143) — **todo** (after B39)
 
 - `.loctt/.schema-version` holds a semver (`0.1.0`); the code's format

@@ -22703,6 +22703,11 @@ a check for this too"*.
   view with an ID-shaped name is refused ("That looks like an ID; choose a
   different name.") on every surface.
 - No characters are banned in names; no prefix exists.
+- Confirmed (*"looks good"*): CLI and MCP accept a name or an ID for
+  labels, users, milestones, sprints and projects, and so do queries
+  (`labels = urgent`); the CLI prints names; MCP returns both name and ID;
+  a name matching several things is refused listing each with its ID; a
+  name matching nothing says so instead of returning nothing.
 
 ### K147 · Deleting a task removes the other side of its links (G4)
 
