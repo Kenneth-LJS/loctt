@@ -9,4 +9,20 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-Empty. B28–B38 shipped on `ui/polish-wave-4` (2026-09-27); records are K135–K139 and A351–A355 in `decisions.md`. Publishing `loctt` and unpublishing `@loctt/cli` / `@loctt/mcp` are Ken's (K139).
+## B39 · `create --parent` stores the key and no inverse (K140) — **in progress**
+
+`createTask` must resolve the parent (key or id → id), refuse a missing or
+archived parent like `linkTask`, and write the forward and inverse tree
+edges (with rank) under the same lock. CLI and MCP regression tests for
+the exact report (create --parent KEY → child stores the id, the parent
+lists the child, doctor is clean, unlink works). `doctor` detects
+relationship targets stored as keys and missing inverses, and its repair
+fixes them; CLI and MCP docs updated.
+
+## B40 · Reorder a task's children on the task page (K140) — **in progress**
+
+The Children group (`graph: tree`, `TreeGroup` in
+`relationships/RelationshipsPanel.tsx`) gets drag handles and keyboard
+reordering for the task's direct children, using the existing rerank
+mutation (`reorderRelationship` on the `child` edges). The order shows
+everywhere children are listed.

@@ -22685,6 +22685,27 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K140 · User bug report: `create --parent`; children can't be reordered
+
+**Date:** 2026-09-28 · **Ken's request.**
+
+A user of `loctt` 0.2.1 reported: *"loctt create --parent GAME-4 writes
+the raw key into the task file instead of the task ID, and doesn't add
+the child link on the parent. doctor then reports 26 broken references,
+and unlink can't remove them."* They hand-edited frontmatter to recover.
+Ken: *"a bug reported by a user. can we fix?"* and *"under a
+task/story/etc with children, you cant re-order the children. how can we
+fix this?"*
+
+Cause: core `createTask` pushed `{ type: <tree axis>, target:
+options.parent }` verbatim, with no lookup and no inverse edge (CLI and
+MCP both use it; the web "new child" path does not). Fix: resolve the
+parent like `linkTask` does, write both sides, and give `doctor` a repair
+for key-valued relationship targets and missing inverses so affected
+trackers heal without hand edits (B39). Children reordering exists in
+core (`reorderRelationship`, CLI `rerank`, MCP `reorder_relationship`)
+but the task page's tree-rendered Children group has no handles (B40).
+
 ### K139 · One package, `loctt`, with all three surfaces (supersedes K89)
 
 **Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
