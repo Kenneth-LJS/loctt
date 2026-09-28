@@ -22685,6 +22685,31 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K154 · Format upgrades are intentional on every surface (reverses K143's automatic upgrade)
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Ken asked whether automatic upgrades behave the same everywhere and told
+the orchestrator not to follow K143 blindly (*"these stories are
+ai-created so i wouldnt completely treat is source of truth"*). From a
+product view: on MCP a background agent would change the data format
+without the user seeing it, and on a git-shared tracker whoever runs the
+new version first forces everyone else to upgrade; format changes are
+rare, so one deliberate step costs little. Ken chose **(b)**:
+- CLI: a command on an older tracker stops with "This tracker needs
+  upgrading from X to Y. Run `loctt migrate` (a backup is made first)."
+  `loctt migrate` shows what it will do and asks to confirm (`--yes` for
+  scripts).
+- Web: a banner with an **Upgrade** button (backup, upgrade, reload);
+  nothing else works until then. Ken: *"get ui agent to design banner if
+  needed"*.
+- MCP: tools return the same message; the tool instructions tell agents
+  to ask the user before calling `migrate_schema`.
+- Doctor and info are read-only everywhere and report that an upgrade is
+  needed.
+The backup, crash sentinel, K142 mapping and upgrade steps stay; only the
+trigger changes. K143's "automatic for non-risky steps" is superseded.
+
 ### K153 · Bulk add/remove is partial, like bulk set (supersedes K152)
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
