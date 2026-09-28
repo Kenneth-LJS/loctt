@@ -196,6 +196,12 @@ own claims, another agent's, and every decision record.
   done, run `npm run test`, `npm run test:integration`, `npm run
   test:e2e`, `npm run test:runthrough`, and the Playwright UI suite —
   and say which you ran.
+- **Full integration runs before merge, not per change (K146).** While
+  working, run only the integration files a change touches or could
+  affect; `npm run test:integration` (~6 min) runs in the pre-merge gate,
+  the same pattern as the full Playwright suite (~24 min). Measured
+  2026-09-27: unit ~2 min, integration ~6 min, packaging ~10 s plus a
+  build, Playwright ~24 min at 2 workers; the full gate set ~35 min.
 - **`page.on("pageerror")` distinguishes a component that crashes on
   render from one that renders nothing** — reasoning about data flow
   cannot; both give identical "element not found" output. A hook below
@@ -235,7 +241,10 @@ own claims, another agent's, and every decision record.
                GATE  npm run cases:check                          (index not stale)
 
  9. SURFACE    Run the matching surface cases for CLI + MCP in this domain.
-               GATE  npm run test:integration
+               GATE  npx vitest run --config tests/vitest.integration.config.ts <touched files>
+                     (only the integration files this change touches or could
+                     affect; the full `npm run test:integration`, ~6 min, runs
+                     once before merge — K146)
                GATE  npm run test:runthrough   (every runthrough case, CLI
                      then scripted MCP, over the seed tracker — K144)
 

@@ -22685,6 +22685,17 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K146 · Full integration runs before merge, not per change
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+Shown the measured gate times (unit ~2 min, integration ~6 min, Playwright
+~24 min, full set ~35 min) and three ways to shorten agent cycles, Ken:
+*"sure 2"*: while working, agents run only the integration files a change
+touches or could affect; the full `npm run test:integration` runs once in
+the pre-merge gate, like the full Playwright suite. Recorded in
+`docs/dev/process/build-loop.md`.
+
 ### K145 · Test suites: fold e2e journeys into the runthrough; integration keeps surface mechanics; doctor after every integration write
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
