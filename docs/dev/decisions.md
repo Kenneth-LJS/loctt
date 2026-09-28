@@ -22711,6 +22711,10 @@ state"*. Asked the open calls, he chose:
 - **Its own script, `npm run test:runthrough`, part of every gate run.**
 - The seed must match the code's format version, and the runner refuses
   otherwise, pointing at `npm run seed:upgrade`.
+- *"always run cli version first before mcp"*: every test runs the CLI
+  first, then MCP; an MCP result after a CLI failure is marked as such, and
+  agent mode only hands out a test whose CLI run passed, so an agent
+  failure isolates MCP handling and tool descriptions.
 
 ### K143 · Ordering scope, automatic upgrades, full versioning tests
 
