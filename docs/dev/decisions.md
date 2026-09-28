@@ -22685,6 +22685,16 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K149 · No exact-ID fallback for non-ID-shaped input
+
+**Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
+
+B44 (A360) added a fallback: input that is not ID-shaped and matches no
+name was still tried as an exact ID. Offered removing it (K148 exact) or
+keeping it as a safety net for hand-edited IDs, Ken: *"(a) remove it"*.
+Web list URLs accept names or IDs through the same resolver; the web app
+keeps emitting IDs in the URLs it builds, so bookmarks survive renames.
+
 ### K148 · IDs are recognised by their shape; names may not be ID-shaped
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**
