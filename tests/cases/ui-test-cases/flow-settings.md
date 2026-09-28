@@ -49,7 +49,7 @@ This case previously asserted the panels were read-only. That was an early draft
 
 - Priorities show `label`, `key`, and `value`, sorted by `value`; a tracker with two priorities renders two rows and a tracker with seven renders seven — nothing assumes a fixed count.
 - Task types show `label` and `key` with no invented semantics attached (no "epic" special-casing).
-- Relationships show forward `label`/`key`, `inverse`/`inverse_label`, `graph` (`none` / `acyclic` / `tree`) and `ranked` as explicit indicators rather than unlabelled icons. `graph` replaced the former `structural` boolean; `symmetric` is not among these — it is `kind: symmetric`, a separate discriminator (SET-5).
+- Relationships show forward `label`/`key`, `inverse`/`inverse_label` and `graph` (`none` / `acyclic` / `tree`) as explicit indicators rather than unlabelled icons. `graph` replaced the former `structural` boolean; `symmetric` is not among these — it is `kind: symmetric`, a separate discriminator (SET-5). There is no `ranked` indicator or control: every kind is ordered (K143, Ken 2026-09-28; this bullet listed `ranked` before B41).
 - A relationship configured with a custom key like `duplicates` appears with the user's own labels — nothing hardcodes `blocks` / `depends_on`.
 
 ### SET-5 · M4 · major · P3
@@ -407,7 +407,7 @@ This case previously asserted the panels were read-only. That was an early draft
 ### SET-48 · M4 · major · P3 P4
 **A relationship type can be created.** Relationship-types panel, Create dialog.
 
-- The Create dialog takes key + label + symmetric/inverse + inverse_label + graph + ranked (`RelationshipDef`).
+- The Create dialog takes key + label + symmetric/inverse + inverse_label + graph (`RelationshipDef`). (`ranked` was removed by K143: every kind is ordered.)
 - On Save the new relationship type is written to `workflow.yaml` and is usable when linking tasks.
 - Creating a duplicate key is rejected before `PUT` with a message naming the collision.
 

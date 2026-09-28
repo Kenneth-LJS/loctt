@@ -15,7 +15,7 @@ npm run test:runthrough -- -t "\[cli\]"          # one surface
 RT_KNOWN_BUGS=show npm run test:runthrough -- -t "known bug"   # see why known bugs fail
 ```
 
-A full run is about a minute (about 70 cases × 2 surfaces). It is part of
+A full run is a few minutes (about 105 cases, most on both surfaces; the git journeys take longest). It is part of
 every gate run: see `docs/dev/process/build-loop.md`.
 
 ## CLI first, then MCP
@@ -45,6 +45,9 @@ tests/runthrough/
 tests/fixtures/trackers/seed/
   .loctt/                 the seed tracker (checked in)
   seed-index.json         slug → id / key / name, written by the generator
+tests/fixtures/trackers/seed-0.1.0/
+  .loctt/                 the same seed frozen at format 0.1.0 (B41), never
+                          upgraded: the upgrade tests start from it
 tests/vitest.runthrough.config.ts
 ```
 
@@ -78,8 +81,9 @@ is, because core has no clock or id override. Keys are deterministic
   The generator fails unless the result is `doctor`-clean.
 - **`npm run seed:upgrade`** brings the seed to the code's format
   version through the tracker's own upgrade path (`loctt migrate`),
-  keeping its history, ids and timestamps. Today it is a no-op; B41's
-  0.1.0 → 0.3.0 step is picked up without changes here. It replaces the
+  keeping its history, ids and timestamps. B41 produced the 0.3.0 seed
+  this way from the 0.1.0 one (every link ranked in its shown order). It
+  replaces the
   seed only when the upgraded copy is `doctor`-clean.
 - **The runner refuses to start** when the seed's `.schema-version`
   differs from what this build writes (read from a tracker it initialises
@@ -124,10 +128,30 @@ post:
   message }` (exit code defaults to 1; `message` is a substring of
   stdout+stderr) and `mcp: { message }` (a substring of the error
   result). An error step automatically asserts **the tracker is
-  unchanged**; add `post` checks only for anything else.
+  unchanged**; add `post` checks only for anything else. `cli: {
+  partial: true }` is the exception: a bulk command that changed some
+  tasks and exited non-zero for the rest (K153); `post` then says what
+  changed.
 - **`steps`** makes a scenario: a list of `{ name, cli, mcp, capture,
   post, expect_error }`, run in order on one tracker. A top-level `post`
   runs after the last step. A failing step stops the scenario.
+- **`seed: empty`** starts from a tracker `loctt init` just made
+  (prefix `T`, no tasks), and **`seed: none`** from an empty directory —
+  for the user journeys (`cases/journeys/`, the old `tests/e2e`, B43),
+  which name their own keys. **`git: local`** makes the temp root a git
+  repository first; **`git: remote`** also gives it a bare `origin`
+  (`${var.remote}`). Both only with `empty` / `none`.
+- **`via: cli | mcp`** on a step runs it on that surface whatever run
+  this is, so one scenario can write through one surface and read
+  through the other (the interop journey); `via: mcp` opens the MCP
+  session on the CLI run too.
+- **`script: <file.ts>`** on a step is an action no loctt command can
+  perform (a push from another clone): the module's default export
+  `({ root, vars }) => string | void` runs instead of `cli` / `mcp`, and
+  its return value is the step's output.
+- **`seed: "0.1.0"`** starts the case from the frozen 0.1.0 seed
+  (`tests/fixtures/trackers/seed-0.1.0/`) instead of the current one, for
+  the upgrade cases. Ids, keys and the index are the same.
 - **`setup_files`** (`path: content`) writes files under the temp root
   before `pre` — e.g. a file to attach. **`setup_patch`** (`file`,
   `find`, `replace`, relative to `.loctt/`, `find` must occur exactly
@@ -166,6 +190,7 @@ An unknown reference fails the check; it never becomes an empty string.
 | `new_comment: { task }` | the one new comment on `task` → `.id` |
 | `entity: { kind, name }` | a label / milestone / sprint / project / user / view by name → `.id` |
 | `output: "<regex>"` | the first group of the regex over the action's output |
+| `git_rev: <ref>` | the commit a git ref points at in the temp root's repository |
 
 ## Checks
 
@@ -189,7 +214,10 @@ A task reference is its id, its current key, or a key in its
 | `yaml: { file, path, equals \| contains \| absent \| matches }` | a value in any YAML file under `.loctt/`. `path` is dotted; `[k=v]` picks a list element, `[n]` an index |
 | `file_unchanged: <path>` | the file (relative to `.loctt/`) is byte-identical to before the step; a diff otherwise |
 | `tracker_unchanged: true` | every file under `.loctt/` except `local/` is byte-identical to before the step; a diff otherwise |
-| `output: { surface?, contains?, not_contains?, in_order?, keys? }` | on the action's output. `keys` is the set of task keys a list result names (CLI rows or MCP JSON). `surface` limits the check to `cli` or `mcp`, whose outputs differ |
+| `path: { path, exists }` | a file or directory under the temp root (not `.loctt/`) exists, or not |
+| `git: { ref, repo?, exists?, not_equals? }` | a ref resolves in the root's repository (`repo: local`, default) or its bare remote (`repo: remote`); `exists: false` for absent; `not_equals` = its commit differs from a captured one |
+| `git_show: { spec, contains }` | `git show <spec>` in the root's repository contains the text |
+| `output: { surface?, contains?, not_contains?, in_order?, keys?, line_count? }` | on the action's output. `keys` is the set of task keys a list result names (CLI rows or MCP JSON). `line_count: { matches, equals }` counts output lines matching a regex. `surface` limits the check to `cli` or `mcp`, whose outputs differ |
 
 Two checks run **after every step without being asked for**:
 

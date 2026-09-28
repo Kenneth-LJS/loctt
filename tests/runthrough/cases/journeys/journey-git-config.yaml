@@ -1,0 +1,45 @@
+id: journey-git-config
+name: "Journey: git settings through loctt config, and their effects"
+description: >
+  Folded in from tests/e2e/09 (B43, K145): config list/get defaults,
+  enable, auto_push off keeps publishes local, a custom branch is
+  published and pushed, and unset restores the default.
+tags: [journey, git, config, b43]
+surfaces: [cli]
+seed: empty
+git: remote
+steps:
+  - name: config list shows every git key's default
+    cli: config list
+    post:
+      - output: { contains: ["git.enabled", "git.auto_push", "git.branch"] }
+  - name: auto_push defaults to true
+    cli: config get git.auto_push
+    post:
+      - output: { line_count: { matches: "^true$", equals: 1 } }
+  - name: enable
+    cli: [git enable, config list]
+    post:
+      - output: { line_count: { matches: "git\\.enabled\\s*=\\s*true", equals: 1 } }
+  - name: auto_push off
+    cli: [config set git.auto_push false, config get git.auto_push]
+    post:
+      - output: { line_count: { matches: "^false$", equals: 1 } }
+  - name: a publish stays local
+    cli: [create first, git publish]
+    post:
+      - git: { ref: loctt }
+      - git: { ref: loctt, repo: remote, exists: false }
+  - name: auto_push on and a custom branch
+    cli:
+      - config set git.auto_push true
+      - config set git.branch my-tasks
+      - create second
+      - git publish
+    post:
+      - git: { ref: my-tasks }
+      - git: { ref: my-tasks, repo: remote }
+  - name: unset restores the default
+    cli: [config unset git.auto_push, config get git.auto_push]
+    post:
+      - output: { line_count: { matches: "^true$", equals: 1 } }

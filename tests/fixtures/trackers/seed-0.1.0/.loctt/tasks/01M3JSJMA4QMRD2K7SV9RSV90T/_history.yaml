@@ -1,0 +1,92 @@
+- timestamp: 2026-09-28T01:20:25.413Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJMA4QMRD2K7SV9RSV90T
+      key: WEB-13
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Login crashes on empty password
+      created_at: 2026-09-28T01:20:25.413Z
+      updated_at: 2026-09-28T01:20:25.413Z
+      status: backlog
+      task_type: bug
+      priority: critical
+      labels:
+        - 01M3JSJ8DMF2F12MVBFA3R09Q1
+        - 01M3JSJ7V0JT57NNCCSGH9XV73
+      assignee: 01M3JSJ6CXR6KBVE6HJQ1BDAN5
+      reporter: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+      due_date: 2026-09-20
+      sprint: 01M3JSJAHPD03QD0VBZFHQ4ZR2
+    body: |
+      Steps to reproduce:
+
+      1. Open /login
+      2. Leave the password empty
+      3. Press Sign in
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:25.755Z
+  kind: custom_field_change
+  field: team
+  before: null
+  after: identity
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:26.085Z
+  kind: custom_field_change
+  field: area
+  before: null
+  after: api
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:37.919Z
+  kind: custom_field_change
+  field: risk
+  before: null
+  after: 9
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:37.940Z
+  kind: custom_field_change
+  field: signed_off
+  before: null
+  after: false
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:37.959Z
+  kind: custom_field_change
+  field: platforms
+  before: null
+  after:
+    - web
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:40.095Z
+  kind: field_change
+  field: status
+  before: backlog
+  after: in_progress
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:49.285Z
+  kind: link_added
+  meta:
+    type: is_duplicated_by
+    target: 01M3JSJNAA3AC7KM0G2F0XP60S
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:51.200Z
+  kind: comment_added
+  meta:
+    comment_id: 01M3JSKDFSD75EK4GPEM4GX752
+    author: 01M3JSJ6CXR6KBVE6HJQ1BDAN5
+  after: Reproduced on staging. @user:01M3JSJ5SC2X6K2GXCM8DDY4C3 can you check the
+    auth callback?
+  actor: 01M3JSJ6CXR6KBVE6HJQ1BDAN5
+- timestamp: 2026-09-28T01:20:51.779Z
+  kind: comment_added
+  meta:
+    comment_id: 01M3JSKE1VDYH7481FD54FHPMW
+    author: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+  after: "Found it: the callback assumes a password. Fix in review,
+    @user:01M3JSJ6CXR6KBVE6HJQ1BDAN5."
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:52.678Z
+  kind: attachment_added
+  meta:
+    name: repro-steps.txt
+    size: 67
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

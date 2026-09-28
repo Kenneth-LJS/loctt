@@ -842,7 +842,13 @@ test.describe("SPR — sprints overview", () => {
     const alert = page.getByTestId("sprints-move-error");
     await expect(alert).toBeVisible();
     await expect(alert).toContainText(String(key));
-    await expect(alert).toContainText(/no longer exists|unknown sprint/i);
+    // In the user's terms: the sprint is gone. Since K148 the server says
+    // "No sprint with ID '<ULID>'" (before it, "unknown sprint "<ULID>";
+    // valid: …", which the old `unknown sprint` alternative here
+    // accepted). Neither is for a person: the board says the sprint no
+    // longer exists and never shows its internal ID (messaging.md).
+    await expect(alert).toContainText(/no longer exists/i);
+    await expect(alert).not.toContainText(staleId);
     await expect(alert).toContainText("Reload");
     await expect(page.getByTestId(`sprint-count-${fromId}`)).toHaveText("1");
     expect(await readTaskFile(tracker.root, String(key)))

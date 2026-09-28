@@ -1,0 +1,57 @@
+id: journey-cli-lifecycle
+name: "Journey: every CLI mutation on one task, checked at each step"
+description: Folded in from tests/e2e/03 (B43, K145).
+tags: [journey, b43]
+surfaces: [cli]
+seed: empty
+steps:
+  - name: create two tasks
+    cli:
+      - create primary
+      - create secondary
+  - name: show
+    cli: show T-1
+    post:
+      - output: { contains: ["primary"] }
+  - name: set status
+    cli: [set T-1 status in_progress, show T-1]
+    post:
+      - output: { contains: ["Status: in_progress"] }
+  - name: set priority
+    cli: [set T-1 priority high, show T-1]
+    post:
+      - output: { contains: ["Priority: high"] }
+  - name: body --set
+    cli: [body T-1 --set "first body", show T-1]
+    post:
+      - output: { contains: ["first body"] }
+  - name: body --append
+    cli: [body T-1 --append "more text", show T-1]
+    post:
+      - output: { contains: ["first body", "more text"] }
+  - name: link
+    cli: [link T-1 blocks T-2, show T-1]
+    post:
+      - output: { contains: ["blocks → T-2"] }
+  - name: unlink
+    cli: [unlink T-1 blocks T-2, show T-1]
+    post:
+      - output: { not_contains: ["blocks → T-2"] }
+  - name: archive
+    cli: [archive T-1, show T-1]
+    post:
+      - output: { contains: ["Archived:"] }
+  - name: unarchive
+    cli: [unarchive T-1, show T-1]
+    post:
+      - output: { not_contains: ["Archived:"] }
+  - name: delete
+    cli: delete T-1 --yes
+    post:
+      - task_absent: T-1
+      - task_exists: T-2
+      - count: { where: {}, archived: include, equals: 1 }
+  - name: the deleted task no longer shows
+    cli: show T-1
+    expect_error:
+      cli: { message: "Task not found" }

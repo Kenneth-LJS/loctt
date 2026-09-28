@@ -1,0 +1,15 @@
+id: list-multi-choice
+name: Add to and remove from a multi-value choice field
+description: K150 - choice values are named by key or label; the field stores keys.
+tags: [lists, custom-fields, b45]
+pre:
+  - field: { task: "${task.dark_mode.key}", field: fields.platforms, equals: [web] }
+cli:
+  - set ${task.dark_mode.key} platforms --add iOS android
+  - set ${task.dark_mode.key} fields.platforms --remove Android
+mcp:
+  call:
+    - { tool: update_task, args: { ref: "${task.dark_mode.key}", add: { platforms: [iOS, android] } } }
+    - { tool: update_task, args: { ref: "${task.dark_mode.key}", remove: { platforms: [Android] } } }
+post:
+  - field: { task: "${task.dark_mode.key}", field: fields.platforms, equals: [web, ios] }

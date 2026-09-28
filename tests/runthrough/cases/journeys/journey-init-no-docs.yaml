@@ -1,0 +1,9 @@
+id: journey-init-no-docs
+name: "Journey: init --no-docs writes no docs"
+description: Folded in from tests/e2e/02 (B43, K145).
+tags: [journey, init, b43]
+surfaces: [cli]
+seed: none
+cli: init --no-docs
+post:
+  - path: { path: .loctt/docs, exists: false }

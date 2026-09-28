@@ -19,6 +19,7 @@ sprint: 01M3JSJAHPD03QD0VBZFHQ4ZR2
 relationships:
   - type: is_duplicated_by
     target: 01M3JSJNAA3AC7KM0G2F0XP60S
+    rank: u
 fields:
   team: identity
   area: api

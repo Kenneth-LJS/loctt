@@ -84,10 +84,24 @@ describe("MCP executeTool", () => {
 
   it("returns a schema-guard error for tools other than init when schema is newer", async () => {
     const { writeFile } = await import("node:fs/promises");
-    await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
+    await writeFile(join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf-8");
     const result = await executeTool(root, "list_tasks", {});
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/newer version/i);
+    expect(result.content[0]?.text).toBe("Error: This tracker needs loctt 9.9.9 or newer.");
+  });
+
+  // K143: a tracker needing only non-risky steps is upgraded by the
+  // first tool call, and that call's result carries the one line.
+  it("upgrades a 0.1.0 tracker on the first call and says so once, after the tool's own content", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(root, ".loctt", ".schema-version"), "0.1.0\n", "utf-8");
+    const first = await executeTool(root, "list_tasks", {});
+    expect(first.isError).toBeUndefined();
+    const last = first.content[first.content.length - 1]?.text ?? "";
+    expect(last).toMatch(/^Upgraded this tracker from 0\.1\.0 to 0\.3\.0 \(backup: .+\.loctt\.backup-v0\.1\.0-.+\)\.$/);
+    expect(first.content.length).toBe(2);
+    const second = await executeTool(root, "list_tasks", {});
+    expect(second.content.some(c => c.text.startsWith("Upgraded"))).toBe(false);
   });
 
   it("init bypasses the schema guard so a fresh tracker can be created", async () => {
@@ -216,11 +230,10 @@ describe("MCP executeTool", () => {
       await executeTool(root, "create_task", { title: "x" });
       const result = await executeTool(root, "update_task", { ref: "T-1", value: "x" });
       expect(result.isError).toBe(true);
-      // Caught at the outer parseToolArgs layer now (chunk 8); the
-      // message names the field path and the expected type rather
-      // than the older inner-validator wording.
-      expect(result.content[0]?.text ?? "").toMatch(/field/);
-      expect(result.content[0]?.text ?? "").toMatch(/expected string/i);
+      // `field` became optional with K150 (`add`/`remove` may stand
+      // alone), so the refusal now comes from the handler, naming both
+      // ways to call the tool, rather than from the schema layer.
+      expect(result.content[0]?.text ?? "").toMatch(/Pass `field` and `value`/);
     });
 
     it("accepts a valid labels array", async () => {
@@ -506,7 +519,9 @@ describe("MCP executeTool", () => {
     it("returns the series for a known sprint", async () => {
       const { resolveLocttDir, saveSprintsConfig } = await import("@loctt/core");
       const locttDir = resolveLocttDir(root);
-      const sprintId = "01HXSPRINT0000000000000001";
+      // ID-shaped (K148): with no exact-ID fallback for other shapes
+      // (K149), a fake id containing I would be read as a sprint name.
+      const sprintId = "01HXSPRNT00000000000000001";
       await saveSprintsConfig(locttDir, {
         sprints: [{
           id: sprintId,

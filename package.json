@@ -17,8 +17,6 @@
     "cases:coverage": "tsx tools/coverage/main.ts",
     "pretest:integration": "npm run build",
     "test:integration": "vitest run --config tests/vitest.integration.config.ts",
-    "pretest:e2e": "npm run build",
-    "test:e2e": "vitest run --config tests/vitest.e2e.config.ts",
     "test:perf": "vitest run --config tests/vitest.perf.config.ts",
     "pretest:packaging": "npm run build",
     "test:packaging": "vitest run --config tests/vitest.packaging.config.ts",
@@ -54,7 +52,7 @@
     "vitest": "^4.1.4"
   },
   "license": "AGPL-3.0-or-later",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "overrides": {
     "fast-uri": "^3.1.8"
   }

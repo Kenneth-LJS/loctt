@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { gated, gateRootForCli } from "../fixtures/doctor-gate.js";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const cliEntry = path.join(repoRoot, "apps/cli/dist/index.js");
 
@@ -52,7 +54,10 @@ export async function startMcpClient(cwd: string): Promise<McpClient> {
 
   return {
     async callTool(name, args) {
-      const result = await client.callTool({ name, arguments: args });
+      // K145: each call is a surface action the doctor gate watches
+      // (a no-op unless `withTmpLoctt` registered this root).
+      const result = await gated(gateRootForCli([], cwd, {}), () =>
+        client.callTool({ name, arguments: args }));
       return result as unknown as McpToolResult;
     },
     async listTools() {

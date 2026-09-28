@@ -10,11 +10,12 @@ setup_patch:
     find: "    target: ${task.epic_checkout.id}\n"
     replace: "    target: ${task.epic_checkout.key}\n"
 pre:
-  - field: { task: "${task.checkout_cart.key}", field: relationships, contains: { type: parent, target: "${task.epic_checkout.key}" } }
+  - field: { task: "${task.checkout_cart.key}", field: relationships, contains: { type: parent, target: "${task.epic_checkout.key}", rank: u } }
 cli: doctor --fix
 mcp:
   call: { tool: doctor, args: { fix: true } }
 post:
   - relationship: { task: "${task.checkout_cart.key}", type: parent, target: "${task.epic_checkout.key}" }
-  - field: { task: "${task.checkout_cart.key}", field: relationships, equals: [{ type: parent, target: "${task.epic_checkout.id}" }, { type: child, target: "${task.cart_totals.id}" }, { type: child, target: "${task.cart_empty_state.id}" }] }
+  # The rewrite keeps each link's rank (every link has one since K143).
+  - field: { task: "${task.checkout_cart.key}", field: relationships, equals: [{ type: parent, target: "${task.epic_checkout.id}", rank: u }, { type: child, target: "${task.cart_totals.id}", rank: u }, { type: child, target: "${task.cart_empty_state.id}", rank: w }] }
   - bilateral: "${task.checkout_cart.key}"

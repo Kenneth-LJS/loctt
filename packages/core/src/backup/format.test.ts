@@ -24,6 +24,7 @@ import {
   getTaskFilePath,
   resolveLocttDir,
 } from "../paths/index.js";
+import { CURRENT_SCHEMA_VERSION } from "../schema/version.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { loadJournal } from "../state/journal.js";
 import { stagedSwap } from "../state/staged-swap.js";
@@ -180,9 +181,10 @@ describe("schema version", () => {
     // end — a footer would satisfy "carries its version" and contradict
     // BAK-C19's streaming.
     expect(parsed["kind"]).toBe("loctt-backup");
-    expect(typeof parsed["schema_version"]).toBe("number");
+    // A format version (K142), the tracker's `.schema-version`.
+    expect(parsed["schema_version"]).toBe(CURRENT_SCHEMA_VERSION);
     const header = await readBackupHeader(out);
-    expect(header.schema_version).toBeGreaterThanOrEqual(1);
+    expect(header.schema_version).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   // @verifies BAK-C21
@@ -194,15 +196,15 @@ describe("schema version", () => {
     // would carry.
     const lines = (await readFile(out, "utf-8")).split("\n");
     const header = JSON.parse(lines[0] as string) as Record<string, unknown>;
-    const future = 99;
+    const future = "9.9.9";
     header["schema_version"] = future;
     lines[0] = JSON.stringify(header);
     await writeFile(out, lines.join("\n"), "utf-8");
 
     await emptyTasks(dstDir);
-    // SchemaTooNewError already exists for this shape and names both.
+    // SchemaTooNewError names the release to install (K142).
     await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
-      .rejects.toThrow(/99[\s\S]*schema v1|schema v99/);
+      .rejects.toThrow("This tracker needs loctt 9.9.9 or newer.");
     expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
   });
 
@@ -212,18 +214,29 @@ describe("schema version", () => {
     await exportBackup(srcDir, { outputPath: out });
     const lines = (await readFile(out, "utf-8")).split("\n");
     const header = JSON.parse(lines[0] as string) as Record<string, unknown>;
-    // Only reachable once CURRENT_SCHEMA_VERSION > 1; until then the
-    // schema has no older version to carry, so this asserts the
-    // *decision* is implemented rather than simulating a v0 tracker.
-    header["schema_version"] = 0;
+    header["schema_version"] = "0.1.0";
     lines[0] = JSON.stringify(header);
     await writeFile(out, lines.join("\n"), "utf-8");
 
     await emptyTasks(dstDir);
-    // Zod's `min(1)` rejects 0 as a malformed header before the version
-    // comparison — either way it is refused and nothing is written,
-    // which is what the case asks for.
-    await expect(restoreBackup(dstDir, [out], { mode: "bare" })).rejects.toThrow();
+    await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
+      .rejects.toThrow(/taken at format 0\.1\.0 and this loctt reads format 0\.3\.0/);
+    expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
+  });
+
+  // @verifies BAK-C21
+  it("refuses a backup written by loctt 0.2.x (the old integer), by name", async () => {
+    await seed(srcDir, "A");
+    await exportBackup(srcDir, { outputPath: out });
+    const lines = (await readFile(out, "utf-8")).split("\n");
+    const header = JSON.parse(lines[0] as string) as Record<string, unknown>;
+    header["schema_version"] = 1;
+    lines[0] = JSON.stringify(header);
+    await writeFile(out, lines.join("\n"), "utf-8");
+
+    await emptyTasks(dstDir);
+    await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
+      .rejects.toThrow(/taken at format 1 \(loctt 0\.2\.x or earlier\)/);
     expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
   });
 });

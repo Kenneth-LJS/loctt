@@ -1,0 +1,16 @@
+id: bulk-add-partial-mcp
+name: A bulk add with one bad ref changes the rest and lists the failure (MCP)
+description: >
+  K153: `bulk_update_tasks` `add` reports like its set form. The call
+  succeeds, names the failed ref, and every other task changes.
+tags: [lists, labels, bulk, b47]
+surfaces: [mcp]
+mcp:
+  call: { tool: bulk_update_tasks, args: { refs: ["${task.search_index.key}", "NOPE-404", "${task.theme_tokens.key}"], add: { labels: [brand-new] }, create_missing: true } }
+capture:
+  l: { entity: { kind: label, name: brand-new } }
+post:
+  - output: { contains: ["2 updated, 0 unchanged, 1 failed"] }
+  - output: { contains: ["NOPE-404: task not found"] }
+  - field: { task: "${task.search_index.key}", field: labels, contains: "${var.l.id}" }
+  - field: { task: "${task.theme_tokens.key}", field: labels, contains: "${var.l.id}" }

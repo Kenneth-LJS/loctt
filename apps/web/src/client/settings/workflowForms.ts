@@ -164,8 +164,8 @@ export function buildTaskType(draft: EntryDraft): TaskTypeDef {
 /**
  * A new relationship. Symmetric drops the inverse fields (the schema
  * rejects a symmetric rel whose `inverse` differs from its `key`);
- * directional carries both. `graph` and `ranked` come straight from the
- * dialog.
+ * directional carries both. `graph` comes straight from the dialog.
+ * (There is no `ranked`: every kind is ordered since K143.)
  */
 export interface RelationshipDraft {
   readonly key: string;
@@ -174,7 +174,6 @@ export interface RelationshipDraft {
   readonly inverse: string;
   readonly inverse_label: string;
   readonly graph: RelationshipDef["graph"];
-  readonly ranked: boolean;
   /**
    * Presentational fields the Edit dialog has no controls for. Seeded
    * from the row being edited and carried straight back, so editing a
@@ -191,7 +190,6 @@ export function buildRelationship(draft: RelationshipDraft): RelationshipDef {
     key: draft.key.trim(),
     label: draft.label.trim(),
     graph: draft.graph ?? "none",
-    ranked: draft.ranked,
     // Preserve the presentational fields the dialog does not edit.
     ...(draft.icon !== undefined ? { icon: draft.icon } : {}),
     ...(draft.color !== undefined ? { color: draft.color } : {}),
@@ -250,6 +248,12 @@ export interface CustomFieldDraft {
    * the consumption side (create-modal + detail filtering) already shipped.
    */
   readonly task_types?: readonly string[] | undefined;
+  /**
+   * K150: an enum field whose values may be created from the task
+   * picker ("Create 'x'"), the CLI (`--create`) and MCP
+   * (`create_missing`). Only stored for an enum field, and only when on.
+   */
+  readonly allow_new_values?: boolean | undefined;
   /** Only meaningful when `type === "enum"`. */
   readonly values: readonly {
     readonly key: string;
@@ -326,6 +330,7 @@ export function buildCustomField(draft: CustomFieldDraft): CustomFieldDef {
   if (draft.type !== "enum") return base;
   return {
     ...base,
+    ...(draft.allow_new_values === true ? { allow_new_values: true } : {}),
     values: draft.values
       .filter(v => v.key.trim().length > 0)
       .map(v => ({

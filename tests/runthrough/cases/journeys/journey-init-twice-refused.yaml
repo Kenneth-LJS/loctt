@@ -1,0 +1,15 @@
+id: journey-init-twice-refused
+name: "Journey: init over an existing tracker is refused"
+description: >
+  Folded in from tests/e2e/02 (B43, K145). The second init fails with a
+  clear message and (automatic for an error step) changes nothing.
+tags: [journey, init, b43, error]
+surfaces: [cli]
+seed: none
+steps:
+  - name: init
+    cli: init
+  - name: init again
+    cli: init
+    expect_error:
+      cli: { message: "already" }

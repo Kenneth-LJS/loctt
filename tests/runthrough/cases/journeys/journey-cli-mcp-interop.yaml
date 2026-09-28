@@ -1,0 +1,33 @@
+id: journey-cli-mcp-interop
+name: "Journey: a write on one surface is visible from the other"
+description: >
+  Folded in from tests/e2e/05 (B43, K145). Steps alternate between the
+  CLI and one MCP session (`via`), so it runs once.
+tags: [journey, b43]
+surfaces: [cli]
+seed: empty
+steps:
+  - name: create through the CLI
+    cli: create interop
+  - name: read through MCP
+    via: mcp
+    mcp:
+      call: { tool: get_task, args: { ref: T-1 } }
+    post:
+      - output: { contains: ["interop"] }
+  - name: update through MCP
+    via: mcp
+    mcp:
+      call: { tool: update_task, args: { ref: T-1, field: status, value: in_progress } }
+  - name: the CLI sees the MCP write
+    cli: show T-1
+    post:
+      - output: { contains: ["Status: in_progress"] }
+  - name: update through the CLI
+    cli: set T-1 priority high
+  - name: MCP sees the CLI write
+    via: mcp
+    mcp:
+      call: { tool: get_task, args: { ref: T-1 } }
+    post:
+      - output: { contains: ["high"] }

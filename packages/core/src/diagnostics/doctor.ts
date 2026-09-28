@@ -6,16 +6,19 @@ import { loadListViewConfig } from "../config/list-view.js";
 import { getMilestonesConfigPath,loadMilestonesConfig } from "../config/milestones.js";
 import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
 import { loadQueriesConfig } from "../config/queries.js";
+import { findRetiredRelationshipKeys } from "../config/retired-keys.js";
 import { getSprintsConfigPath,loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow,validateWorkflowConfig } from "../config/validation.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
 import { readPrefixRenameState } from "../projects/prefix.js";
 import { isMigrationLocked } from "../schema/lock.js";
-import { CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/version.js";
+import { findMigrationPath } from "../schema/migrations.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/version.js";
 import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { readReconcileState } from "../state/reconcile.js";
 import { loadState } from "../state/state.js";
+import { TaskParseError } from "../task/frontmatter.js";
 import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasks } from "../task/load-all.js";
@@ -102,6 +105,8 @@ export function describeRelationshipRepair(plan: RelationshipRepairPlan): string
   if (plan.rewrites.length > 0) parts.push(`${String(plan.rewrites.length)} key(s) rewritten to ids`);
   if (plan.inverses.length > 0) parts.push(`${String(plan.inverses.length)} missing side(s) added`);
   if (plan.merges.length > 0) parts.push(`${String(plan.merges.length)} duplicate link(s) merged`);
+  const ranked = plan.ranked.reduce((n, r) => n + r.count, 0);
+  if (ranked > 0) parts.push(`${String(ranked)} link(s) given a rank`);
   if (parts.length === 0) return "nothing to repair";
   return `repaired: ${parts.join(", ")}`;
 }
@@ -181,7 +186,7 @@ async function* checkSchemaVersion(
     return;
   }
 
-  let onDisk: number | null;
+  let onDisk: string | null;
   try {
     onDisk = await readSchemaVersion(locttDir);
   } catch (err) {
@@ -191,7 +196,7 @@ async function* checkSchemaVersion(
       // The reader's sentences end with a period already; appending
       // ". Expected" without stripping it printed "is empty.. Expected".
       message: `${(err as Error).message.replace(/\.$/, "")}. `
-        + `Expected ${String(CURRENT_SCHEMA_VERSION)}`,
+        + `Expected ${CURRENT_SCHEMA_VERSION}`,
     };
     return;
   }
@@ -204,34 +209,42 @@ async function* checkSchemaVersion(
       status: "error",
       message:
         `no .schema-version file. This tracker predates schema versioning `
-        + `and must be re-initialized (expected ${String(CURRENT_SCHEMA_VERSION)})`,
+        + `and must be re-initialized (expected ${CURRENT_SCHEMA_VERSION})`,
     };
     return;
   }
 
-  if (onDisk > CURRENT_SCHEMA_VERSION) {
+  const cmp = compareFormatVersions(onDisk, CURRENT_SCHEMA_VERSION);
+  if (cmp > 0) {
     yield {
       name,
       status: "error",
       message:
-        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)}. `
-        + `Update LocTT rather than migrating down`,
+        `on disk ${onDisk}, this build reads ${CURRENT_SCHEMA_VERSION}. `
+        + `This tracker needs loctt ${onDisk} or newer`,
     };
     return;
   }
 
-  if (onDisk < CURRENT_SCHEMA_VERSION) {
+  if (cmp < 0) {
+    // K143: doctor explains, it does not write, so it reports rather
+    // than upgrading. Any other command upgrades automatically when
+    // every step is safe; a risky step waits for `loctt migrate`.
+    const path = findMigrationPath(onDisk, CURRENT_SCHEMA_VERSION);
+    const automatic = path !== null && path.length > 0 && path.every(step => step.risky !== true);
     yield {
       name,
       status: "error",
       message:
-        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)}. `
-        + `Run loctt migrate`,
+        `on disk ${onDisk}, this build reads ${CURRENT_SCHEMA_VERSION}. `
+        + (automatic
+          ? `The next command that opens it upgrades it (with a backup), or run loctt migrate`
+          : `Run loctt migrate`),
     };
     return;
   }
 
-  yield { name, status: "ok", message: `${String(onDisk)} (current)` };
+  yield { name, status: "ok", message: `${onDisk} (current)` };
 }
 
 /**
@@ -306,6 +319,18 @@ export async function* runDoctorStream(
       }
     } catch (err) {
       yield { name: "workflow.yaml", status: "error", message: `parse error: ${(err as Error).message}` };
+    }
+    // K143: `ranked` is ignored on read (every link is ordered now), so
+    // it never breaks loading; say so, so the line can go.
+    const retired = await findRetiredRelationshipKeys(locttDir);
+    if (retired.length > 0) {
+      const names = retired.map(r => `'${r.setting}' on ${r.relationship}`).join(", ");
+      yield {
+        name: "workflow.yaml retired settings",
+        status: "warn",
+        message: `${names} no longer does anything: every link is ordered since loctt 0.3.0. `
+          + `Remove ${retired.length === 1 ? "that line" : "those lines"}`,
+      };
     }
   }
 
@@ -668,7 +693,21 @@ export async function* runDoctorStream(
             issues.push(`${indexedKey} → ${id} (unreadable)`);
           }
         }
-        const orphanIds = [...allTaskIds].filter(id => !indexedIds.has(id));
+        // A directory whose task.md will not parse cannot be indexed:
+        // its key is inside the part that failed, so `--rebuild-index`
+        // leaves it out again and this finding outlived the repair it
+        // prescribes. `data integrity` already names that file; it is
+        // not an index problem (A365).
+        const orphanIds: string[] = [];
+        for (const id of allTaskIds) {
+          if (indexedIds.has(id)) continue;
+          try {
+            await readTask(locttDir, id);
+          } catch (err) {
+            if (err instanceof TaskParseError) continue;
+          }
+          orphanIds.push(id);
+        }
         if (issues.length > 0 || orphanIds.length > 0) {
           const parts: string[] = [];
           if (issues.length > 0) {

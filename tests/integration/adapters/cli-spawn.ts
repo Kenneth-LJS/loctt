@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 
 import { execa } from "execa";
 
+import { gated, gateRootForCli } from "../fixtures/doctor-gate.js";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const cliEntry = path.join(repoRoot, "apps/cli/dist/index.js");
 
@@ -29,12 +31,16 @@ export interface CliSpawnOptions {
  * `exitCode`. Execa's own timeout / spawn errors do throw.
  */
 export async function runCli(args: string[], opts: CliSpawnOptions): Promise<CliResult> {
-  const result = await execa(process.execPath, [cliEntry, ...args], {
-    cwd: opts.cwd,
-    env: opts.env ? { ...process.env, ...opts.env } : process.env,
-    timeout: opts.timeout ?? 10_000,
-    reject: false,
-  });
+  const env = opts.env ? { ...process.env, ...opts.env } : process.env;
+  // K145: every run is a surface action the doctor gate watches (a
+  // no-op unless `withTmpLoctt` registered the tracker it acts on).
+  const result = await gated(gateRootForCli(args, opts.cwd, env), () =>
+    execa(process.execPath, [cliEntry, ...args], {
+      cwd: opts.cwd,
+      env,
+      timeout: opts.timeout ?? 10_000,
+      reject: false,
+    }));
 
   return {
     stdout: result.stdout ?? "",

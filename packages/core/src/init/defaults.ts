@@ -72,13 +72,11 @@ relationships:
     inverse: is_blocked_by
     inverse_label: Is blocked by
     graph: acyclic
-    ranked: true
   - key: parent
     label: Parent
     inverse: child
     inverse_label: Child
     graph: tree
-    ranked: true
   - key: clones
     label: Clones
     inverse: is_cloned_by
@@ -168,4 +166,22 @@ ${slugLine}    prefix: "${prefix}"
 
 default: ${projectId}
 `;
+}
+
+/**
+ * projects.yaml for `init --repair` when the file was lost and the
+ * surviving data names more than one project. The names were in the lost
+ * file, so each project is named by its prefix — a placeholder the user
+ * renames in Settings — and the first one is the default (A365).
+ */
+export function recoveredProjectsYaml(projects: readonly { id: string; prefix: string }[]): string {
+  const taken = new Set<string>();
+  const entries = projects.map(p => {
+    let slug = slugifyName(p.prefix);
+    if (slug !== undefined && taken.has(slug)) slug = undefined;
+    if (slug !== undefined) taken.add(slug);
+    const slugLine = slug !== undefined ? `    slug: ${slug}\n` : "";
+    return `  - id: ${p.id}\n    name: ${JSON.stringify(p.prefix)}\n${slugLine}    prefix: "${p.prefix}"\n`;
+  });
+  return `projects:\n${entries.join("")}\ndefault: ${projects[0]?.id ?? ""}\n`;
 }

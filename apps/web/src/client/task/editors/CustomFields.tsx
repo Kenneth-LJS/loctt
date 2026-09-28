@@ -1,5 +1,5 @@
 import type { CustomFieldDef } from "@loctt/contracts";
-import { customFieldInScope } from "@loctt/contracts";
+import { allowsNewValues, customFieldInScope } from "@loctt/contracts";
 
 import { Checkbox } from "../../ui/Checkbox.tsx";
 import { resolveRowColors } from "../../ui/entityColor.ts";
@@ -66,6 +66,7 @@ export function customFieldRows({
   values,
   onSet,
   onUnset,
+  onCreate,
   colorMode,
 }: {
   /**
@@ -82,6 +83,12 @@ export function customFieldRows({
   readonly onSet: (field: string, value: unknown) => void;
   readonly onUnset: (field: string) => void;
   /**
+   * K150: set a value an open choice field (`allow_new_values`) does not
+   * list yet; the server creates it. Drives the pickers' "Create 'x'"
+   * row, which is offered only on open fields and only when given.
+   */
+  readonly onCreate?: ((field: string, value: unknown) => void) | undefined;
+  /**
    * K103: the active theme, for resolving each enum value's stored
    * colour. Passed in rather than read from a hook because this is a
    * plain function, not a component — it builds nodes for its caller
@@ -97,7 +104,7 @@ export function customFieldRows({
       rows.push({
         key: def.key,
         label: def.label,
-        node: renderControl(def, values[def.key], onSet, onUnset, colorMode),
+        node: renderControl(def, values[def.key], onSet, onUnset, colorMode, onCreate),
       });
       continue;
     }
@@ -166,9 +173,12 @@ function renderControl(
   onSet: (field: string, value: unknown) => void,
   onUnset: (field: string) => void,
   colorMode: "light" | "dark",
+  onCreate?: (field: string, value: unknown) => void,
 ): React.ReactNode {
   const set = (v: unknown): void => { onSet(def.key, v); };
   const clear = (): void => { onUnset(def.key); };
+  // K150: only an open choice field grows from here.
+  const canCreate = onCreate !== undefined && allowsNewValues(def);
 
   if (def.type === "enum") {
     // K103: each value's stored colour is resolved for the active
@@ -185,6 +195,9 @@ function renderControl(
           options={options}
           selected={toStringArray(raw)}
           onChange={next => { if (next.length === 0) clear(); else set(next); }}
+          {...(canCreate
+            ? { onCreate: (label: string) => { onCreate(def.key, [...toStringArray(raw), label]); } }
+            : {})}
         />
       );
     }
@@ -197,6 +210,7 @@ function renderControl(
         options={options}
         onSelect={set}
         onClear={clear}
+        {...(canCreate ? { onCreate: (label: string) => { onCreate(def.key, label); } } : {})}
       />
     );
   }
@@ -275,11 +289,14 @@ function MultiEnum({
   options,
   selected,
   onChange,
+  onCreate,
 }: {
   readonly def: CustomFieldDef;
   readonly options: readonly PickerOption[];
   readonly selected: readonly string[];
   readonly onChange: (next: readonly string[]) => void;
+  /** K150: add a value the field does not list yet (open fields only). */
+  readonly onCreate?: ((label: string) => void) | undefined;
 }) {
   const chosen = new Set(selected);
   const remaining = options.filter(o => !chosen.has(o.key));
@@ -313,13 +330,21 @@ function MultiEnum({
           );
         })}
       </div>
-      {remaining.length > 0 && (
+      {(remaining.length > 0 || onCreate !== undefined) && (
         <OptionPicker
           label={`Add to ${def.label}`}
           value={undefined}
           options={remaining}
           emptyText="+ Add"
           onSelect={key => { onChange([...selected, key]); }}
+          {...(onCreate !== undefined
+            ? {
+                onCreate,
+                // Already on the task: picking it again would do nothing,
+                // so no create offer either.
+                taken: options.filter(o => chosen.has(o.key)),
+              }
+            : {})}
         />
       )}
     </div>

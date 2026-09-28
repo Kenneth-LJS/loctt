@@ -1,0 +1,76 @@
+- timestamp: 2026-09-28T01:20:21.154Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJG51T05GT0922363J3Q1
+      key: WEB-5
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Payment step
+      created_at: 2026-09-28T01:20:21.154Z
+      updated_at: 2026-09-28T01:20:21.154Z
+      status: backlog
+      task_type: story
+      priority: critical
+      labels:
+        - 01M3JSJ7J3QBTDKH0VT5THF6ET
+        - 01M3JSJ7V0JT57NNCCSGH9XV73
+      assignee: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+      estimate: "8"
+      milestone: 01M3JSJ9M0WG2M7184TA0P6SRQ
+      sprint: 01M3JSJAHPD03QD0VBZFHQ4ZR2
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:21.525Z
+  kind: custom_field_change
+  field: team
+  before: null
+  after: payments
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:21.875Z
+  kind: custom_field_change
+  field: area
+  before: null
+  after: api
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:37.868Z
+  kind: custom_field_change
+  field: risk
+  before: null
+  after: 8
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:37.892Z
+  kind: custom_field_change
+  field: signed_off
+  before: null
+  after: false
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:39.435Z
+  kind: field_change
+  field: status
+  before: backlog
+  after: in_progress
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:43.137Z
+  kind: link_added
+  meta:
+    type: parent
+    target: 01M3JSJCXVVR2BJYKNPCHAZMK1
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:44.541Z
+  kind: link_added
+  meta:
+    type: child
+    target: 01M3JSJH6XNKQCR9G39WEF22ME
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:44.885Z
+  kind: link_added
+  meta:
+    type: child
+    target: 01M3JSJHJEP6A8X5BC9B4YR76J
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:49.961Z
+  kind: link_added
+  meta:
+    type: relates_to
+    target: 01M3JSJQZS28FQDH2V6ZKRPJ4Q
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

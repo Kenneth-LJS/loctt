@@ -78,8 +78,9 @@ describe("create accepts the same initial fields on CLI and MCP", () => {
     const locttDir = resolveLocttDir(root);
     const child = await lookupTask(locttDir, childKey);
     const parent = await lookupTask(locttDir, parentKey);
-    expect(child.frontmatter.relationships).toEqual([{ type: "parent", target: parent.frontmatter.id }]);
-    expect(parent.frontmatter.relationships).toEqual([{ type: "child", target: child.frontmatter.id }]);
+    // K143: both sides ranked, the first of their group.
+    expect(child.frontmatter.relationships).toEqual([{ type: "parent", target: parent.frontmatter.id, rank: "u" }]);
+    expect(parent.frontmatter.relationships).toEqual([{ type: "child", target: child.frontmatter.id, rank: "u" }]);
   };
 
   it("links a parent under the tree axis on the CLI (--parent)", async () => {

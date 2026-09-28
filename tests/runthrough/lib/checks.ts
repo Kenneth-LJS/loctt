@@ -4,7 +4,9 @@
  * and what was found.
  */
 
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import type { Check } from "./schema.ts";
@@ -348,6 +350,26 @@ export function runCheck(check: Check, ctx: CheckContext): string | null {
     const diff = diffSnapshots(ctx.before, snapshot(tracker.locttDir));
     return diff === "" ? null : `expected the tracker unchanged:\n${diff}`;
   }
+  if ("path" in check) {
+    const there = existsSync(path.join(tracker.root, check.path.path));
+    return there === check.path.exists ? null : `expected ${check.path.path} to ${check.path.exists ? "exist" : "be absent"}`;
+  }
+  if ("git" in check) {
+    const g = check.git;
+    const repo = g.repo === "remote" ? remoteOf(tracker.root) : tracker.root;
+    const sha = gitRevOrNull(repo, g.ref, g.repo === "remote");
+    if (!g.exists) return sha === null ? null : `expected ${g.repo} ref ${g.ref} to be absent, it is ${sha}`;
+    if (sha === null) return `expected ${g.repo} ref ${g.ref} to exist`;
+    if (g.not_equals !== undefined && sha === g.not_equals) return `expected ${g.ref} to have moved from ${g.not_equals}`;
+    return null;
+  }
+  if ("git_show" in check) {
+    const res = spawnSync("git", ["show", check.git_show.spec], { cwd: tracker.root, encoding: "utf-8" });
+    if (res.status !== 0) return `git show ${check.git_show.spec} failed: ${res.stderr}`;
+    return res.stdout.includes(check.git_show.contains)
+      ? null
+      : `expected git show ${check.git_show.spec} to contain ${show(check.git_show.contains)}; got:\n${res.stdout}`;
+  }
   // "output" in check
   const c = check.output;
   if (ctx.output === undefined) return "output: there is no action output to check here (a pre-check?)";
@@ -363,6 +385,11 @@ export function runCheck(check: Check, ctx: CheckContext): string | null {
       at = next;
     }
   }
+  if (c.line_count) {
+    const re = new RegExp(c.line_count.matches);
+    const n = out.split("\n").filter(l => re.test(l)).length;
+    if (n !== c.line_count.equals) return `output: expected ${String(c.line_count.equals)} line(s) matching /${c.line_count.matches}/, found ${String(n)}; output was:\n${out}`;
+  }
   if (c.keys) {
     const got = [...new Set(resultKeys(out))].sort();
     const want = [...new Set(c.keys)].sort();
@@ -376,3 +403,22 @@ export function describeCheck(check: Check): string {
   const [kind] = Object.keys(check);
   return `${kind ?? "?"} ${JSON.stringify((check as Record<string, unknown>)[kind ?? ""])}`;
 }
+
+/** The bare remote `blankTracker` made for `git: remote`. */
+function remoteOf(root: string): string {
+  return path.join(root, ".remote.git");
+}
+
+function gitRevOrNull(repo: string, ref: string, bare: boolean): string | null {
+  const args = bare ? ["--git-dir", repo, "rev-parse", "--verify", "-q", ref] : ["rev-parse", "--verify", "-q", ref];
+  const res = spawnSync("git", args, { cwd: bare ? path.dirname(repo) : repo, encoding: "utf-8" });
+  return res.status === 0 ? res.stdout.trim() : null;
+}
+
+/** The commit `ref` points at in the tracker's repository; throws if none. */
+export function gitRev(root: string, ref: string): string {
+  const sha = gitRevOrNull(root, ref, false);
+  if (sha === null) throw new Error(`git ref ${ref} does not exist`);
+  return sha;
+}
+

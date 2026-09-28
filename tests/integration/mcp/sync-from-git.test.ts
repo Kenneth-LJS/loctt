@@ -71,7 +71,10 @@ describe("MCP sync_from_git (stdio)", () => {
       await mkdir(join(wt, "tasks", otherId), { recursive: true });
       await writeFile(
         join(wt, "tasks", otherId, "task.md"),
-        `---\nid: ${otherId}\nkey: ${key}\ntitle: Branch\nstatus: todo\n`
+        // `backlog`: a status the default workflow defines. The fixture
+        // used `todo`, which it never meant to test — doctor rightly
+        // reported it as workflow drift once the sync brought it in.
+        `---\nid: ${otherId}\nkey: ${key}\ntitle: Branch\nstatus: backlog\n`
         + `project: ${projectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
         + "updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n",
       );
@@ -140,6 +143,12 @@ describe("MCP sync_from_git (stdio)", () => {
       } finally {
         await client.close();
       }
+    }, {
+      // K145: the malformed branch task is the test's subject. Sync
+      // applies it as-is (it does not edit a teammate's file), so doctor
+      // reports it as unparseable afterwards. That is the expected state,
+      // named here so any *other* new finding still fails the test.
+      allowDoctorFindings: [/^✗ data integrity: <root>\/\.loctt\/tasks\/01MCPBADTASK000000000000A\/task\.md: task\.md could not be parsed/],
     });
   });
 });

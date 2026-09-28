@@ -89,7 +89,7 @@ describe("delete removes the partners' side of its links (K147)", () => {
     await deleteTask(locttDir, a.id, { force: true });
 
     expect((await readTask(locttDir, b.id)).frontmatter.relationships)
-      .toEqual([{ type: "blocks", target: c.id }]);
+      .toEqual([{ type: "blocks", target: c.id, rank: "u" }]);
   });
 
   it("bulkDelete detaches partners outside the batch, with the batch's bulk_op_id, and leaves the batch deleted", async () => {

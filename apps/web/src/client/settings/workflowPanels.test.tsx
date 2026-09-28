@@ -542,6 +542,34 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     expect(small).toMatchObject({ key: "s", label: "Small-ish", icon: "circle", color: "#00ff00" });
   });
 
+  /** @verifies CFG-C6 */
+  it("an enum field's dialog turns on Allow new values", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Size"/ }));
+    fireEvent.click(screen.getByTestId("custom-field-edit-size"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-allow-new-values"));
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    expect(put.workflow.custom_fields.find(f => f.key === "size")?.allow_new_values).toBe(true);
+  });
+
+  /** @verifies CFG-C6 */
+  it("a number field's dialog offers no Allow new values toggle", async () => {
+    mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Story points"/ }));
+    fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    expect(within(dialog).queryByTestId("custom-field-dialog-allow-new-values")).toBeNull();
+  });
+
   /** @verifies SET-49 */
   it("deletes an enum value through remap-or-clear, sending the remap table", async () => {
     const { putBodies } = mockWorkflow();

@@ -232,6 +232,13 @@ describe("MCP attach_file (stdio)", () => {
       expect(await findAttachment(root, "bestreffort.txt")).not.toBeNull();
 
       await rm(srcDir, { recursive: true, force: true });
+    }, {
+      // K145: the test plants an interrupted-reconciliation sentinel on
+      // purpose (it is what blocks the commit). The sentinel lives in
+      // `local/`, which the gate does not count as an out-of-band write,
+      // so doctor's report of it lands on the attach's segment. That
+      // finding is the test's setup, not something attach_file caused.
+      allowDoctorFindings: [/^✗ reconciliation: interrupted 'sync' reconciliation started 2026-01-01T00:00:00Z \(deadbeef → cafebabe\)/],
     });
   });
 

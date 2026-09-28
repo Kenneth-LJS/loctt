@@ -288,55 +288,64 @@ describe("reorderRelationship", () => {
     ).rejects.toThrow(/has no/);
   });
 
-  // REL-33: a rerank against a kind switched to `ranked: false` between
-  // page load and drop is refused — the guard reads the live `ranked`
-  // flag from workflow.yaml. Before this, `reorderRelationship` never
-  // loaded the config, so the write landed on an unranked kind.
-  it("REL-33: refuses a rerank when the kind is no longer ranked", async () => {
+  // REL-33 (amended by K143): every kind is ordered, so the refusal of a
+  // kind "switched to ranked: false" is gone. A `ranked: false` line left
+  // in workflow.yaml is ignored, and the rerank lands.
+  // @verifies REL-33
+  // @verifies REL-C10
+  it("REL-33 (K143): a kind whose workflow.yaml still says ranked: false reorders like any other", async () => {
     const { readFile, writeFile } = await import("node:fs/promises");
     const { join: joinPath } = await import("node:path");
     const [pKey, c1, c2] = await makeTasks(3) as [string, string, string];
     await linkChildren(pKey, [c1, c2]);
-    // Establish ranks while `parent` is still ranked.
-    await reorderRelationship({ locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c1 });
-    await reorderRelationship({ locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c2 });
 
-    // Another process flips `parent` to ranked: false mid-session.
     const wf = joinPath(locttDir, "config", "workflow.yaml");
     const text = await readFile(wf, "utf8");
-    const rewritten = text.replace(
-      /(- key: parent\n(?:.*\n)*?\s+)ranked: true/,
-      "$1ranked: false",
-    );
+    const rewritten = text.replace(/(- key: parent\n)/, "$1    ranked: false\n");
     expect(rewritten).not.toBe(text);
     await writeFile(wf, rewritten, "utf8");
 
-    // A rerank is now refused, and the message names the kind.
-    await expect(
-      reorderRelationship({
-        locttDir, sourceRef: pKey, relationshipType: "parent",
-        targetRef: c2, before: c1,
-      }),
-    ).rejects.toThrow(ReorderError);
-    await expect(
-      reorderRelationship({
-        locttDir, sourceRef: pKey, relationshipType: "parent",
-        targetRef: c2, before: c1,
-      }),
-    ).rejects.toThrow(/parent.*no longer ranked/);
+    await reorderRelationship({
+      locttDir, sourceRef: pKey, relationshipType: "parent",
+      targetRef: c2, before: c1,
+    });
 
-    // Nothing was written: the stored ranks are exactly what they were.
     const parent = await lookupByKey(locttDir, pKey);
     const c1Id = (await lookupByKey(locttDir, c1)).frontmatter.id;
     const c2Id = (await lookupByKey(locttDir, c2)).frontmatter.id;
-    const ranks = new Map(
-      (parent.frontmatter.relationships ?? [])
-        .filter(r => r.type === "parent")
-        .map(r => [r.target, r.rank]),
-    );
-    // c1 ranked before c2 (c1 appended first), and both still present.
-    expect(ranks.get(c1Id)).toBeDefined();
-    expect(ranks.get(c2Id)).toBeDefined();
+    const order = (parent.frontmatter.relationships ?? [])
+      .filter(r => r.type === "parent")
+      .sort((a, b) => (a.rank ?? "").localeCompare(b.rank ?? ""))
+      .map(r => r.target);
+    expect(order).toEqual([c2Id, c1Id]);
+  });
+
+  // K143: placement is exact even when a sibling has no rank (a
+  // hand-edit, an old branch merged in). Before, the moved link was the
+  // only one given a rank and sorted ahead of every unranked sibling,
+  // so "after the first" landed first.
+  // @verifies REL-C10
+  it("places --after exactly among siblings that have no rank", async () => {
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const { getTaskFilePath } = await import("../paths/index.js");
+    const [pKey, c1, c2, c3] = await makeTasks(4) as [string, string, string, string];
+    await linkChildren(pKey, [c1, c2, c3]);
+    const parentId = (await lookupByKey(locttDir, pKey)).frontmatter.id;
+    // Strip the parent's ranks, as a file written before 0.3.0 has none.
+    const file = getTaskFilePath(locttDir, parentId);
+    await writeFile(file, (await readFile(file, "utf8")).replace(/^\s+rank: .*\n/gm, ""), "utf8");
+
+    await reorderRelationship({
+      locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c3, after: c1,
+    });
+
+    const ids = await Promise.all([c1, c2, c3].map(async k => (await lookupByKey(locttDir, k)).frontmatter.id));
+    const parent = await lookupByKey(locttDir, pKey);
+    const edges = (parent.frontmatter.relationships ?? []).filter(r => r.type === "parent");
+    // Every sibling now has a rank, and the order is first, moved, middle.
+    expect(edges.every(r => r.rank !== undefined)).toBe(true);
+    const order = [...edges].sort((a, b) => ((a.rank ?? "") < (b.rank ?? "") ? -1 : 1)).map(r => r.target);
+    expect(order).toEqual([ids[0], ids[2], ids[1]]);
   });
 
   // REL-33 sibling: a rerank against a kind that is not declared in

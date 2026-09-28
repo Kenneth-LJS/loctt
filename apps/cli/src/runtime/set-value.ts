@@ -70,3 +70,56 @@ export function coerceSetValue(
   if (def.multi) return { field: key, value: splitList(raw).map(item => coerceItem(def, item)) };
   return { field: key, value: coerceItem(def, raw) };
 }
+
+/** `--add`/`--remove` as `loctt set` reads them (K150). */
+export interface SetListFlags {
+  readonly add: string[];
+  readonly remove: string[];
+  /** The replace-form value (the positional after the field), if any. */
+  readonly value: string | undefined;
+}
+
+/**
+ * Reads `loctt set <task> <field> [<value>] [--add <v>…] [--remove <v>…]`. `--add` and `--remove` take every following word up to the
+ * next flag (`--add a b`), may repeat, and split on commas like the
+ * replace form (`--add a,b`); `--add=a` works too. Everything after a
+ * bare `--` is positional.
+ */
+export function parseSetListFlags(args: readonly string[]): SetListFlags {
+  const add: string[] = [];
+  const remove: string[] = [];
+  const positionals: string[] = [];
+  let into: string[] | undefined;
+  for (let i = 1; i < args.length; i += 1) {
+    const a = args[i] as string;
+    if (a === "--") { positionals.push(...args.slice(i + 1)); break; }
+    if (a === "--add" || a === "--remove") { into = a === "--add" ? add : remove; continue; }
+    if (a.startsWith("--add=")) { add.push(...splitList(a.slice("--add=".length))); into = undefined; continue; }
+    if (a.startsWith("--remove=")) { remove.push(...splitList(a.slice("--remove=".length))); into = undefined; continue; }
+    // Any other flag (`--create`) ends a value run; the command reads it.
+    if (a.startsWith("--")) { into = undefined; continue; }
+    if (into !== undefined) { into.push(...splitList(a)); continue; }
+    positionals.push(a);
+  }
+  // positionals: [task, field, value?]
+  return { add, remove, value: positionals[2] };
+}
+
+/**
+ * Converts `--add`/`--remove` items by the field's type, as the replace
+ * form converts its list (a number field's items become numbers). Also
+ * maps `fields.<key>` to `<key>`.
+ */
+export function coerceListItems(
+  field: string,
+  items: readonly string[],
+  workflowConfig: WorkflowConfig | undefined,
+): { readonly field: string; readonly values: unknown[] } {
+  if (field === "labels") return { field, values: [...items] };
+  const defs = workflowConfig?.custom_fields ?? [];
+  const key = field.startsWith("fields.") && defs.some(d => d.key === field.slice("fields.".length))
+    ? field.slice("fields.".length)
+    : field;
+  const def = defs.find(d => d.key === key);
+  return { field: key, values: def === undefined ? [...items] : items.map(item => coerceItem(def, item)) };
+}

@@ -1,0 +1,11 @@
+id: journey-error-unknown-command
+name: "Journey: an unknown command is refused with usage"
+description: Folded in from tests/e2e/10 (B43, K145).
+tags: [journey, error, b43]
+surfaces: [cli]
+seed: empty
+cli: definitely-not-a-command
+expect_error:
+  cli: { exit_code: 2, message: "Unknown command" }
+post:
+  - output: { contains: ["Usage"] }

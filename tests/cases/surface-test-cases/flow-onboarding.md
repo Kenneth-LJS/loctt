@@ -233,3 +233,173 @@ required, and SECURITY.md linked to a README anchor that did not exist.
 **Given** the security documentation, **when** its checkable claims are
 tested against the running server, **then** each holds.
 
+### ONB-C11 · blocker · P10 · CLI MCP UI
+**A format version is the `loctt` release that introduced it (K142).**
+`.loctt/.schema-version` holds a semver string, not a counter.
+
+- `loctt init` (and web/MCP init) writes this build's format version,
+  `0.3.0`, the release that introduced ordered links.
+- Versions compare as semver: `0.10.0` is newer than `0.3.0`.
+- No pre-release tags: `0.3.0-rc.1` is not a format version.
+- Upgrade steps are keyed by semver from/to (the first is 0.1.0 → 0.3.0).
+- `loctt info`, doctor, `loctt migrate`, MCP `migrate_schema`, the web
+  banner and the backup header print format versions as written
+  (`0.1.0`), never `v1`.
+  → `packages/core/src/schema/version.test.ts`, `migrations.test.ts`,
+  `init/init.test.ts`, `tests/integration/cli/info-schema.test.ts`
+
+**Given** a fresh `loctt init`, **when** `.loctt/.schema-version` is
+read, **then** it holds `0.3.0`.
+
+### ONB-C12 · blocker · P4 P7 · CLI MCP UI
+**A tracker the code cannot read is refused with what to do.** K142.
+
+- A tracker newer than the code is refused with "This tracker needs
+  loctt <its version> or newer." on every surface (CLI exit 1, MCP
+  `isError`, web 409 `schema_mismatch` with no command).
+- `.schema-version` holding anything that is not a format version —
+  the old `1`, garbage, or nothing — is refused with a message that
+  says what the file must contain ("must hold a format version such as
+  0.3.0 (three whole numbers separated by dots)"). For `1` the remedy
+  says to write `0.1.0` (a tracker made by loctt 0.2.x or earlier).
+  There is no compatibility for `1` (Ken edits his trackers by hand).
+- Nothing is written and no backup is made when refused.
+- A backup file recording a newer format is refused the same way; one
+  recording an older format (or 0.2.x's integer) is refused by name.
+- A git branch published in a newer format is refused on sync/publish,
+  naming the release to install; one holding 0.2.x's integer `1` is
+  older, and proceeds.
+  → `tests/integration/cli/format-upgrade.test.ts`,
+  `packages/core/src/schema/upgrade-0.3.0.test.ts`,
+  `backup/format.test.ts`, `git/schema-remote-newer.test.ts`,
+  `apps/web/src/server/schema-guard.test.ts`
+
+**Given** `.schema-version` = `9.9.9`, **when** any command runs,
+**then** it says "This tracker needs loctt 9.9.9 or newer." and writes
+nothing.
+
+### ONB-C13 · blocker · P1 P4 P10 · CLI MCP UI
+**An upgrade with no risky step runs automatically on first use.** K143.
+
+- The first command (CLI), tool call (MCP) or API request (web) that
+  opens a tracker needing only non-risky steps upgrades it: it backs up
+  `.loctt/` to a sibling `.loctt.backup-v<from>-…` first, runs the steps
+  with the crash sentinel around each, and stamps the new version.
+- It says so in one line: "Upgraded this tracker from 0.1.0 to 0.3.0
+  (backup: <path>)." — on the CLI's stderr, after the MCP call's own
+  content (and in the server log), and in the web shell (ONB-C17).
+- The command then runs as normal; later commands say nothing.
+- A path with a risky step is not run automatically: every surface
+  refuses and points at `loctt migrate`.
+- On the CLI, `loctt doctor` and `loctt info` describe an older tracker
+  (and say the next command upgrades it) without upgrading it (they are
+  exempt from the guard; MCP `info`/`doctor` are not, and upgrade like
+  any tool). `loctt migrate` and MCP `migrate_schema` still preview
+  before applying.
+  → `tests/integration/cli/format-upgrade.test.ts`,
+  `tests/integration/mcp/migrate.test.ts`, `apps/mcp/src/mcp.test.ts`,
+  `apps/web/src/server/schema-guard.test.ts`,
+  `packages/core/src/schema/upgrade-0.3.0.test.ts`, runthrough
+  `upgrade/upgrade-on-first-use`
+
+**Given** a tracker at 0.1.0, **when** `loctt list` runs, **then** it
+prints the upgrade line, a backup exists, the tracker is at 0.3.0, and
+the list is shown.
+
+### ONB-C14 · blocker · P1 P7 · CLI MCP UI
+**An upgrade that crashes part-way stops every surface until it is
+recovered.**
+
+- A throw inside a step leaves `.schema-migration-in-progress` naming
+  the step's from/to and the backup; the version is not advanced past
+  the last completed step.
+- The next start on any surface refuses with the recovery message
+  (restore from the named backup, remove the sentinel), and does not
+  re-run the upgrade.
+  → `packages/core/src/schema/upgrade-0.3.0.test.ts` (injected throw),
+  `tests/integration/cli/format-upgrade.test.ts`
+
+**Given** an upgrade whose step throws, **when** any command runs next,
+**then** it refuses with "A schema migration was interrupted mid-run."
+and the restore instructions.
+
+### ONB-C15 · major · P7 · CLI MCP UI
+**A retired `ranked` setting never breaks loading.** K143 removed
+`ranked` from the relationship schema.
+
+- A `ranked:` line on a relationship in `workflow.yaml` is dropped on
+  read: the kind loads and is not reported broken.
+- `loctt doctor` reports it as a warning ("'ranked' on <kind> no longer
+  does anything: every link is ordered since loctt 0.3.0. Remove that
+  line").
+- The 0.1.0 → 0.3.0 upgrade removes the lines, keeping the rest of the
+  file (comments included); any later write of `workflow.yaml` drops them.
+- `loctt relationship add/edit` no longer take `--ranked`, MCP
+  `edit_workflow_entity` no longer reads `fields.ranked`, and the
+  settings UI has no ranked control.
+  → `packages/core/src/config/retired-keys.test.ts`
+
+**Given** `ranked: true` on `blocks`, **when** doctor runs, **then** it
+warns naming `blocks`, and every surface still loads the kind.
+
+### ONB-C16 · major · P1 · CLI MCP UI
+**Two processes opening an old tracker at once upgrade it once.**
+
+- Under the migration lock, one upgrades; the other waits for it (its
+  sentinel is not mistaken for a crash while the lock is held), finds the
+  tracker current, runs no step and prints no line.
+- Exactly one backup is made; every command succeeds.
+  → `packages/core/src/schema/upgrade-0.3.0.test.ts`,
+  `tests/integration/cli/format-upgrade.test.ts` (three CLI processes)
+
+**Given** a 0.1.0 tracker, **when** three commands start at once,
+**then** exactly one prints the upgrade line and one backup exists.
+
+### ONB-C17 · major · P4 · UI
+**The web says it upgraded the tracker, once.** K143 (the notice is an
+agent call recorded in A361).
+
+- After the server upgrades a tracker on the first API request,
+  `/api/info` carries `completedUpgrade` (from, to, backup, and the one
+  line) for the life of the server process.
+- The shell shows the line above the app as a `role="status"` notice
+  with a Dismiss control; the app is usable (not the mismatch banner).
+- Dismissed, it stays gone across the `/api/info` poll and a reload in
+  the same session; a later upgrade (another backup) shows again.
+  → `apps/web/src/client/shell/UpgradeNotice.test.tsx`,
+  `apps/web/src/server/schema-guard.test.ts`,
+  `tests/ui/flow-schema-mismatch.spec.ts`
+
+**Given** a 0.1.0 tracker, **when** `loctt ui` opens it, **then** the
+shell shows "Upgraded this tracker from 0.1.0 to 0.3.0 (backup: …)."
+until dismissed.
+
+### ONB-C18 · blocker · P1 · CLI MCP UI
+**The 0.1.0 → 0.3.0 step ranks every link in the order it was shown.**
+Not risky (K143).
+
+- After the step every link has a rank, and each task's group of each
+  type lists (by rank) exactly as 0.1.0 showed it: a kind set `ranked:
+  true` by rank then unranked in stored order; any other kind in stored
+  order, ignoring stale ranks.
+- Only `relationships` changes (no `updated_at`, no history entry); a
+  task that cannot be read, or whose `relationships` cannot, is left.
+- Running it again changes nothing, and the result is doctor-clean.
+  → `packages/core/src/schema/upgrade-0.3.0.test.ts` (frozen seed),
+  `schema/steps/rank-every-link.test.ts`, runthrough
+  `upgrade/upgrade-on-first-use`
+
+**Given** the frozen 0.1.0 seed, **when** it is upgraded, **then** every
+group lists as before, and a second run writes nothing.
+
+### ONB-C19 · blocker · P10 · CLI
+**The installed package upgrades an old tracker and refuses a newer one.**
+
+- The `loctt` installed from the packed tarball upgrades a 0.1.0 tracker
+  on first use, printing the line, and runs the command.
+- It refuses a tracker at 9.9.9 with "This tracker needs loctt 9.9.9 or
+  newer."
+  → `tests/packaging/install.test.ts` (`npm run test:packaging`)
+
+**Given** the installed package, **when** it opens a 0.1.0 tracker and a
+9.9.9 one, **then** the first is upgraded and the second refused.

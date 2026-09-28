@@ -7,7 +7,7 @@ description: >
 tags: [doctor, links, b39]
 setup_patch:
   - file: "tasks/${task.rate_limit.id}/task.md"
-    find: "  - type: is_blocked_by\n    target: ${task.api_keys.id}\n"
+    find: "  - type: is_blocked_by\n    target: ${task.api_keys.id}\n    rank: u\n"
     replace: ""
 pre:
   - relationship: { task: "${task.rate_limit.key}", type: is_blocked_by, target: "${task.api_keys.key}", present: false }
@@ -19,3 +19,5 @@ post:
   - relationship: { task: "${task.rate_limit.key}", type: is_blocked_by, target: "${task.api_keys.key}" }
   - bilateral: "${task.rate_limit.key}"
   - bilateral: "${task.api_keys.key}"
+  # K143: the side the repair adds is ranked at the end of its group.
+  - field: { task: "${task.rate_limit.key}", field: relationships, contains: { type: is_blocked_by, target: "${task.api_keys.id}", rank: u } }

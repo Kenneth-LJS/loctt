@@ -116,9 +116,9 @@ limit, leaving no partial file.
   refused with `link`'s sentence. Nothing is written when refused: no
   task file, and no key used up.
 - `loctt show` and MCP `get_task` list a task's relationships in the web
-  task page's order (kinds in workflow order; within a ranked kind by
-  rank, then unranked in stored order), and MCP returns each edge's
-  `rank` (K141 6a).
+  task page's order (kinds in workflow order; within each kind by rank,
+  then any edge without one in stored order — every kind is ordered
+  since K143), and MCP returns each edge's `rank` (K141 6a).
 
 **Given** tasks T-1..T-4, **when** `loctt create child --parent T-4`
 runs, **then** the child stores T-4's id, T-4 lists the child, `doctor`
@@ -189,3 +189,31 @@ one holder's id and `unlink` answered "does not exist".
 **Given** T-1 stores `relates_to: T-2`, and T-2 and T-3 have both held
 `T-2`, **when** `loctt unlink T-1 relates_to T-2` runs, **then** T-1 has
 no relationships.
+
+### REL-C10 · blocker · P1 P10 · CLI MCP UI
+**Every link carries a rank, and `--before`/`--after` land exactly where
+asked on every kind.** K143 (Ken 2026-09-28): every relationship kind is
+ordered; the `ranked` setting is removed (B41).
+
+- Every write that creates a link gives it a rank at the end of that
+  type's group on that task: `link` (both sides), `create --parent` (both
+  sides), the relationship repair (the side it adds), restore, and
+  reconciliation (which links through `link`).
+- `loctt rerank` / MCP `reorder_relationship` with `--before`/`--after`
+  (`before`/`after`) put the link exactly there, on any kind and either
+  side (`relates_to`, `is_blocked_by`, `child`), including among
+  siblings that have no rank (it ranks them first, in listed order).
+- No kind refuses a reorder for being "unranked"; only a kind
+  `workflow.yaml` does not declare is refused.
+- A link without a rank (a hand-edit, a merge from a branch written
+  before 0.3.0) is still read and listed after the ranked ones; `doctor`
+  reports it, and `doctor --repair-relationships` ranks it at the end of
+  its group.
+  → `packages/core/src/task/relationships.test.ts`,
+  `rank/reorder.test.ts`, `task/traversal.test.ts`,
+  `task/relationship-repair.test.ts`, `backup/backup.test.ts`, runthrough
+  `links/rerank-after`, `links/rerank-across-kinds`
+
+**Given** a task relating three others, **when** the third is reranked
+`--before` the first and then `--after` the new second, **then** the
+listing is exactly the order asked for each time.

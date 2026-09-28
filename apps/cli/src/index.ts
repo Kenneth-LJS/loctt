@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import {
   formatIfZodError,
   recoverInterruptedPrefixRename,
-  requireSupportedSchema,
   resolveLocttDir,
+  SchemaUnmigratableError,
+  upgradeIfSafe,
+  upgradeNotice,
 } from "@loctt/core";
 
 import * as backupCmd from "./commands/backup.js";
@@ -112,13 +114,16 @@ export async function main(): Promise<void> {
   try {
     // Boot guard: every command that touches an existing tracker
     // must run against a tracker whose schema matches what this
-    // CLI knows how to read. Mismatches direct the user to
-    // `loctt migrate` rather than silently mutating data the code
-    // doesn't fully understand.
+    // CLI knows how to read. An older tracker whose upgrade has no
+    // risky step is upgraded here, after a backup, with one line on
+    // stderr saying so (K143); anything else directs the user to
+    // `loctt migrate` (or a newer loctt) rather than silently mutating
+    // data the code doesn't fully understand.
     if (!SCHEMA_GUARD_EXEMPT_COMMANDS.has(command)) {
       const locttDir = resolveLocttDir(root);
       if (await dirExists(locttDir)) {
-        await requireSupportedSchema(locttDir);
+        const upgraded = await upgradeIfSafe(locttDir);
+        if (upgraded !== null) process.stderr.write(`${upgradeNotice(upgraded)}\n`);
         // Finish any rename that died partway before the command reads
         // a task key. Runs after the schema guard: recovery rewrites
         // task files, which is only safe once the schema is known good.
@@ -257,6 +262,9 @@ export async function main(): Promise<void> {
     // get a defensive stringify.
     if (err instanceof Error) {
       console.error(`Error: ${err.message}`);
+      // A schema state `loctt migrate` cannot fix carries the sentence
+      // that says what can (e.g. what `.schema-version` must hold).
+      if (err instanceof SchemaUnmigratableError) console.error(err.remedy);
       if (process.env["LOCTT_DEBUG"] === "1" && err.stack) {
         console.error(err.stack);
       }

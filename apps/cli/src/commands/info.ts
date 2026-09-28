@@ -21,20 +21,20 @@ const ACCEPTED_FLAGS: readonly string[] = [];
 function describeSchema(status: TrackerInfo["schemaStatus"]): string {
   switch (status.kind) {
     case "current":
-      return `${String(status.version)} (current)`;
+      return `${status.version} (current)`;
     case "outdated":
-      return `${String(status.on_disk)}, this build expects ${String(status.current)}`
-        + `. Run 'loctt migrate'`;
+      return `${status.on_disk}, this build reads ${status.current}`
+        + `. The next command upgrades it, or run 'loctt migrate'`;
     case "future":
-      return `${String(status.on_disk)}, this build supports ${String(status.current)}`
-        + `. Update LocTT`;
+      return `${status.on_disk}, this build reads ${status.current}`
+        + `. This tracker needs loctt ${status.on_disk} or newer`;
     case "missing":
       return `not recorded. This tracker predates schema versioning`;
     case "interrupted": {
       // The backup path is the recovery, so it leads. Everything else
       // here is context for it.
       const versions = status.from !== undefined && status.to !== undefined
-        ? ` (v${String(status.from)} → v${String(status.to)})`
+        ? ` (${status.from} → ${status.to})`
         : "";
       const backup = status.backup !== undefined
         ? ` Restore from ${status.backup}, remove ${status.sentinel_path}, then re-run.`

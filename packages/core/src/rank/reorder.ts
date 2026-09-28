@@ -3,6 +3,7 @@ import { effectiveInverseKey, isSymmetricRelationship } from "@loctt/contracts";
 
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { withStateLock } from "../state/index.js";
+import { fillMissingRanks } from "../task/edge-rank.js";
 import { appendHistory } from "../task/history.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
@@ -37,21 +38,18 @@ export interface ReorderRelationshipOptions {
   /** Place the moved target after this target's position, when set. */
   readonly after?: string;
   /**
-   * The workflow config, used to enforce that the kind is still
-   * `ranked: true` (REL-33). Optional so existing callers keep working;
-   * when omitted, `reorderRelationship` loads it from `locttDir` itself,
-   * exactly as `reorderBoardRank` does — so the guard fires on every
-   * surface (web route, CLI `rerank`, MCP) without each one having to
-   * thread the config through.
+   * The workflow config, used to refuse a kind `workflow.yaml` does not
+   * declare. Optional; when omitted, `reorderRelationship` loads it from
+   * `locttDir` itself, so the check holds on every surface (web route,
+   * CLI `rerank`, MCP).
    */
   readonly workflowConfig?: WorkflowConfig;
 }
 
 /**
  * Finds the relationship definition governing a stored edge `type`,
- * matching either the forward key or a directional inverse key — the
- * `ranked` flag lives on the definition and applies to both sides
- * (mirrors `sidesOf` in the web panel's grouping).
+ * matching either the forward key or a directional inverse key (mirrors
+ * `sidesOf` in the web panel's grouping).
  */
 function findRelationshipDef(
   workflowConfig: WorkflowConfig,
@@ -90,13 +88,9 @@ export async function reorderRelationship(
   }
 
   return withStateLock(opts.locttDir, async () => {
-    // REL-33: refuse a rerank against a kind that is no longer `ranked`.
-    // A page held open across a config edit could POST a rerank for a
-    // kind whose handles have since disappeared; without this the write
-    // landed (measured 200), silently re-ranking an unranked kind. The
-    // config is loaded here when the caller did not supply it, so the
-    // guard holds on every surface — the web route maps ReorderError to
-    // a 400, and CLI `rerank` / MCP inherit the same refusal.
+    // Every kind is ordered (K143), so the only refusal is a kind
+    // workflow.yaml does not declare. REL-33's "no longer ranked" refusal
+    // went with the `ranked` setting.
     const workflowConfig =
       opts.workflowConfig ?? (await loadWorkflowConfig(opts.locttDir));
     const def = findRelationshipDef(workflowConfig, opts.relationshipType);
@@ -106,15 +100,13 @@ export async function reorderRelationship(
         + `workflow.yaml, so it cannot be reordered`,
       );
     }
-    if (def.ranked !== true) {
-      throw new ReorderError(
-        `relationship kind '${opts.relationshipType}' is no longer ranked, `
-        + `so it cannot be reordered`,
-      );
-    }
 
     const source = await lookupTask(opts.locttDir, opts.sourceRef);
-    const relationships = [...(source.frontmatter.relationships ?? [])];
+    // K143: placement is exact only when every sibling has a rank. A
+    // sibling without one (a hand-edit, an old branch merged in) is
+    // ranked first, at the end of the group in the order it is listed,
+    // so `--before`/`--after` land where the user sees them.
+    const relationships = [...fillMissingRanks(source.frontmatter.relationships ?? [])];
 
     // Find the target link.
     // Resolve the target to its UUID via lookupTask so callers can

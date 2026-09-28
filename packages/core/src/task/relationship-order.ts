@@ -22,9 +22,12 @@ import { effectiveInverseKey, isSymmetricRelationship } from "@loctt/contracts";
  *   side, then its inverse side (a symmetric kind has one side). This is
  *   the web panel's REL-1 group order.
  * - **Unknown types last**, in first-seen order (REL-25, XS-25).
- * - **Inside a ranked side** (`ranked: true`): ranked edges by `rank`
- *   ascending, then unranked edges in array order (REL-6, REL-34).
- * - **Inside an unranked side**: array order, untouched.
+ * - **Inside every group**: edges by `rank` ascending, then any edge
+ *   without a rank in array order (REL-34). Every kind is ordered since
+ *   format 0.3.0 (K143): every write gives a new link a rank and the
+ *   `ranked` setting is gone. An unranked edge can still arrive through
+ *   a hand-edit or a merge; it sorts last, doctor reports it, and the
+ *   relationship repair ranks it.
  * - **No workflow config:** array order, untouched.
  */
 
@@ -35,7 +38,7 @@ export interface OrderableEdge {
 }
 
 /**
- * The comparator for the rows of one *ranked* side.
+ * The comparator for the rows of one group.
  *
  * Ranked before unranked; ranks ascending; ties (and every unranked
  * pair) by stored index. The index tiebreak is explicit rather than
@@ -56,10 +59,9 @@ export function compareRankedEdges(
   return a.index - b.index;
 }
 
-/** One configured side: its stored type key and whether it is ranked. */
+/** One configured side: its stored type key. */
 export interface RelationshipSide {
   readonly key: string;
-  readonly ranked: boolean;
 }
 
 /** Every configured side, in the order its group is listed. */
@@ -68,10 +70,9 @@ export function relationshipSides(
 ): readonly RelationshipSide[] {
   const out: RelationshipSide[] = [];
   for (const def of workflow?.relationships ?? []) {
-    const ranked = def.ranked === true;
-    out.push({ key: def.key, ranked });
+    out.push({ key: def.key });
     if (!isSymmetricRelationship(def)) {
-      out.push({ key: effectiveInverseKey(def), ranked });
+      out.push({ key: effectiveInverseKey(def) });
     }
   }
   return out;
@@ -103,8 +104,7 @@ export function orderRelationships<T extends OrderableEdge>(
     claimed.add(side.key);
     const bucket = byType.get(side.key);
     if (bucket === undefined) continue;
-    const rows = side.ranked ? [...bucket].sort(compareRankedEdges) : bucket;
-    for (const row of rows) out.push(row.edge);
+    for (const row of [...bucket].sort(compareRankedEdges)) out.push(row.edge);
   }
   // Unknown types, first-seen order, each type's edges together.
   const unknownSeen = new Set<string>();
@@ -112,7 +112,7 @@ export function orderRelationships<T extends OrderableEdge>(
     const type = row.edge.type;
     if (claimed.has(type) || unknownSeen.has(type)) continue;
     unknownSeen.add(type);
-    for (const r of byType.get(type) ?? []) out.push(r.edge);
+    for (const r of [...(byType.get(type) ?? [])].sort(compareRankedEdges)) out.push(r.edge);
   }
   return out;
 }

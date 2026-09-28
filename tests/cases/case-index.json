@@ -1,9 +1,9 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1078,
+    "total": 1092,
     "ui": 962,
-    "surface": 116,
+    "surface": 130,
     "resolved": 4
   },
   "cases": [
@@ -2981,6 +2981,23 @@
       ],
       "surfaces": [
         "CLI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "CFG-C6",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-settings.md",
+      "line": 106,
+      "title": "A choice field can allow new values.",
+      "severity": "minor",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
       ],
       "resolved": false
     },
@@ -8986,6 +9003,159 @@
       "resolved": false
     },
     {
+      "id": "ONB-C11",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 236,
+      "title": "A format version is the `loctt` release that introduced it (K142).",
+      "severity": "blocker",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C12",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 254,
+      "title": "A tracker the code cannot read is refused with what to do.",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P7"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C13",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 281,
+      "title": "An upgrade with no risky step runs automatically on first use.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P4",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C14",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 309,
+      "title": "An upgrade that crashes part-way stops every surface until it is recovered.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P7"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C15",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 326,
+      "title": "A retired `ranked` setting never breaks loading.",
+      "severity": "major",
+      "principles": [
+        "P7"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C16",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 345,
+      "title": "Two processes opening an old tracker at once upgrade it once.",
+      "severity": "major",
+      "principles": [
+        "P1"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C17",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 358,
+      "title": "The web says it upgraded the tracker, once.",
+      "severity": "major",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C18",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 377,
+      "title": "The 0.1.0 → 0.3.0 step ranks every link in the order it was shown.",
+      "severity": "blocker",
+      "principles": [
+        "P1"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C19",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 395,
+      "title": "The installed package upgrades an old tracker and refuses a newer one.",
+      "severity": "blocker",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "CLI"
+      ],
+      "resolved": false
+    },
+    {
       "id": "PRU-1",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-projects-users.md",
@@ -9914,7 +10084,7 @@
       "id": "PRU-C9",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 152,
+      "line": 153,
       "title": "Documented-but-absent flags are rejected, not ignored.",
       "severity": "minor",
       "principles": [
@@ -9930,7 +10100,7 @@
       "id": "PRU-C10",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 171,
+      "line": 172,
       "title": "Changing a prefix renames every task in the project, and nothing else.",
       "severity": "blocker",
       "principles": [
@@ -9947,7 +10117,7 @@
       "id": "PRU-C11",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 192,
+      "line": 193,
       "title": "A prefix already in use is rejected before anything is written.",
       "severity": "blocker",
       "principles": [
@@ -9964,7 +10134,7 @@
       "id": "PRU-C12",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 209,
+      "line": 210,
       "title": "An interrupted prefix change is completed, not left half-applied.",
       "severity": "blocker",
       "principles": [
@@ -9980,7 +10150,7 @@
       "id": "PRU-C13",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 227,
+      "line": 228,
       "title": "`loctt user shortcuts` reads and sets the single-key shortcut switches.",
       "severity": "major",
       "principles": [
@@ -9996,7 +10166,7 @@
       "id": "PRU-C14",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 245,
+      "line": 246,
       "title": "`get_keyboard_shortcuts` / `set_keyboard_shortcuts` read and set the switches.",
       "severity": "major",
       "principles": [
@@ -10012,7 +10182,7 @@
       "id": "PRU-C15",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 260,
+      "line": 261,
       "title": "Names and IDs are told apart by shape, everywhere.",
       "severity": "blocker",
       "principles": [
@@ -10031,7 +10201,7 @@
       "id": "PRU-C16",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-projects-users.md",
-      "line": 276,
+      "line": 277,
       "title": "The CLI prints names; MCP returns names beside IDs.",
       "severity": "major",
       "principles": [
@@ -10323,8 +10493,8 @@
       "id": "REL-6",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 73,
-      "title": "Ranked and unranked groups are visually distinguishable.",
+      "line": 82,
+      "title": "Every group of a configured kind is ordered and reorderable.",
       "milestone": "M2",
       "severity": "minor",
       "principles": [
@@ -10339,7 +10509,7 @@
       "id": "REL-7",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 83,
+      "line": 103,
       "title": "\"+ Add link\" asks for the kind first, from config.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10356,7 +10526,7 @@
       "id": "REL-8",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 93,
+      "line": 113,
       "title": "The target search matches by key AND by title.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10372,7 +10542,7 @@
       "id": "REL-9",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 103,
+      "line": 123,
       "title": "Adding a link writes the inverse edge on the other task automatically.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10389,7 +10559,7 @@
       "id": "REL-10",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 115,
+      "line": 135,
       "title": "Removing a link removes both edges.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10406,7 +10576,7 @@
       "id": "REL-11",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 125,
+      "line": 145,
       "title": "Adding a link from the inverse side stores the right direction.",
       "milestone": "M2",
       "severity": "major",
@@ -10422,7 +10592,7 @@
       "id": "REL-12",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 133,
+      "line": 153,
       "title": "Removing a link is a deliberate, aligned action: a kebab menu with a confirm.",
       "milestone": "M2",
       "severity": "major",
@@ -10439,8 +10609,8 @@
       "id": "REL-13",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 151,
-      "title": "Drag-reorder within a ranked group persists a new rank.",
+      "line": 171,
+      "title": "Drag-reorder within a group persists a new rank.",
       "milestone": "M2",
       "severity": "blocker",
       "principles": [
@@ -10455,7 +10625,7 @@
       "id": "REL-14",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 164,
+      "line": 188,
       "title": "Reordering into first and last position works.",
       "milestone": "M2",
       "severity": "major",
@@ -10471,7 +10641,7 @@
       "id": "REL-15",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 172,
+      "line": 198,
       "title": "Drag-reorder is keyboard-reachable.",
       "milestone": "M2",
       "severity": "minor",
@@ -10487,7 +10657,7 @@
       "id": "REL-16",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 181,
+      "line": 210,
       "title": "The attachments grid renders MIME-aware tiles.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10503,7 +10673,7 @@
       "id": "REL-17",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 190,
+      "line": 219,
       "title": "Drag-drop upload attaches the file.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10519,7 +10689,7 @@
       "id": "REL-18",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 200,
+      "line": 229,
       "title": "Task attachments upload RAW — no recompression.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10536,7 +10706,7 @@
       "id": "REL-19",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 212,
+      "line": 241,
       "title": "Hover-X removes an attachment.",
       "milestone": "M2",
       "severity": "major",
@@ -10553,7 +10723,7 @@
       "id": "REL-20",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 221,
+      "line": 250,
       "title": "Clicking a tile downloads the file.",
       "milestone": "M2",
       "severity": "major",
@@ -10569,7 +10739,7 @@
       "id": "REL-21",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 234,
+      "line": 263,
       "title": "A hand-edited relationship cycle is detected, not hung on.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10586,7 +10756,7 @@
       "id": "REL-22",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 245,
+      "line": 274,
       "title": "Creating a cycle through the UI is refused before the write.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10603,7 +10773,7 @@
       "id": "REL-23",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 254,
+      "line": 283,
       "title": "A structural graph too large to verify refuses the link rather than guessing.",
       "milestone": "M2",
       "severity": "major",
@@ -10621,7 +10791,7 @@
       "id": "REL-24",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 264,
+      "line": 293,
       "title": "A dangling target renders as a broken edge, not as a blank row.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10638,7 +10808,7 @@
       "id": "REL-25",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 273,
+      "line": 302,
       "title": "An edge whose `type` is not in `workflow.yaml` is surfaced, not dropped.",
       "milestone": "M2",
       "severity": "major",
@@ -10655,7 +10825,7 @@
       "id": "REL-26",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 284,
+      "line": 313,
       "title": "An explicit forward+inverse duplicate on a symmetric kind collapses in display.",
       "milestone": "M2",
       "severity": "major",
@@ -10672,7 +10842,7 @@
       "id": "REL-27",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 292,
+      "line": 321,
       "title": "A one-sided legacy edge is tolerated and repaired, not doubled.",
       "milestone": "M2",
       "severity": "major",
@@ -10689,7 +10859,7 @@
       "id": "REL-28",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 301,
+      "line": 330,
       "title": "A task with 50 relationships across 6 kinds stays usable.",
       "milestone": "M2",
       "severity": "major",
@@ -10705,7 +10875,7 @@
       "id": "REL-29",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 311,
+      "line": 340,
       "title": "Self-links are refused.",
       "milestone": "M2",
       "severity": "minor",
@@ -10721,7 +10891,7 @@
       "id": "REL-30",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 318,
+      "line": 347,
       "title": "Linking to an archived task is refused with a route out.",
       "milestone": "M2",
       "severity": "major",
@@ -10737,7 +10907,7 @@
       "id": "REL-31",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 329,
+      "line": 358,
       "title": "Repeated reordering past the 24-char threshold rebalances the window.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10754,7 +10924,7 @@
       "id": "REL-32",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 343,
+      "line": 372,
       "title": "Two tabs reordering the same ranked group converge, and neither silently loses.",
       "milestone": "M2",
       "severity": "major",
@@ -10770,8 +10940,8 @@
       "id": "REL-33",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 354,
-      "title": "Reordering a group whose kind was just switched to `ranked: false` is refused cleanly.",
+      "line": 383,
+      "title": "A retired `ranked` setting left in `workflow.yaml` is ignored.",
       "milestone": "M2",
       "severity": "minor",
       "principles": [
@@ -10786,8 +10956,8 @@
       "id": "REL-34",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 362,
-      "title": "A ranked group where no edge has a rank still orders deterministically.",
+      "line": 401,
+      "title": "A group where no edge has a rank still orders deterministically.",
       "milestone": "M2",
       "severity": "minor",
       "principles": [
@@ -10802,7 +10972,7 @@
       "id": "REL-35",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 372,
+      "line": 420,
       "title": "A 200 MB file is rejected before any bytes are written.",
       "milestone": "M2",
       "severity": "major",
@@ -10819,7 +10989,7 @@
       "id": "REL-36",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 383,
+      "line": 431,
       "title": "A filename containing a path separator is refused or sanitized to a basename — never traversed.",
       "milestone": "M2",
       "severity": "major",
@@ -10835,7 +11005,7 @@
       "id": "REL-37",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 393,
+      "line": 441,
       "title": "A 255-character filename renders without breaking the grid.",
       "milestone": "M2",
       "severity": "minor",
@@ -10851,7 +11021,7 @@
       "id": "REL-38",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 402,
+      "line": 450,
       "title": "A file with no extension gets a generic icon and no MIME guess.",
       "milestone": "M2",
       "severity": "minor",
@@ -10867,7 +11037,7 @@
       "id": "REL-39",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 410,
+      "line": 458,
       "title": "Uploading a file whose name collides with an existing attachment asks first.",
       "milestone": "M2",
       "severity": "major",
@@ -10883,7 +11053,7 @@
       "id": "REL-40",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 419,
+      "line": 467,
       "title": "Dropping 20 files at once reports per-file outcome.",
       "milestone": "M2",
       "severity": "minor",
@@ -10899,7 +11069,7 @@
       "id": "REL-41",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 425,
+      "line": 473,
       "title": "A task with no attachments shows a designed empty state.",
       "milestone": "M2",
       "severity": "minor",
@@ -10915,7 +11085,7 @@
       "id": "REL-42",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 433,
+      "line": 481,
       "title": "A failed inverse write is reported, and the panel reflects the actual disk state.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10931,7 +11101,7 @@
       "id": "REL-43",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 444,
+      "line": 492,
       "title": "Linking to a nonexistent key says nothing matched.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10947,7 +11117,7 @@
       "id": "REL-44",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 455,
+      "line": 503,
       "title": "Removing an already-removed link is idempotent and honest.",
       "milestone": "M2",
       "severity": "major",
@@ -10963,7 +11133,7 @@
       "id": "REL-45",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 462,
+      "line": 510,
       "title": "A relationships write blocked by the state lock names the contention.",
       "milestone": "M2",
       "severity": "major",
@@ -10980,7 +11150,7 @@
       "id": "REL-46",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 470,
+      "line": 518,
       "title": "A failed reorder rolls the row back to its original position.",
       "milestone": "M2",
       "severity": "major",
@@ -10996,7 +11166,7 @@
       "id": "REL-47",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 477,
+      "line": 525,
       "title": "A failed upload leaves no partial file and says so.",
       "milestone": "M2",
       "severity": "major",
@@ -11012,7 +11182,7 @@
       "id": "REL-48",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 488,
+      "line": 536,
       "title": "A failed attachment delete does not remove the tile.",
       "milestone": "M2",
       "severity": "major",
@@ -11028,7 +11198,7 @@
       "id": "REL-49",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 496,
+      "line": 544,
       "title": "An unreadable attachments directory degrades the section only.",
       "milestone": "M2",
       "severity": "major",
@@ -11045,7 +11215,7 @@
       "id": "REL-50",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 503,
+      "line": 551,
       "title": "A download of a since-deleted attachment fails with a named reason.",
       "milestone": "M2",
       "severity": "minor",
@@ -11061,7 +11231,7 @@
       "id": "REL-51",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-relationships.md",
-      "line": 510,
+      "line": 558,
       "title": "Each relationship group header uses the side's own directional label — the label of the edges shown under it, not its inverse.",
       "milestone": "M2",
       "severity": "major",
@@ -11217,6 +11387,24 @@
       "line": 175,
       "title": "A link stored as a key more than one task has held can be removed.",
       "severity": "major",
+      "principles": [
+        "P1",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "REL-C10",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-relationships.md",
+      "line": 193,
+      "title": "Every link carries a rank, and `--before`/`--after` land exactly where asked on every kind.",
+      "severity": "blocker",
       "principles": [
         "P1",
         "P10"
@@ -15980,6 +16168,57 @@
         "CLI",
         "MCP",
         "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-C14",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-tasks.md",
+      "line": 263,
+      "title": "Values can be added to and removed from a list field.",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-C15",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-tasks.md",
+      "line": 291,
+      "title": "Unknown values are created only when asked, one model everywhere.",
+      "severity": "major",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-C16",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-tasks.md",
+      "line": 317,
+      "title": "Add/remove over many tasks is one operation, reported like bulk set.",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
       ],
       "resolved": false
     },

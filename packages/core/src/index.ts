@@ -385,8 +385,10 @@ export {
 export type { Migration, MigrationPlan, MigrationResult } from "./schema/index.js";
 export {
   backupLocttDir,
+  compareFormatVersions,
   CURRENT_SCHEMA_VERSION,
   findMigrationPath,
+  isFormatVersion,
   isMigrationLocked,
   listMigrations,
   migrateToCurrent,
@@ -396,6 +398,8 @@ export {
   SchemaTooNewError,
   SchemaUnmigratableError,
   SchemaVersionError,
+  upgradeIfSafe,
+  upgradeNotice,
   withMigrationLock,
   writeSchemaVersion,
 } from "./schema/index.js";
@@ -454,6 +458,7 @@ export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./task/ind
 export type { ExportOptions } from "./task/index.js";
 export type { ReadHistoryOptions, ReadHistoryPage } from "./task/index.js";
 export type { SetFieldOptions, SetFieldsEntry, SetFieldsOptions } from "./task/index.js";
+export type { CreatedValue, EditTaskFieldsOptions, EditTaskFieldsResult, ListEdit } from "./task/index.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
 export type {
   BulkMoveTaskOptions,
@@ -464,6 +469,7 @@ export type {
 export type { MilestoneProgressOptions, MilestoneProgressResult, Progress, ProgressReport, ProgressUnavailable } from "./task/index.js";
 export type { BodyWriteOptions } from "./task/index.js";
 export type { CommentsPage } from "./task/index.js";
+export { bulkEditTaskFields, editTaskFields, UnknownFieldValueError } from "./task/index.js";
 export {
   buildMentionResolver,
   CommentError,

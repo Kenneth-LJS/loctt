@@ -95,14 +95,15 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
   }
 
   // @verifies GIT-35
-  it("refuses to sync a branch whose schema is CURRENT+1, naming both versions and writing nothing", async () => {
+  it("refuses to sync a branch whose format is newer, naming both versions and writing nothing", async () => {
     const base = await publishBase();
     // A local edit made after the base — the work the guard protects.
     await writeFile(join(locttDir, "config", "queries.yaml"), "queries: []\n");
     const localTasksBefore = await readdir(join(locttDir, "tasks"));
 
-    // The branch advances, written by a NEWER LocTT (schema = CURRENT + 1).
-    await advanceBranchWithSchema(`${CURRENT_SCHEMA_VERSION + 1}\n`);
+    // The branch advances, written by a NEWER LocTT (format 0.10.0, which
+    // is newer than 0.3.0 only when compared as semver).
+    await advanceBranchWithSchema("0.10.0\n");
 
     let caught: unknown;
     try {
@@ -116,11 +117,13 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
     expect(caught).not.toBeInstanceOf(GitConflictError);
 
     const err = caught as GitRemoteSchemaNewerError;
-    expect(err.remoteVersion).toBe(CURRENT_SCHEMA_VERSION + 1);
+    expect(err.remoteVersion).toBe("0.10.0");
     expect(err.localVersion).toBe(CURRENT_SCHEMA_VERSION);
-    // The message names BOTH versions and says upgrade (not migrate).
-    expect(err.message).toContain(`v${CURRENT_SCHEMA_VERSION + 1}`);
-    expect(err.message).toContain(`v${CURRENT_SCHEMA_VERSION}`);
+    // The message names BOTH versions and the release to install (K142),
+    // and says upgrade (not migrate).
+    expect(err.message).toContain("format 0.10.0");
+    expect(err.message).toContain(`format ${CURRENT_SCHEMA_VERSION}`);
+    expect(err.message).toContain("This tracker needs loctt 0.10.0 or newer.");
     expect(err.message).toMatch(/upgrade LocTT/i);
     expect(err.message).not.toMatch(/run 'loctt migrate'/i);
 
@@ -131,7 +134,7 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
     const queries = await readFile(join(locttDir, "config", "queries.yaml"), "utf-8");
     expect(queries).toBe("queries: []\n");
     const localSchema = await readFile(join(locttDir, ".schema-version"), "utf-8");
-    expect(localSchema.trim()).toBe(String(CURRENT_SCHEMA_VERSION));
+    expect(localSchema.trim()).toBe(CURRENT_SCHEMA_VERSION);
 
     // last_synced_commit is unchanged — no partial apply.
     const after = await loadSyncState(locttDir);
@@ -144,7 +147,7 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
     // Local change so the divergence check runs on publish.
     await writeFile(join(locttDir, "config", "queries.yaml"), "queries: []\n");
 
-    await advanceBranchWithSchema(`${CURRENT_SCHEMA_VERSION + 1}\n`);
+    await advanceBranchWithSchema("9.9.9\n");
 
     await expect(publish(locttDir, root)).rejects.toBeInstanceOf(GitRemoteSchemaNewerError);
 
@@ -164,8 +167,8 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
       caught = e;
     }
     expect(caught).toBeInstanceOf(GitRemoteSchemaNewerError);
-    // Unknown version surfaces as NaN so the message treats it as ahead.
-    expect(Number.isNaN((caught as GitRemoteSchemaNewerError).remoteVersion)).toBe(true);
+    // Unknown version surfaces as null so the message treats it as ahead.
+    expect((caught as GitRemoteSchemaNewerError).remoteVersion).toBeNull();
 
     const after = await loadSyncState(locttDir);
     expect(after.git.last_synced_commit).toBe(base);
@@ -184,6 +187,22 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
   });
 
   // @verifies GIT-35
+  // K151 (B46): a branch holding the pre-0.3.0 integer `1` is refused like
+  // any non-format version, writing nothing. Until B46 this test asserted
+  // the opposite (A361 call 7's exception: "older than every format, so
+  // proceed"); Ken ruled that exception out.
+  it("refuses a branch holding the old integer 1, like any non-format version (K151)", async () => {
+    const base = await publishBase();
+    await advanceBranchWithSchema("1\n");
+
+    const caught = await sync(locttDir, root).then(() => undefined, (e: unknown) => e);
+    expect(caught).toBeInstanceOf(GitRemoteSchemaNewerError);
+    expect((caught as GitRemoteSchemaNewerError).remoteVersion).toBeNull();
+    const after = await loadSyncState(locttDir);
+    expect(after.git.last_synced_commit).toBe(base);
+  });
+
+  // @verifies GIT-35
   it("proceeds when the branch schema EQUALS local (ordinary fast-forward)", async () => {
     await publishBase();
     await advanceBranchWithSchema(`${CURRENT_SCHEMA_VERSION}\n`);
@@ -197,13 +216,12 @@ describe("GitRemoteSchemaNewerError message (A346, K129)", () => {
   // "This is not a migration: …" was removed: the recovery (upgrade)
   // already says what to do.
   it("is exactly the cause and the recovery", () => {
-    const err = new GitRemoteSchemaNewerError({ remoteVersion: 3, localVersion: 2, branch: "loctt" });
+    const err = new GitRemoteSchemaNewerError({ remoteVersion: "0.4.0", localVersion: "0.3.0", branch: "loctt" });
     expect(err.message).toBe(
-      "Sync aborted: the loctt branch was written by a newer version of LocTT "
-      + "(schema v3), but this installation only understands up to schema v2. "
-      + "Applying it could corrupt or drop data, so nothing was written. Your local "
-      + "files are untouched.\n\n"
-      + "Upgrade LocTT to a version that supports schema v3 or newer, then sync again.",
+      "Sync aborted: the loctt branch was written in format 0.4.0, and this loctt "
+      + "reads format 0.3.0. Applying it could corrupt or drop data, so nothing was "
+      + "written. Your local files are untouched.\n\n"
+      + "This tracker needs loctt 0.4.0 or newer. Upgrade loctt, then sync again.",
     );
   });
 });

@@ -1,0 +1,37 @@
+- timestamp: 2026-09-28T01:20:30.705Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJSFGCMCA51V6BS4QM49T
+      key: WEB-25
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Deep links into the app
+      created_at: 2026-09-28T01:20:30.705Z
+      updated_at: 2026-09-28T01:20:30.705Z
+      status: backlog
+      task_type: story
+      priority: medium
+      labels:
+        - 01M3JSJ7J3QBTDKH0VT5THF6ET
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:38.026Z
+  kind: custom_field_change
+  field: platforms
+  before: null
+  after:
+    - ios
+    - android
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:50.611Z
+  kind: field_change
+  field: project
+  before: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+  after: 01M3JSJ6ZTZ3MMREPGX5GRGCS2
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:50.611Z
+  kind: field_change
+  field: key
+  before: WEB-25
+  after: MOB-9
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

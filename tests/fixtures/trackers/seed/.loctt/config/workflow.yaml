@@ -44,13 +44,11 @@ relationships:
     inverse: is_blocked_by
     inverse_label: Is blocked by
     graph: acyclic
-    ranked: true
   - key: parent
     label: Parent
     inverse: child
     inverse_label: Child
     graph: tree
-    ranked: true
   - key: clones
     label: Clones
     inverse: is_cloned_by

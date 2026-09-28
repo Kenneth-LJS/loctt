@@ -15,21 +15,22 @@ const workflow = {
   priorities: [],
   task_types: [],
   relationships: [
-    { key: "blocks", label: "Blocks", inverse: "is_blocked_by", inverse_label: "Is blocked by", graph: "acyclic", ranked: true },
-    { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", graph: "tree", ranked: true },
+    { key: "blocks", label: "Blocks", inverse: "is_blocked_by", inverse_label: "Is blocked by", graph: "acyclic" },
+    { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", graph: "tree" },
     { key: "relates_to", label: "Relates to", kind: "symmetric" },
   ],
   custom_fields: [],
 } as WorkflowConfig;
 
 describe("orderRelationships", () => {
-  it("lists kinds in workflow order, ranked by rank then unranked in stored order", () => {
+  it("lists kinds in workflow order, each by rank then unranked in stored order", () => {
     const stored = [
-      { type: "relates_to", target: "r2" },
+      { type: "relates_to", target: "r2", rank: "q" },
       { type: "child", target: "c-unranked-1" },
-      { type: "mystery", target: "m1" },
+      { type: "mystery", target: "m2", rank: "q" },
+      { type: "mystery", target: "m1", rank: "d" },
       { type: "child", target: "c-rank-b", rank: "b" },
-      { type: "relates_to", target: "r1" },
+      { type: "relates_to", target: "r1", rank: "d" },
       { type: "child", target: "c-unranked-2" },
       { type: "blocks", target: "x" },
       { type: "child", target: "c-rank-a", rank: "a" },
@@ -37,10 +38,11 @@ describe("orderRelationships", () => {
     expect(orderRelationships(stored, workflow).map(e => e.target)).toEqual([
       "x",
       "c-rank-a", "c-rank-b", "c-unranked-1", "c-unranked-2",
-      // relates_to is not ranked: stored order.
-      "r2", "r1",
-      // A type workflow.yaml does not define comes last.
-      "m1",
+      // K143: every kind is ordered, relates_to included (it had no
+      // `ranked: true` and was listed in stored order before).
+      "r1", "r2",
+      // A type workflow.yaml does not define comes last, by rank too.
+      "m1", "m2",
     ]);
   });
 

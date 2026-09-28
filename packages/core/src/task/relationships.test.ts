@@ -67,8 +67,9 @@ describe("relationships", () => {
     it("writes the forward edge on the source task", async () => {
       await seedAB();
       const updated = await linkTask({ locttDir, taskId: "a", type: "blocks", target: "b", workflowConfig: workflow });
+      // K143: every link carries a rank; the first of its group is INITIAL.
       expect(updated.frontmatter.relationships).toEqual([
-        { type: "blocks", target: "b" },
+        { type: "blocks", target: "b", rank: "u" },
       ]);
     });
 
@@ -77,7 +78,7 @@ describe("relationships", () => {
       await linkTask({ locttDir, taskId: "a", type: "blocks", target: "b", workflowConfig: workflow });
       const targetLoaded = await readTask(locttDir, "b");
       expect(targetLoaded.frontmatter.relationships).toEqual([
-        { type: "blocked_by", target: "a" },
+        { type: "blocked_by", target: "a", rank: "u" },
       ]);
     });
 
@@ -86,8 +87,8 @@ describe("relationships", () => {
       await linkTask({ locttDir, taskId: "a", type: "blocked_by", target: "b", workflowConfig: workflow });
       const a = await readTask(locttDir, "a");
       const b = await readTask(locttDir, "b");
-      expect(a.frontmatter.relationships).toEqual([{ type: "blocked_by", target: "b" }]);
-      expect(b.frontmatter.relationships).toEqual([{ type: "blocks", target: "a" }]);
+      expect(a.frontmatter.relationships).toEqual([{ type: "blocked_by", target: "b", rank: "u" }]);
+      expect(b.frontmatter.relationships).toEqual([{ type: "blocks", target: "a", rank: "u" }]);
     });
 
     it("self-inverse types do not produce duplicate edges on either side", async () => {
@@ -95,8 +96,8 @@ describe("relationships", () => {
       await linkTask({ locttDir, taskId: "a", type: "related_to", target: "b", workflowConfig: workflow });
       const a = await readTask(locttDir, "a");
       const b = await readTask(locttDir, "b");
-      expect(a.frontmatter.relationships).toEqual([{ type: "related_to", target: "b" }]);
-      expect(b.frontmatter.relationships).toEqual([{ type: "related_to", target: "a" }]);
+      expect(a.frontmatter.relationships).toEqual([{ type: "related_to", target: "b", rank: "u" }]);
+      expect(b.frontmatter.relationships).toEqual([{ type: "related_to", target: "a", rank: "u" }]);
     });
 
     it("symmetric relationships record the same forward type on both endpoints", async () => {
@@ -122,7 +123,7 @@ describe("relationships", () => {
     it("falls back to forward-only when no inverse is defined and no workflow is supplied", async () => {
       await seedAB();
       const updated = await linkTask({ locttDir, taskId: "a", type: "parent", target: "b" });
-      expect(updated.frontmatter.relationships).toEqual([{ type: "parent", target: "b" }]);
+      expect(updated.frontmatter.relationships).toEqual([{ type: "parent", target: "b", rank: "u" }]);
       const b = await readTask(locttDir, "b");
       expect(b.frontmatter.relationships).toBeUndefined();
     });
@@ -138,6 +139,31 @@ describe("relationships", () => {
       await writeTask(locttDir, "b", seedB);
       const updated = await linkTask({ locttDir, taskId: "a", type: "blocks", target: "b", workflowConfig: workflow });
       expect(updated.frontmatter.relationships).toHaveLength(2);
+    });
+
+    // K143: a new link is ranked at the end of *its type's* group on that
+    // task: after the highest rank of that type, whatever other types hold.
+    // @verifies REL-C10
+    it("ranks a new link after the last of its own type, ignoring other types' ranks", async () => {
+      await writeTask(locttDir, "a", {
+        ...seedA,
+        frontmatter: {
+          ...seedA.frontmatter,
+          relationships: [
+            { type: "blocks", target: "x", rank: "c" },
+            { type: "parent", target: "y", rank: "y" },
+            { type: "blocks", target: "w", rank: "k" },
+          ],
+        },
+      });
+      await writeTask(locttDir, "b", seedB);
+      const updated = await linkTask({ locttDir, taskId: "a", type: "blocks", target: "b", workflowConfig: workflow });
+      const added = updated.frontmatter.relationships?.find(r => r.target === "b");
+      // Strictly after "k" (the highest `blocks` rank), and not pushed
+      // past "y" by the `parent` edge.
+      expect(added?.rank).toBeDefined();
+      expect((added?.rank ?? "") > "k").toBe(true);
+      expect((added?.rank ?? "") < "y").toBe(true);
     });
 
     it("throws on duplicate relationship when both sides already exist", async () => {
@@ -162,8 +188,11 @@ describe("relationships", () => {
       await linkTask({ locttDir, taskId: "a", type: "blocks", target: "b", workflowConfig: workflow });
       const a = await readTask(locttDir, "a");
       const b = await readTask(locttDir, "b");
+      // The forward edge was already there and is not rewritten; the
+      // added inverse is ranked (K143). Doctor reports the forward edge's
+      // missing rank, and the relationship repair gives it one.
       expect(a.frontmatter.relationships).toEqual([{ type: "blocks", target: "b" }]);
-      expect(b.frontmatter.relationships).toEqual([{ type: "blocked_by", target: "a" }]);
+      expect(b.frontmatter.relationships).toEqual([{ type: "blocked_by", target: "a", rank: "u" }]);
     });
 
     it("rejects self-links and leaves the task frontmatter unchanged", async () => {

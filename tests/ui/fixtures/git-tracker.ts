@@ -384,4 +384,17 @@ export const test = base.extend<{
   },
 });
 
+/**
+ * How long a UI wait may take when it waits on a whole sync (or publish)
+ * round trip: the Sync click's `POST /api/git/sync` (about 2 s: several
+ * `git` subprocesses and a worktree), then `GET /api/git/reconcile`
+ * (about 0.7 s) and a git-status refetch (about 1 s) before the panel or
+ * result renders. Measured click → reconcile panel on GIT-13 at 4230,
+ * 4752 and 5222 ms (A365), which sits on Playwright's 5 s `expect`
+ * default and flaked under a loaded full-suite run. Used only on the wait
+ * right after that round trip (and on a reload that re-reads a pending
+ * reconcile session); every other wait keeps the default.
+ */
+export const SYNC_SETTLE_MS = 15_000;
+
 export { expect } from "@playwright/test";

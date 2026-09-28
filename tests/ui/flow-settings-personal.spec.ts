@@ -303,7 +303,15 @@ test("SET-56: Repair relationships fixes a key-valued link, and the task page sh
   // The checks re-run. Wait for the last check to land as a pass (before
   // the repair it was a warning naming the child's file); an empty list
   // mid-run would otherwise satisfy the absence checks below.
-  await expect(page.getByTestId("diagnostics-check-data-integrity")).toHaveAttribute("data-check-status", "ok");
+  //
+  // Doctor gives each data-integrity finding its own row, all under one
+  // test id. Before the repair there are two here since B41 (the
+  // key-valued target and its missing rank), so a single-element
+  // `toHaveAttribute` hit a strict-mode violation while the old list was
+  // still up. Wait on the passing row, then require it to be the only one.
+  const integrity = page.getByTestId("diagnostics-check-data-integrity");
+  await expect(integrity.and(page.locator('[data-check-status="ok"]'))).toHaveCount(1);
+  await expect(integrity).toHaveCount(1);
   await expect(page.getByTestId("diagnostics-fix-repair-relationships")).toHaveCount(0);
   await expect(page.locator('[data-testid="diagnostics-check-relationships"]')).toHaveCount(0);
 

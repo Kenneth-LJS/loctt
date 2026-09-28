@@ -19,12 +19,16 @@ sprint: 01M3JSJAHPD03QD0VBZFHQ4ZR2
 relationships:
   - type: parent
     target: 01M3JSJCXVVR2BJYKNPCHAZMK1
+    rank: u
   - type: child
     target: 01M3JSJH6XNKQCR9G39WEF22ME
+    rank: u
   - type: child
     target: 01M3JSJHJEP6A8X5BC9B4YR76J
+    rank: w
   - type: relates_to
     target: 01M3JSJQZS28FQDH2V6ZKRPJ4Q
+    rank: u
 fields:
   team: payments
   area: api

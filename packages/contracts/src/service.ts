@@ -45,6 +45,13 @@ export interface UpdateTaskRequest {
    * the CLI/MCP and any resolve-by-ref caller, which keep last-write-wins.
    */
   readonly expectedId?: string;
+  /**
+   * K150: create a value this field does not know yet — a value of an
+   * enum field with `allow_new_values` (appended to its `values`, key
+   * derived from the label). Values are then matched by key or label.
+   * The picker's "Create 'x'" row sends it; nothing else does.
+   */
+  readonly create_missing?: boolean;
 }
 
 /** Request to link/unlink tasks. */
@@ -264,16 +271,17 @@ export interface ConfigResponse {
 /**
  * Schema-version status surfaced to the UI so it can render a
  * read-only banner blocking writes when the on-disk schema doesn't
- * match what the running CLI/UI knows.
+ * match what the running CLI/UI knows. Versions are format versions:
+ * the semver of the `loctt` release that introduced the format (K142).
  *
  * Migration is reachable from every surface: `loctt migrate`, the MCP
  * `migrate_schema` tool, and `POST /api/migrate` behind the banner's
  * confirm flow. It was CLI-only when this comment was first written.
  */
 export type SchemaStatusResponse =
-  | { readonly kind: "current"; readonly version: number }
-  | { readonly kind: "outdated"; readonly on_disk: number; readonly current: number }
-  | { readonly kind: "future"; readonly on_disk: number; readonly current: number }
+  | { readonly kind: "current"; readonly version: string }
+  | { readonly kind: "outdated"; readonly on_disk: string; readonly current: string }
+  | { readonly kind: "future"; readonly on_disk: string; readonly current: string }
   | { readonly kind: "missing" }
   /**
    * A `.schema-migration-in-progress` sentinel is present: a previous
@@ -288,8 +296,8 @@ export type SchemaStatusResponse =
    */
   | {
       readonly kind: "interrupted";
-      readonly from?: number;
-      readonly to?: number;
+      readonly from?: string;
+      readonly to?: string;
       readonly backup?: string;
       readonly sentinel_path: string;
     }
@@ -343,6 +351,19 @@ export interface TrackerInfoResponse {
     readonly from: string;
     readonly to: string;
     readonly renamed: number;
+  };
+  /**
+   * An automatic format upgrade this server ran on first use (K143):
+   * the tracker was at `from`, a non-risky upgrade brought it to `to`,
+   * and `.loctt/` was backed up to `backup` first. `line` is the one
+   * sentence every surface prints ("Upgraded this tracker from 0.1.0 to
+   * 0.3.0 (backup: …)."). A notice, not a prompt: nothing is left to do.
+   */
+  readonly completedUpgrade?: {
+    readonly from: string;
+    readonly to: string;
+    readonly backup?: string;
+    readonly line: string;
   };
   /**
    * Display-only label for the workspace the server is serving, shown
@@ -454,6 +475,8 @@ export interface DoctorRepairResponse {
     readonly rewritten: number;
     readonly added: number;
     readonly merged: number;
+    /** Links that had no rank and were given one (K143). */
+    readonly ranked: number;
   };
 }
 
@@ -515,8 +538,8 @@ export interface BulkResponse {
 
 /** One migration step in a plan or result. */
 export interface MigrationStepResponse {
-  readonly from: number;
-  readonly to: number;
+  readonly from: string;
+  readonly to: string;
   readonly description: string;
   /** True when the step is non-trivially destructive. */
   readonly risky?: boolean;
@@ -532,8 +555,8 @@ export interface MigrationStepResponse {
  * the user commits.
  */
 export interface MigrationPlanResponse {
-  readonly from: number;
-  readonly to: number;
+  readonly from: string;
+  readonly to: string;
   readonly steps: readonly MigrationStepResponse[];
   /** Number of task files the migration would rewrite. */
   readonly taskCount: number;
@@ -541,8 +564,8 @@ export interface MigrationPlanResponse {
 
 /** `POST /api/migrate` — what a migration actually did. */
 export interface MigrateResponse {
-  readonly from: number;
-  readonly to: number;
+  readonly from: string;
+  readonly to: string;
   readonly steps: readonly MigrationStepResponse[];
   /**
    * Where the pre-migration backup was written. Absent only when no
@@ -691,8 +714,8 @@ export interface ErrorResponse {
    * treated as ahead.
    */
   readonly schema_remote_newer?: {
-    readonly remote_version: number | null;
-    readonly local_version: number;
+    readonly remote_version: string | null;
+    readonly local_version: string;
     readonly branch: string;
   };
   /**

@@ -28,6 +28,22 @@ async function relsOf(root: string, key: string): Promise<unknown> {
   return (await lookupTask(resolveLocttDir(root), key)).frontmatter.relationships;
 }
 
+/**
+ * A task's links without their ranks, after checking every one has a
+ * rank (K143: every write gives a new link one), ascending in stored
+ * order within each type.
+ */
+async function rankedRelsOf(root: string, key: string): Promise<unknown> {
+  const rels = (await lookupTask(resolveLocttDir(root), key)).frontmatter.relationships;
+  if (rels === undefined) return undefined;
+  for (const type of new Set(rels.map(r => r.type))) {
+    const ranks = rels.filter(r => r.type === type).map(r => r.rank);
+    expect(ranks.every(r => typeof r === "string"), `${key} ${type} ranks: ${JSON.stringify(ranks)}`).toBe(true);
+    expect([...ranks].sort(), `${key} ${type} ranks ascend`).toEqual(ranks);
+  }
+  return rels.map(r => ({ type: r.type, target: r.target }));
+}
+
 async function idOf(root: string, key: string): Promise<string> {
   return (await lookupTask(resolveLocttDir(root), key)).frontmatter.id;
 }
@@ -51,6 +67,8 @@ async function writeKeyValuedChild(root: string, key: string, parentKey: string)
     "relationships:",
     "  - type: parent",
     `    target: ${parentKey}`,
+    // Ranked, as the 0.1.0 → 0.3.0 upgrade leaves every link (K143).
+    "    rank: u",
     "---",
     "",
   ].join("\n"), "utf8");
@@ -65,8 +83,8 @@ describe("CLI: create --parent (K140)", () => {
 
       const parentId = await idOf(root, "T-4");
       const childId = await idOf(root, "T-5");
-      expect(await relsOf(root, "T-5")).toEqual([{ type: "parent", target: parentId }]);
-      expect(await relsOf(root, "T-4")).toEqual([{ type: "child", target: childId }]);
+      expect(await relsOf(root, "T-5")).toEqual([{ type: "parent", target: parentId, rank: "u" }]);
+      expect(await relsOf(root, "T-4")).toEqual([{ type: "child", target: childId, rank: "u" }]);
 
       expect((await cli(root, "show", "T-5")).stdout).toMatch(/ {2}parent → T-4 {2}task 4 {2}\[backlog\]/);
       expect((await cli(root, "show", "T-4")).stdout).toMatch(/ {2}child → T-5 {2}the child {2}\[backlog\]/);
@@ -105,16 +123,19 @@ describe("CLI: create --parent (K140)", () => {
     });
   });
 
-  it("show lists children in the web's order: ranked first, then unranked in stored order", async () => {
+  it("show lists children in the web's order: by rank, which a rerank moves", async () => {
     await withTmpLoctt(async ({ root }) => {
       await cli(root, "create", "parent");
       await cli(root, "create", "a", "--parent", "T-1");
       await cli(root, "create", "b", "--parent", "T-1");
       await cli(root, "create", "c", "--parent", "T-1");
-      // Ranking only T-4 puts it above the two unranked children.
-      expect((await cli(root, "rerank", "T-1", "child", "T-4")).exitCode).toBe(0);
-      const lines = (await cli(root, "show", "T-1")).stdout.split("\n").filter(l => l.startsWith("  child → "));
-      expect(lines.map(l => l.slice("  child → ".length, "  child → ".length + 3))).toEqual(["T-4", "T-2", "T-3"]);
+      const childLines = async (): Promise<string[]> =>
+        (await cli(root, "show", "T-1")).stdout.split("\n").filter(l => l.startsWith("  child → "))
+          .map(l => l.slice("  child → ".length, "  child → ".length + 3));
+      // K143: each create ranked its link at the end, so creation order.
+      expect(await childLines()).toEqual(["T-2", "T-3", "T-4"]);
+      expect((await cli(root, "rerank", "T-1", "child", "T-4", "--before", "T-2")).exitCode).toBe(0);
+      expect(await childLines()).toEqual(["T-4", "T-2", "T-3"]);
     });
   });
 });
@@ -140,8 +161,8 @@ describe("CLI: doctor --repair-relationships and --fix (K141)", () => {
       expect(repair.stdout).not.toMatch(/^ {2}[!✗]/m);
 
       const parentId = await idOf(root, "T-1");
-      expect(await relsOf(root, "T-2")).toEqual([{ type: "parent", target: parentId }]);
-      expect(await relsOf(root, "T-1")).toEqual([
+      expect(await relsOf(root, "T-2")).toEqual([{ type: "parent", target: parentId, rank: "u" }]);
+      expect(await rankedRelsOf(root, "T-1")).toEqual([
         { type: "child", target: await idOf(root, "T-2") },
         { type: "child", target: await idOf(root, "T-3") },
       ]);
@@ -197,9 +218,9 @@ describe("MCP: create_task parent, get_task order, doctor repair (K140, K141)", 
       } finally {
         await client.close();
       }
-      expect(await relsOf(root, "T-2")).toEqual([{ type: "parent", target: parentId }]);
-      expect(await relsOf(root, "T-3")).toEqual([{ type: "parent", target: parentId }]);
-      expect(await relsOf(root, "T-1")).toEqual([
+      expect(await relsOf(root, "T-2")).toEqual([{ type: "parent", target: parentId, rank: "u" }]);
+      expect(await relsOf(root, "T-3")).toEqual([{ type: "parent", target: parentId, rank: "u" }]);
+      expect(await rankedRelsOf(root, "T-1")).toEqual([
         { type: "child", target: await idOf(root, "T-2") },
         { type: "child", target: await idOf(root, "T-3") },
       ]);
@@ -213,14 +234,16 @@ describe("MCP: create_task parent, get_task order, doctor repair (K140, K141)", 
       await cli(root, "create", "parent");
       await cli(root, "create", "a", "--parent", "T-1");
       await cli(root, "create", "b", "--parent", "T-1");
-      await cli(root, "rerank", "T-1", "child", "T-3");
+      await cli(root, "rerank", "T-1", "child", "T-3", "--before", "T-2");
       const client = await startMcpClient(root);
       try {
         const res = await client.callTool("get_task", { ref: "T-1" });
         const task = JSON.parse(res.content[0]?.text ?? "{}") as { relationships: { target: string; rank?: string }[] };
         expect(task.relationships.map(r => r.target)).toEqual(["T-3", "T-2"]);
-        expect(typeof task.relationships[0]?.rank).toBe("string");
-        expect(task.relationships[1]?.rank).toBeUndefined();
+        // K143: every link has a rank, and the order is theirs.
+        const ranks = task.relationships.map(r => r.rank ?? "");
+        expect(ranks.every(r => r.length > 0)).toBe(true);
+        expect([...ranks].sort()).toEqual(ranks);
       } finally {
         await client.close();
       }

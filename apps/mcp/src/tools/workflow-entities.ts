@@ -467,7 +467,6 @@ async function dispatchRelationship(locttDir: string, op: Op, args: Record<strin
       const graph = enumStr(fields, "graph", VALID_RELATIONSHIP_GRAPHS);
       const inverse = str(fields, "inverse");
       const inverseLabel = str(fields, "inverse_label");
-      const ranked = bool(fields, "ranked");
       await createRelationship(locttDir, {
         key,
         label: requireStr(fields, "label"),
@@ -475,7 +474,6 @@ async function dispatchRelationship(locttDir: string, op: Op, args: Record<strin
         ...(inverse !== undefined ? { inverse } : {}),
         ...(inverseLabel !== undefined ? { inverse_label: inverseLabel } : {}),
         ...(graph !== undefined ? { graph } : {}),
-        ...(ranked !== undefined ? { ranked } : {}),
         ...iconColorCreate(fields),
       });
       return `Created relationship "${key}"`;
@@ -487,14 +485,12 @@ async function dispatchRelationship(locttDir: string, op: Op, args: Record<strin
       const graph = enumStr(fields, "graph", VALID_RELATIONSHIP_GRAPHS);
       const inverse = str(fields, "inverse");
       const inverseLabel = str(fields, "inverse_label");
-      const ranked = bool(fields, "ranked");
       await editRelationship(locttDir, key, {
         ...(label !== undefined ? { label } : {}),
         ...(kind !== undefined ? { kind } : {}),
         ...(inverse !== undefined ? { inverse } : {}),
         ...(inverseLabel !== undefined ? { inverse_label: inverseLabel } : {}),
         ...(graph !== undefined ? { graph } : {}),
-        ...(ranked !== undefined ? { ranked } : {}),
         ...iconColorEdit(fields),
       });
       return `Updated relationship "${key}"`;
@@ -530,6 +526,8 @@ async function dispatchCustomField(locttDir: string, op: Op, args: Record<string
         type,
         multi: bool(fields, "multi") ?? false,
         searchable: bool(fields, "searchable") ?? false,
+        // K150: an enum field whose values may be created on the fly.
+        ...(bool(fields, "allow_new_values") === true ? { allow_new_values: true } : {}),
         ...(values !== undefined && values.length > 0 ? { values } : {}),
         ...(taskTypes !== undefined ? { task_types: taskTypes } : {}),
       });
@@ -542,10 +540,12 @@ async function dispatchCustomField(locttDir: string, op: Op, args: Record<string
       if ("multi" in fields) throw new FieldsError("`fields.multi` is immutable after creation (SET-16)");
       const label = str(fields, "label");
       const searchable = bool(fields, "searchable");
+      const allowNewValues = bool(fields, "allow_new_values");
       const taskTypes = nullableStrArray(fields, "task_types");
       await editCustomField(locttDir, key, {
         ...(label !== undefined ? { label } : {}),
         ...(searchable !== undefined ? { searchable } : {}),
+        ...(allowNewValues !== undefined ? { allow_new_values: allowNewValues } : {}),
         ...(taskTypes !== undefined ? { task_types: taskTypes } : {}),
       });
       return `Updated custom field "${key}"`;
@@ -680,11 +680,11 @@ export const TOOLS: readonly ToolDef[] = [
       "One tool, dispatched on {entity, op}. Entity/op matrix: " + ENTITY_OP_MATRIX + " " +
       "Args: `entity` and `op` (required); `key` (the entity key, required for edit/delete, and the NEW key on create); " +
       "`field` (the parent custom-field key, required only for entity:\"custom_field_value\"); " +
-      "`fields` (the create/edit payload: label, category, icon, color, kind, inverse, type, multi, task_types, statuses, wip, etc., per entity); " +
+      "`fields` (the create/edit payload: label, category, icon, color, kind, inverse, type, multi, allow_new_values, task_types, statuses, wip, etc., per entity); " +
       "`remap_to` (delete-in-use target: another key, or null to clear the value from every task); " +
       "`order` (the full ordered key list, for reorder); `confirm` (must be true for delete). " +
       "Keys are immutable: an `edit` cannot rename (there is no key change; a rename is delete+create). Priority `value` is never settable (it is derived from order, so use reorder). " +
-      "Custom-field `type`/`multi` are immutable after create. Deleting an in-use status/priority/task_type/relationship/enum-value requires `remap_to`; whole custom_field and board_column deletes take no remap. " +
+      "Custom-field `type`/`multi` are immutable after create. An enum custom field with `allow_new_values: true` accepts new values on the fly (update_task `create_missing: true`); off by default, and refused on a non-enum field. Deleting an in-use status/priority/task_type/relationship/enum-value requires `remap_to`; whole custom_field and board_column deletes take no remap. " +
       "COLOUR (`fields.color`, and `color` inside each `fields.values[]` enum seed): " + COLOR_INPUT_DOC +
       " On an edit, pass null to clear it.",
     inputSchema: {

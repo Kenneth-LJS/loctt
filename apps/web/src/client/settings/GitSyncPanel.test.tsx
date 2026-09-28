@@ -133,21 +133,21 @@ describe("historyRewritten detector (GIT-21)", () => {
 describe("schemaRemoteNewer detector (GIT-35)", () => {
   it("returns the typed payload for a schema_remote_newer envelope", () => {
     const info = schemaRemoteNewer(apiError("schema_remote_newer", {
-      schema_remote_newer: { remote_version: 2, local_version: 1, branch: "loctt" },
+      schema_remote_newer: { remote_version: "0.4.0", local_version: "0.3.0", branch: "loctt" },
     }));
     expect(info).toBeDefined();
-    expect(info?.remote_version).toBe(2);
-    expect(info?.local_version).toBe(1);
+    expect(info?.remote_version).toBe("0.4.0");
+    expect(info?.local_version).toBe("0.3.0");
     expect(info?.branch).toBe("loctt");
   });
 
   it("carries a null remote_version for a malformed remote schema", () => {
     const info = schemaRemoteNewer(apiError("schema_remote_newer", {
-      schema_remote_newer: { remote_version: null, local_version: 1, branch: "loctt" },
+      schema_remote_newer: { remote_version: null, local_version: "0.3.0", branch: "loctt" },
     }));
     expect(info).toBeDefined();
     expect(info?.remote_version).toBeNull();
-    expect(info?.local_version).toBe(1);
+    expect(info?.local_version).toBe("0.3.0");
   });
 
   it("returns undefined for any other code (so it uses the right banner / ErrorState)", () => {

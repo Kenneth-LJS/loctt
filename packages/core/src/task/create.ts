@@ -1,4 +1,4 @@
-import type { LocttState,Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
+import type { LocttState, Task, TaskFrontmatter, TaskRelationship, WorkflowConfig } from "@loctt/contracts";
 import { defaultStatus } from "@loctt/contracts";
 import { ulid } from "ulid";
 
@@ -7,6 +7,7 @@ import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { recordTaskKeys } from "../state/key-index.js";
 import { allocateKey } from "../state/keys.js";
+import { appendRankedEdge } from "./edge-rank.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
@@ -135,7 +136,7 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   // or archived parent now refuses the create, and nothing is written
   // (the key counter lives in `state`, which the caller only saves
   // after this returns).
-  const relationships: { type: string; target: string }[] = [];
+  let relationships: TaskRelationship[] = [];
   let parentLink: PreparedParentLink | undefined;
   if (options.parent !== undefined) {
     const treeType = workflowConfig?.relationships.find(r => r.graph === "tree")?.key
@@ -148,7 +149,8 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
       type: treeType,
       workflowConfig,
     });
-    relationships.push({ type: treeType, target: parentLink.parentId });
+    // K143: ranked like every other link (the first of its group here).
+    relationships = appendRankedEdge(relationships, treeType, parentLink.parentId);
   }
 
   const frontmatter: TaskFrontmatter = {

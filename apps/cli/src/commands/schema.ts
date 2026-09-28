@@ -52,7 +52,6 @@ export async function run(args: string[], root: string): Promise<void> {
     for (const r of workflowConfig.relationships) {
       const tags: string[] = [];
       if (r.graph !== undefined && r.graph !== "none") tags.push(r.graph);
-      if (r.ranked) tags.push("ranked");
       const tagStr = tags.length ? ` [${tags.join(", ")}]` : "";
       if (isSymmetricRelationship(r)) {
         console.log(`  ${r.key} (${r.label}) [symmetric]${tagStr}`);

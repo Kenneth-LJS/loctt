@@ -11,9 +11,10 @@ import { pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 import type { McpClient } from "../../integration/adapters/mcp-stdio.ts";
-import { bilateralViolations, describeCheck, runCheck, touchedLinkTaskIds } from "./checks.ts";
+import { bilateralViolations, describeCheck, gitRev, runCheck, touchedLinkTaskIds } from "./checks.ts";
+import { frozenSeedLoctt } from "./paths.ts";
 import type { Capture, Case, Check, McpCall, Step, SurfaceName } from "./schema.ts";
-import { freshTracker } from "./seed.ts";
+import { blankTracker, freshTracker } from "./seed.ts";
 import { type Snapshot,snapshot } from "./snapshot.ts";
 import { type ActionResult, doctorFindings, runCliCommands, runMcpCalls, withMcp } from "./surfaces.ts";
 import { TrackerView } from "./tracker.ts";
@@ -82,8 +83,19 @@ function runChecks(
 
 /** Fresh seed copy, setup files and patches, and the pre-checks. */
 async function prepare(c: Case, seed: SeedIndex, surface: SurfaceName): Promise<{ state: CaseState; failures: Failure[] }> {
-  const root = await freshTracker(seed, `${c.id}-${surface}`);
-  const state: CaseState = { root, vars: {}, knownSeen: [] };
+  let root: string;
+  const vars: CaseState["vars"] = {};
+  if (c.seed === "empty" || c.seed === "none") {
+    const blank = await blankTracker(`${c.id}-${surface}`, c.seed, c.git);
+    root = blank.root;
+    if (blank.remote !== undefined) vars["remote"] = blank.remote;
+  } else {
+    root = await freshTracker(seed, `${c.id}-${surface}`, c.seed === "0.1.0" ? frozenSeedLoctt : undefined);
+    if (c.git !== undefined) {
+      return { state: { root, vars, knownSeen: [] }, failures: [{ caseId: c.id, surface, step: "setup", check: "git", message: "`git` is supported with seed `empty` or `none` only" }] };
+    }
+  }
+  const state: CaseState = { root, vars, knownSeen: [] };
   for (const [rel, content] of Object.entries(c.setupFiles)) {
     const file = path.join(root, rel);
     await mkdir(path.dirname(file), { recursive: true });
@@ -112,6 +124,8 @@ function stepActions(step: Step, seed: SeedIndex, state: CaseState): { cli: stri
   return { cli, mcp: calls.map(call => interpolate(call, ctx)) };
 }
 
+export type StepScript = (ctx: { root: string; vars: CaseState["vars"] }) => Promise<string | void> | string | void;
+
 async function runAction(
   step: Step,
   surface: SurfaceName,
@@ -119,8 +133,20 @@ async function runAction(
   state: CaseState,
   mcp: McpClient | undefined,
 ): Promise<ActionResult> {
+  if (step.script !== undefined) {
+    try {
+      const mod = await import(pathToFileURL(step.script).href) as { default?: StepScript };
+      if (typeof mod.default !== "function") throw new Error(`${step.script} has no default export function`);
+      const out = await mod.default({ root: state.root, vars: state.vars });
+      return { output: typeof out === "string" ? out : "" };
+    } catch (err) {
+      return { output: "", error: { message: err instanceof Error ? err.message : String(err) } };
+    }
+  }
   const actions = stepActions(step, seed, state);
-  if (surface === "cli") return runCliCommands(actions.cli, state.root);
+  // `via` pins the step to one surface whatever run this is (interop).
+  const on = step.via ?? surface;
+  if (on === "cli") return runCliCommands(actions.cli, state.root);
   if (!mcp) throw new Error("MCP surface without a client");
   return runMcpCalls(mcp, actions.mcp);
 }
@@ -163,6 +189,10 @@ function applyCapture(name: string, cap: Capture, tracker: TrackerView, before: 
     const hits = list.filter(e => e["name"] === entityName);
     if (hits.length !== 1) return `capture ${name}: expected one ${kind} named "${entityName}", found ${hits.length}`;
     state.vars[name] = { id: String(hits[0]?.["id"]) };
+    return null;
+  }
+  if ("git_rev" in cap) {
+    state.vars[name] = gitRev(state.root, interpolate(cap.git_rev, ctxOf(seed, state)));
     return null;
   }
   const m = new RegExp(cap.output).exec(output);
@@ -215,8 +245,12 @@ async function verifyStep(
         failures.push(fail("expect_error", `expected the error to contain ${JSON.stringify(want.message)}, got: ${result.error.message}`));
       }
     }
-    // K144: an error case proves nothing changed.
-    failures.push(...runChecks([{ tracker_unchanged: true }], c, surface, label, seed, state, before, output));
+    // K144: an error case proves nothing changed, unless it is a partial
+    // bulk result (K153), whose `post` checks say what did.
+    const partial = surface === "cli" && expected.cli?.partial === true;
+    if (!partial) {
+      failures.push(...runChecks([{ tracker_unchanged: true }], c, surface, label, seed, state, before, output));
+    }
   } else if (result.error) {
     failures.push(fail("action", `the action failed${result.error.exitCode !== undefined ? ` (exit ${result.error.exitCode})` : ""}:\n${result.error.message}`));
     return failures;
@@ -307,6 +341,8 @@ export async function runCase(
     return finish(c, surface, seed, state);
   };
 
-  const out = surface === "mcp" ? await withMcp(state.root, mcp => body(mcp)) : await body(undefined);
+  // A `via: mcp` step needs the MCP session on the CLI run too.
+  const needsMcp = surface === "mcp" || c.steps.some(s => s.via === "mcp");
+  const out = needsMcp ? await withMcp(state.root, mcp => body(mcp)) : await body(undefined);
   return { failures: out, root: state.root };
 }

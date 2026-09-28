@@ -1035,7 +1035,6 @@ function serializeRelationship(r: RelationshipDef): Record<string, unknown> {
     ...(r.inverse !== undefined ? { inverse: r.inverse } : {}),
     ...(r.inverse_label !== undefined ? { inverse_label: r.inverse_label } : {}),
     ...(r.graph !== undefined && r.graph !== "none" ? { graph: r.graph } : {}),
-    ...(r.ranked === true ? { ranked: true } : {}),
     ...iconColorSpread(r),
   };
 }
@@ -1057,6 +1056,12 @@ function serializeCustomField(f: CustomFieldDef): Record<string, unknown> {
           })),
         }
       : {}),
+    // The type-scope allowlist (TSK-12, K91). It was omitted here, so any
+    // workflow write (adding a status, editing a field) silently turned a
+    // scoped field global. Absent stays absent; an empty list is kept.
+    ...(f.task_types !== undefined ? { task_types: [...f.task_types] } : {}),
+    // K150: written only when on, so a closed field's entry is unchanged.
+    ...(f.allow_new_values === true ? { allow_new_values: true } : {}),
   };
 }
 

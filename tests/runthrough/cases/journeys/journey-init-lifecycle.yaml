@@ -1,0 +1,52 @@
+id: journey-init-lifecycle
+name: "Journey: init, then create, set, link, archive, log and query"
+description: >
+  Folded in from tests/e2e/01 (B43, K145): from an empty directory, init
+  writes the config, and a task walks through set, link, archive, the
+  activity log and a query. Same steps and assertions as the e2e journey,
+  plus the harness's automatic doctor and bilateral checks.
+tags: [journey, b43]
+surfaces: [cli]
+seed: none
+steps:
+  - name: init
+    cli: init
+    post:
+      - path: { path: .loctt/config/workflow.yaml, exists: true }
+      - path: { path: .loctt/config/queries.yaml, exists: true }
+  - name: create two tasks
+    cli:
+      - create "task A"
+      - create "task B"
+    post:
+      - output: { contains: ["T-1", "T-2"] }
+  - name: set a status
+    cli: set T-1 status in_progress
+  - name: show the status
+    cli: show T-1
+    post:
+      - output: { contains: ["Status: in_progress"] }
+  - name: link
+    cli: link T-1 blocks T-2
+  - name: the target shows the inverse
+    cli: show T-2
+    post:
+      - output: { contains: ["is_blocked_by → T-1"] }
+  - name: archive
+    cli: archive T-1
+  - name: list hides the archived task
+    cli: list
+    post:
+      - output: { contains: ["task B"], not_contains: ["task A"] }
+  - name: the log records every change
+    cli: log T-1
+    post:
+      - output: { contains: ["created", "status", "link added", "archived"] }
+  - name: a fresh in-progress task
+    cli:
+      - create "task C"
+      - set T-3 status in_progress
+  - name: query by status
+    cli: list --query "status = in_progress"
+    post:
+      - output: { contains: ["task C"], not_contains: ["task B"] }

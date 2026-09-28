@@ -50,7 +50,7 @@ function stubFetch() {
             message: "This tracker was created by a newer version of LocTT (schema v9).",
             error: "This tracker was created by a newer version of LocTT (schema v9).",
             recovery: { kind: "none" },
-            schema_status: { kind: "future", on_disk: 9, current: 1 },
+            schema_status: { kind: "future", on_disk: "0.9.0", current: "0.3.0" },
           }),
           { status: 409, headers: { "Content-Type": "application/json" } },
         ),
@@ -65,7 +65,7 @@ function stubFetch() {
           taskCount: 3,
           keyPrefix: "T-",
           nextKey: "T-4",
-          schemaStatus: { kind: "current", version: 1 },
+          schemaStatus: { kind: "current", version: "0.3.0" },
           cwd: "~/probe",
           today: "2026-08-28",
         }
@@ -210,8 +210,8 @@ describe("AppBootstrap against a schema-mismatched tracker", () => {
 
     const banner = await screen.findByRole("alert", {}, { timeout: 10_000 });
     expect(banner.getAttribute("data-kind")).toBe("future");
-    expect(banner.textContent).toContain("v9");
-    expect(banner.textContent).toContain("v1");
+    expect(banner.textContent).toContain("0.9.0");
+    expect(banner.textContent).toContain("0.3.0");
 
     // The shell is up and navigable, per all three cases.
     expect(screen.queryByLabelText("Toggle sidebar")).not.toBeNull();

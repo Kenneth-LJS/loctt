@@ -14,6 +14,8 @@ estimate: "3"
 relationships:
   - type: parent
     target: 01M3JSJSTFFH6XW1HHTBCR1XRG
+    rank: u
   - type: causes
     target: 01M3JSJVVSC6XG98ASXM5DAD43
+    rank: u
 ---

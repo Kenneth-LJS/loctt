@@ -107,6 +107,24 @@ export const CheckSchema = z.union([
     }).refine(exactlyOneComparison, "yaml: give exactly one of equals / contains / absent / matches"),
   }),
   z.strictObject({ file_unchanged: z.string().min(1) }),
+  /** A file or directory under the temp root (not `.loctt/`) exists or not. */
+  z.strictObject({ path: z.strictObject({ path: z.string().min(1), exists: z.boolean() }) }),
+  /**
+   * A git ref in the tracker's repository (`repo: local`, the default) or
+   * its bare remote (`repo: remote`) resolves — or, with `exists: false`,
+   * does not. `not_equals` also requires its commit to differ from a
+   * captured one (a branch that advanced).
+   */
+  z.strictObject({
+    git: z.strictObject({
+      ref: z.string().min(1),
+      repo: z.enum(["local", "remote"]).default("local"),
+      exists: z.boolean().default(true),
+      not_equals: z.string().optional(),
+    }),
+  }),
+  /** `git show <spec>` in the tracker's repository contains the text. */
+  z.strictObject({ git_show: z.strictObject({ spec: z.string().min(1), contains: z.string() }) }),
   z.strictObject({ tracker_unchanged: z.literal(true) }),
   z.strictObject({
     output: z.strictObject({
@@ -117,6 +135,8 @@ export const CheckSchema = z.union([
       in_order: z.array(z.string()).min(2).optional(),
       /** The task keys the result lists, as a set. */
       keys: z.array(z.string()).optional(),
+      /** How many output lines match `matches` (a regex). */
+      line_count: z.strictObject({ matches: z.string().min(1), equals: z.number().int().nonnegative() }).optional(),
     }),
   }),
 ]);
@@ -146,6 +166,8 @@ const CaptureSchema = z.union([
   }),
   /** The first group of a regex over the action's output. */
   z.strictObject({ output: z.string().min(1) }),
+  /** The commit a git ref points at in the tracker's repository. */
+  z.strictObject({ git_rev: z.string().min(1) }),
 ]);
 export type Capture = z.infer<typeof CaptureSchema>;
 
@@ -153,6 +175,12 @@ const ExpectErrorSchema = z.strictObject({
   cli: z.strictObject({
     exit_code: z.number().int().positive().default(1),
     message: z.string().optional(),
+    /**
+     * The command changed some tasks and exited non-zero for the rest (a
+     * bulk op reporting per-task failures, K153): the tracker is *not*
+     * asserted unchanged; `post` says what changed.
+     */
+    partial: z.boolean().optional(),
   }).optional(),
   mcp: z.strictObject({
     message: z.string().optional(),
@@ -167,6 +195,20 @@ export type SurfaceName = z.infer<typeof Surface>;
 const StepFields = {
   cli: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
   mcp: McpSchema.optional(),
+  /**
+   * Run this step on one surface whatever surface the case is running
+   * on — a scenario that writes through one surface and reads through
+   * the other (the CLI ⇄ MCP interop journey). `via: mcp` starts the MCP
+   * session for the case even on its `cli` run.
+   */
+  via: z.enum(["cli", "mcp"]).optional(),
+  /**
+   * An action no loctt command can perform (a push to the remote from
+   * another clone): a `.ts` module, relative to the case file, whose
+   * default export `({ root, vars }) => Promise<string | void>` runs
+   * instead of `cli` / `mcp`. Its return value is the step's output.
+   */
+  script: z.string().min(1).optional(),
   capture: z.record(z.string().regex(/^[a-z_][a-z0-9_]*$/), CaptureSchema).optional(),
   post: z.array(CheckSchema).default([]),
   expect_error: ExpectErrorSchema.optional(),
@@ -206,6 +248,22 @@ const Base = {
     bug: z.string().min(1),
   })).optional(),
   pre: z.array(CheckSchema).default([]),
+  /**
+   * Which seed the case starts from. `current` (the default) is the
+   * checked-in seed at the code's format; `0.1.0` is the frozen copy at
+   * format 0.1.0 (`tests/fixtures/trackers/seed-0.1.0/`), for the upgrade
+   * cases (B41). Same ids, keys and index either way. `empty` is a
+   * tracker `loctt init` just made (prefix `T`, no tasks), and `none` an
+   * empty directory — for the journeys folded in from `tests/e2e` (B43),
+   * which start from nothing and name their own keys.
+   */
+  seed: z.enum(["current", "0.1.0", "empty", "none"]).default("current"),
+  /**
+   * Make the temp root a git repository (`local`), and also give it a
+   * bare `origin` (`remote`, at `${var.remote}`), before `pre` — for the
+   * git-backed journeys. The loctt tracker itself comes from `seed`.
+   */
+  git: z.enum(["local", "remote"]).optional(),
   /** A `.ts` module (relative to the case file) exporting `(tracker, ctx) => void`. */
   check_script: z.string().optional(),
   /**
@@ -233,6 +291,8 @@ export interface Case {
   readonly setupPatch: ReadonlyArray<{ file: string; find: string; replace: string }>;
   readonly knownDoctorFindings: ReadonlyArray<{ match: string; bug: string }>;
   readonly pre: readonly Check[];
+  readonly seed: "current" | "0.1.0" | "empty" | "none";
+  readonly git?: "local" | "remote";
   readonly steps: readonly Step[];
   readonly checkScript?: string;
   readonly knownBug: Partial<Record<SurfaceName, string>>;

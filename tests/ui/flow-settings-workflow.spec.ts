@@ -436,7 +436,7 @@ test.describe("SET — delete with remap", () => {
 
 test.describe("SET — relationships", () => {
   // @verifies SET-4
-  test("SET-4: relationships show graph and ranked as labelled controls, with the user's own keys", async ({
+  test("SET-4: relationships show graph as a labelled control, with the user's own keys, and no ranked setting (K143)", async ({
     page,
     tracker,
   }) => {
@@ -462,9 +462,9 @@ test.describe("SET — relationships", () => {
         .toHaveText(/graph:\s*(none|acyclic|tree)/);
     }
 
-    // The graph and ranked *controls* live behind the Edit dialog now.
-    // Open it on the first relationship and confirm both are real,
-    // labelled controls over the values the schema allows.
+    // The graph *control* lives behind the Edit dialog now. Open it on
+    // the first relationship and confirm it is a real, labelled control
+    // over the values the schema allows.
     const first = declared[0] as string;
     await rowAction(page, `[data-testid="relationship-symmetric-${first}"]`, `relationships-edit-${first}`);
     const dialog = page.getByTestId("relationships-entry-dialog");
@@ -476,7 +476,10 @@ test.describe("SET — relationships", () => {
       .toHaveAttribute("data-value", /^(none|acyclic|tree)$/);
     const graphOptions = await comboValues(page, "relationships-entry-graph");
     expect(graphOptions).toEqual(["none", "acyclic", "tree"]);
-    await expect(dialog.getByTestId("relationships-entry-ranked")).toBeVisible();
+    // K143: every kind is ordered, so there is no `ranked` setting to
+    // show or edit, on the row or in the dialog.
+    await expect(dialog.getByTestId("relationships-entry-ranked")).toHaveCount(0);
+    await expect(page.locator('[data-testid^="relationship-ranked-"]')).toHaveCount(0);
   });
 
   // @verifies SET-5

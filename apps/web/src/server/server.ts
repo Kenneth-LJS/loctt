@@ -112,6 +112,7 @@ import {
   editMilestone,
   editProject,
   editSprint,
+  editTaskFields,
   editView,
   enableGit,
   exportBackup,
@@ -192,7 +193,6 @@ import {
   ReorderError,
   reorderRelationship,
   repairRelationships,
-  requireSupportedSchema,
   resolveCommentMentionsContext,
   resolveEntityNamesContext,
   resolveLocttDir,
@@ -238,6 +238,8 @@ import {
   unsetConfigValue,
   unsetField,
   updateUser,
+  upgradeIfSafe,
+  upgradeNotice,
   UserError,
   validateQuery,
   validHistory,
@@ -600,7 +602,7 @@ function gitErrorResponse(err: unknown): {
         data_state: "not_saved",
         recovery: { kind: "none" },
         schema_remote_newer: {
-          remote_version: Number.isNaN(err.remoteVersion) ? null : err.remoteVersion,
+          remote_version: err.remoteVersion,
           local_version: err.localVersion,
           branch: err.branch,
         },
@@ -1606,6 +1608,15 @@ export function createWebApp(options: WebAppOptions) {
     | { from: string; to: string; renamed: number }
     | undefined;
 
+  /**
+   * An automatic format upgrade this server ran (K143), for `/api/info`
+   * to report. Held for the life of the process, like the rename notice
+   * above and for the same reason: the request that ran the upgrade is
+   * rarely the one that can show it. The client shows it once per page
+   * load, until dismissed.
+   */
+  let completedUpgradeNotice: TrackerInfoResponse["completedUpgrade"];
+
   const server = createServer((req, res) => {
     void handleRequest(req, res);
   });
@@ -1649,6 +1660,9 @@ export function createWebApp(options: WebAppOptions) {
       // problem when the work is already done.
       ...(completedRenameNotice !== undefined
         ? { completedPrefixRename: completedRenameNotice }
+        : {}),
+      ...(completedUpgradeNotice !== undefined
+        ? { completedUpgrade: completedUpgradeNotice }
         : {}),
       cwd: displayPath(root),
       // Named here rather than in the client so the wizard's note and
@@ -1732,7 +1746,8 @@ export function createWebApp(options: WebAppOptions) {
     //  - "restore-missing" → initLoctt({repair:true}): recreates missing
     //    core config/state files with defaults; never overwrites survivors.
     //  - "repair-relationships" → repairRelationships (K141): key-valued
-    //    link targets to ids, missing sides added, duplicates merged.
+    //    link targets to ids, missing sides added, duplicates merged,
+    //    links without a rank ranked at the end of their group (K143).
     //  - "fix-all" → every SAFE repair (rebuild-index + repair-relationships),
     //    the web's `loctt doctor --fix`. restore-missing is not in it: it
     //    writes default config, which is a guess (see SAFE_FIXES in core).
@@ -1742,6 +1757,7 @@ export function createWebApp(options: WebAppOptions) {
       rewritten: plan.rewrites.length,
       added: plan.inverses.length,
       merged: plan.merges.length,
+      ranked: plan.ranked.reduce((n, r) => n + r.count, 0),
     });
     try {
       if (r.action === "rebuild-index") {
@@ -5112,14 +5128,24 @@ export function createWebApp(options: WebAppOptions) {
     }
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
     try {
-      const updated = await setField({
-        locttDir,
-        taskId: task.frontmatter.id,
-        field: request.field,
-        value: request.value,
-        workflowConfig: wfConfig,
-        archivedGuard,
-      });
+      // K150: the picker's "Create 'x'" row on an open choice field sends
+      // `create_missing`; core creates the value and sets it in one write.
+      const updated = request.create_missing === true
+        ? (await editTaskFields({
+            locttDir,
+            taskId: task.frontmatter.id,
+            set: [{ field: request.field, value: request.value }],
+            createMissing: true,
+            archivedGuard,
+          })).task
+        : await setField({
+            locttDir,
+            taskId: task.frontmatter.id,
+            field: request.field,
+            value: request.value,
+            workflowConfig: wfConfig,
+            archivedGuard,
+          });
       json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
       // A rejected single-field write is the path ERR-14 and ERR-18 are
@@ -5866,7 +5892,21 @@ export function createWebApp(options: WebAppOptions) {
         (await trackerDirExists(locttDir))
       ) {
         try {
-          await requireSupportedSchema(locttDir);
+          // K143: an older tracker whose upgrade has no risky step is
+          // upgraded by the first API request, after a backup. The one
+          // line is logged here and held for `/api/info`, which the app
+          // shell shows as a one-time notice.
+          const upgraded = await upgradeIfSafe(locttDir);
+          if (upgraded !== null) {
+            const line = upgradeNotice(upgraded);
+            completedUpgradeNotice = {
+              from: upgraded.from,
+              to: upgraded.to,
+              ...(upgraded.backupPath !== undefined ? { backup: upgraded.backupPath } : {}),
+              line,
+            };
+            console.log(line);
+          }
         } catch (err) {
           if (err instanceof SchemaVersionError || err instanceof SchemaTooNewError) {
             // Nothing ran, so no write was attempted regardless of method

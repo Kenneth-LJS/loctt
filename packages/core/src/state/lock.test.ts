@@ -53,6 +53,24 @@ describe("withStateLock", () => {
     expect(order).toEqual(["a:start", "a:end", "b:start", "b:end"]);
   });
 
+  // A365: an unwritable `.loctt/` is not contention. It used to wait out
+  // the whole lock backoff (~3.75 s) before saying so, which is how
+  // XS-64's permission alert missed its window under load.
+  it("reports an unwritable tracker at once rather than retrying it", async () => {
+    if (process.getuid?.() === 0) return; // root ignores mode bits
+    const { chmod } = await import("node:fs/promises");
+    await chmod(locttDir, 0o500);
+    try {
+      const started = Date.now();
+      const err = await withStateLock(locttDir, () => Promise.resolve()).then(() => undefined, (e: unknown) => e);
+      const elapsed = Date.now() - started;
+      expect((err as Error).message).toMatch(/permission/i);
+      expect(elapsed).toBeLessThan(1000);
+    } finally {
+      await chmod(locttDir, 0o755);
+    }
+  });
+
   it("releases the lock when the critical section throws", async () => {
     await expect(
       withStateLock(locttDir, () => Promise.reject(new Error("boom"))),

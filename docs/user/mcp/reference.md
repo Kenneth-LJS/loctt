@@ -72,6 +72,23 @@ the server tells the agent on connect:
    Before removing anything from the workflow config, the agent calls
    `get_workflow_key_usage` to see how many tasks a change would touch.
 
+### Format versions and automatic upgrades
+
+The first tool call on a tracker in an older format whose upgrade has no
+risky step upgrades it (after backing up `.loctt/`) and then runs. That
+call's result ends with one extra text item, `Upgraded this tracker from
+0.1.0 to 0.3.0 (backup: <path>).`, after the tool's own content (so the
+first item is unchanged), and the server logs the same line to stderr.
+Later calls carry nothing. Every tool upgrades this way except `init` and
+`migrate_schema` (`info` and `doctor` included, unlike the CLI, where
+they describe the tracker without upgrading it). A risky step is not run
+automatically: those tools return an error pointing at `loctt migrate`
+(or `migrate_schema` with `confirm: true`). A
+tracker in a newer format is refused with `This tracker needs loctt
+<version> or newer.`; a `.schema-version` holding anything but a format
+version (including 0.2.x's `1`) is refused, saying what it must hold. See
+[Upgrading](../common/upgrading.md).
+
 ### Names and IDs
 
 Wherever a tool takes a label, user,
@@ -170,13 +187,13 @@ tools.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `get_task` | One task, optionally with body and a `body_token` for safe writes. Relationships are listed in the web task page's order (kinds in workflow order; within a ranked kind by `rank`, then unranked links in the order they were added), and each ranked link carries its `rank`. Each entity reference also carries its name (`assignee_name`, `label_names`, …). | `ref`, `include_body` (default true) |
+| `get_task` | One task, optionally with body and a `body_token` for safe writes. Relationships are listed in the web task page's order (kinds in workflow order; within each kind by `rank`, then any link without one in stored order), and each link carries its `rank`. Every link gets a rank when written (at the end of its kind's list), so only a hand-edited link lacks one. Each entity reference also carries its name (`assignee_name`, `label_names`, …). | `ref`, `include_body` (default true) |
 | `list_tasks` | Query/filter tasks. A query may name labels, users, milestones, sprints and projects (`labels = urgent`); an unknown or ambiguous name is refused. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `archived` (`active` default / `archived` / `all`) |
 | `export_tasks` | Export matching tasks as CSV or JSON (a report, not a backup). | `format`, `query`, `view`, `project`, `columns`, `include_body`, `include_archived` |
 | `create_task` | Create a task. `parent` (key or id) links it under the parent exactly as `link_tasks` would: the parent's id is stored and the parent gets the child link. A parent that doesn't exist or is archived is refused and nothing is created. | `title`, `project`, `status`, `priority`, `task_type`, `assignee`, `reporter`, `due_date`, `start_date`, `estimate`, `milestone`, `sprint`, `labels`, `body`, `parent` |
-| `update_task` | Set one writable field. | `ref`, `field`, `value` |
+| `update_task` | Set one writable field (`field` + `value`, replacing it), and/or add and remove values of list fields: `add` / `remove` map `labels` or a `multi` custom field to a list of values, applied to the task's current list (adding a present value or removing an absent one is a no-op, reported as "No change"). Labels by name or ID, choice values by key or label. An unknown label or value is refused (`… Pass create_missing: true to create it.`) unless `create_missing: true`, which creates a label, or a value of a choice field with `allow_new_values` (appended to its `values`, key from the label). | `ref`, `field`, `value`, `add`, `remove`, `create_missing` |
 | `unset_field` | Clear one field. | `ref`, `field` |
-| `bulk_update_tasks` | Set or clear one field across many tasks in one operation. | `refs` (≤500), `field`, `value` (omit to clear) |
+| `bulk_update_tasks` | Set or clear one field across many tasks in one operation (a bad ref is reported without aborting the rest), **or** add/remove values of a list field on each of them: `add` / `remove` as in `update_task`, applied to each task's own list. Like the set form, a task that fails is listed (`  T-9: task not found`) and the rest still change; the result reads `N updated, M unchanged, F failed (bulk_op_id …)`. An unknown label or value without `create_missing` refuses the whole call. `field` and `add`/`remove` can't be combined in one call. | `refs` (≤500), `field`, `value` (omit to clear), `add`, `remove`, `create_missing` |
 | `duplicate_task` | Copy a task to a new key (no relationships/attachments). | `ref`, `title`, `project` |
 | `move_task` | Reallocate tasks to another project; old keys still resolve. | `refs` (≤500), `project` |
 | `archive_task` / `unarchive_task` | Reversible soft-delete and restore, one or many tasks in one operation. Tasks already in the target state are counted as unchanged; a bad ref is reported without aborting the rest. | `refs` (≤500) |
@@ -230,7 +247,7 @@ starting point is a task, not a link.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `reorder_relationship` | Reorder a target among a source's links of one type. | `source`, `type`, `target`, `before`/`after` |
+| `reorder_relationship` | Reorder a target among a source's links of one type. Every kind is ordered, on either side (`child`, `is_blocked_by`, `relates_to`, …); only a type `workflow.yaml` does not declare is refused. The target lands exactly where asked (siblings without a rank are ranked first, in listed order). | `source`, `type`, `target`, `before`/`after` |
 | `reorder_board` | Reorder a task within its board column. | `ref`, `before`/`after` |
 | `move_board_card` | Move a task to another column and position in one write. | `ref`, `status`, `before`, `after` |
 
@@ -483,8 +500,10 @@ entity key, required for `edit`/`delete`, and the **new** key on
 required only for `entity: "custom_field_value"`); `fields` (the
 create/edit payload, whose shape depends on the entity — `label`,
 `category`, `icon`, `color`, `kind`, `inverse`, `type`, `multi`,
-`task_types`, `statuses`, `wip`, `values`, … — `color` takes any of the
-three shapes in [Colors](#colors)); `remap_to` (delete-in-use
+`allow_new_values` (enum custom fields only: lets `update_task`
+`create_missing` add values), `task_types`, `statuses`, `wip`, `values`, … — `color` takes any of the
+three shapes in [Colors](#colors); a relationship has no `ranked` field,
+every kind is ordered since 0.3.0); `remap_to` (delete-in-use
 target key, or `null` to clear the value from every task); `order` (the
 full ordered key list, for `reorder`); `confirm` (must be `true` for
 `delete`, matching every other `delete_*` tool).
@@ -514,7 +533,7 @@ created here is indistinguishable from one created there.
 | `enable_git` / `disable_git` | Turn git-backed mode on or off. `enable_git` takes `adopt` for an existing LocTT branch. |
 | `get_git_status` | Enabled state, branch, remote, and drift in both directions. |
 | `publish_to_git` | Commit (and push) local state to the branch. |
-| `sync_from_git` | Fetch and reconcile the branch into the workspace. |
+| `sync_from_git` | Fetch and reconcile the branch into the workspace. Links that arrive without a rank are ranked as they are applied; a branch whose `.schema-version` is newer or not a format version is refused. |
 | `get_reconcile_status` | Details of an in-progress reconcile: each conflict's `task_id`, `task_key`, field, and both values; delete-vs-edit rows; auto-merged fields. Read this before `resolve_reconcile`. |
 | `resolve_reconcile` | Apply per-conflict decisions and complete the blocked publish/sync. Requires `confirm`; a surfaced rekey needs `confirm_rekey`. |
 | `abandon_reconcile` | Discard the in-progress reconcile, leaving local files as they are. Requires `confirm`. |
@@ -546,9 +565,9 @@ web UI (Settings → Sync), or MCP:
 | Tool | Purpose | Key params |
 |---|---|---|
 | `info` | Prose summary of the tracker. | — |
-| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index`, `restore-missing` or `repair-relationships`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data); `repair_relationships` changes links stored as a task key to the task's id, adds the missing side of one-sided links (refusing one that would create a loop) and merges identical links, never deleting a link; `fix` runs every safe repair (`rebuild_index` and `repair_relationships`, not `restore_missing`). Repairs run before the checks, so the checks report what is left. | `rebuild_index`, `restore_missing`, `repair_relationships`, `fix` |
+| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index`, `restore-missing` or `repair-relationships`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data); `repair_relationships` changes links stored as a task key to the task's id, adds the missing side of one-sided links (refusing one that would create a loop), merges identical links and ranks links that have no rank, never deleting a link; `fix` runs every safe repair (`rebuild_index` and `repair_relationships`, not `restore_missing`). Repairs run before the checks, so the checks report what is left. | `rebuild_index`, `restore_missing`, `repair_relationships`, `fix` |
 | `init` | Bootstrap a new tracker. An empty `.loctt/` folder is filled in like a missing one. | `prefix`, `project_label`, `no_docs`, `timezone` |
-| `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a schema upgrade. | `confirm` |
+| `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a format upgrade. Exempt from the upgrade on first use, so it can preview one. Versions are format versions (`Plan: 0.1.0 → 0.3.0`). | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |
 | `restore` | Restore a backup (`bare`/`merge`/`overwrite`). Requires `confirm` unless `dry_run`. | `files`, `mode`, `dry_run`, `confirm` |
 

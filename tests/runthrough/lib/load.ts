@@ -79,25 +79,35 @@ export function loadCase(file: string): Case {
   const base = path.basename(file).replace(/\.ya?ml$/, "");
   if (c.id !== base) throw new Error(`${rel}: id "${c.id}" must match the file name "${base}"`);
 
-  const steps = "steps" in c
+  const rawSteps = "steps" in c
     ? c.steps.map((s, i) => (i === c.steps.length - 1 && c.post.length > 0 ? { ...s, post: [...s.post, ...c.post] } : s))
     : [{
       name: "action",
       post: c.post,
       ...(c.cli !== undefined ? { cli: c.cli } : {}),
       ...(c.mcp !== undefined ? { mcp: c.mcp } : {}),
+      ...(c.via !== undefined ? { via: c.via } : {}),
+      ...(c.script !== undefined ? { script: c.script } : {}),
       ...(c.capture !== undefined ? { capture: c.capture } : {}),
       ...(c.expect_error !== undefined ? { expect_error: c.expect_error } : {}),
     }];
+  // A step's `script` is relative to the case file.
+  const steps = rawSteps.map(s => (s.script !== undefined ? { ...s, script: path.resolve(path.dirname(file), s.script) } : s));
 
   for (const [i, s] of steps.entries()) {
     const where = steps.length > 1 ? `step ${i + 1} (${s.name})` : "case";
-    if (c.surfaces.includes("cli") && s.cli === undefined) throw new Error(`${rel}: ${where} runs on cli but has no \`cli\``);
-    if (c.surfaces.includes("mcp") && s.mcp?.call === undefined) throw new Error(`${rel}: ${where} runs on mcp but has no \`mcp.call\``);
-    if (s.expect_error && s.expect_error.cli === undefined && c.surfaces.includes("cli")) {
+    // The surfaces this step actually runs on: its own `via`, else the case's.
+    const on = s.via !== undefined ? [s.via] : c.surfaces;
+    if (s.script !== undefined) {
+      if (s.cli !== undefined || s.mcp !== undefined) throw new Error(`${rel}: ${where} has a \`script\` and a \`cli\`/\`mcp\` action; give one`);
+      continue;
+    }
+    if (on.includes("cli") && s.cli === undefined) throw new Error(`${rel}: ${where} runs on cli but has no \`cli\``);
+    if (on.includes("mcp") && s.mcp?.call === undefined) throw new Error(`${rel}: ${where} runs on mcp but has no \`mcp.call\``);
+    if (s.expect_error && s.expect_error.cli === undefined && on.includes("cli")) {
       throw new Error(`${rel}: ${where} expects an error but gives no \`expect_error.cli\``);
     }
-    if (s.expect_error && s.expect_error.mcp === undefined && c.surfaces.includes("mcp")) {
+    if (s.expect_error && s.expect_error.mcp === undefined && on.includes("mcp")) {
       throw new Error(`${rel}: ${where} expects an error but gives no \`expect_error.mcp\``);
     }
   }
@@ -109,6 +119,8 @@ export function loadCase(file: string): Case {
     tags: c.tags,
     surfaces: c.surfaces,
     setupFiles: c.setup_files ?? {},
+    seed: c.seed,
+    ...(c.git !== undefined ? { git: c.git } : {}),
     setupPatch: c.setup_patch ?? [],
     knownDoctorFindings: c.known_doctor_findings ?? [],
     pre: c.pre,

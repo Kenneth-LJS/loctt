@@ -8,7 +8,10 @@ import { EXIT } from "../runtime/errors.js";
  * `loctt migrate` — apply pending schema migrations.
  *
  * `--dry-run` prints the plan and exits without applying. With no
- * pending steps the command prints "already at vN" and exits 0.
+ * pending steps the command prints "already at format X" and exits 0.
+ * Steps that are not risky also run on their own the first time any
+ * command opens the tracker (K143); this command is how a risky step
+ * runs, and how to upgrade deliberately.
  * Without `--yes`, prompts before applying — accepts a refusal as
  * EXIT.SUCCESS so scripts don't false-alarm on a clean "no".
  */
@@ -32,11 +35,11 @@ export async function run(args: string[], root: string): Promise<void> {
 
   const plan = await planMigration(locttDir);
   if (plan.steps.length === 0) {
-    console.log(`Schema is already at v${plan.to}. Nothing to do.`);
+    console.log(`This tracker is already at format ${plan.to}. Nothing to do.`);
     return;
   }
 
-  console.log(`LocTT schema migration`);
+  console.log(`LocTT format upgrade`);
   console.log(``);
   console.log(`  Current version: ${plan.from}`);
   console.log(`  Target version:  ${plan.to}`);
@@ -47,7 +50,7 @@ export async function run(args: string[], root: string): Promise<void> {
     if (step.deprecated) tags.push("deprecated");
     if (step.risky) tags.push("risky");
     const tagStr = tags.length > 0 ? `  [${tags.join(", ")}]` : "";
-    console.log(`  v${step.from} → v${step.to}  ${step.description}${tagStr}`);
+    console.log(`  ${step.from} → ${step.to}  ${step.description}${tagStr}`);
   }
   console.log(``);
 
@@ -76,11 +79,11 @@ export async function run(args: string[], root: string): Promise<void> {
   console.log(``);
   let i = 1;
   for (const step of result.steps) {
-    console.log(`[${i}/${result.steps.length}] v${step.from} → v${step.to}  ${step.description}`);
+    console.log(`[${i}/${result.steps.length}] ${step.from} → ${step.to}  ${step.description}`);
     i += 1;
   }
   console.log(``);
-  console.log(`Migration complete. Schema is now v${result.to}.`);
+  console.log(`Upgrade complete. The tracker is now at format ${result.to}.`);
   if (result.backupPath) {
     console.log(`You can delete ${result.backupPath} once you've verified everything works.`);
   }

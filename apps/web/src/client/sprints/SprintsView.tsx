@@ -176,9 +176,13 @@ export function SprintsView() {
   // and says plainly that the assignment was not saved.
   // `unknown`: the write timed out and may have landed, so the banner
   // must not say the assignment wasn't saved (A348).
+  // `sprintId`: the sprint the drop targeted, so the banner can say in
+  // the user's terms that it no longer exists instead of relaying the
+  // server's "No sprint with ID '<ULID>'" (A365).
   const [moveError, setMoveError] = useState<{
     key: string;
     sprintLabel: string;
+    sprintId: string | undefined;
     message: string;
     unknown: boolean;
   } | null>(null);
@@ -197,6 +201,14 @@ export function SprintsView() {
    * meta panel uses, obtained from a stable child component. See
    * `SprintWriter` below — the drop is queued into it.
    */
+  // The drop's target sprint is gone once a successful re-read no longer
+  // lists it. Until that re-read lands, the server's message stands.
+  const moveTargetGone = moveError !== null
+    && moveError.sprintId !== undefined
+    && sprints.data !== undefined
+    && !sprints.isFetching
+    && !(sprints.data.items ?? []).some(s => s.id === moveError.sprintId);
+
   const [pending, setPending] = useState<PendingWrite | null>(null);
   const lastMove = useRef<PendingWrite | null>(null);
 
@@ -349,9 +361,14 @@ export function SprintsView() {
           onDone={() => { setPending(null); }}
           onError={(err, write) => {
             setPending(null);
+            // Re-read the sprints: whether the target still exists is a
+            // fact about the data, and the banner reads it from there
+            // rather than from the wording of the server's message.
+            void sprints.refetch();
             setMoveError({
               key: write.ref,
               sprintLabel: write.sprintLabel,
+              sprintId: write.value,
               unknown: isUnknownOutcome(err),
               message:
                 err instanceof ApiError
@@ -382,7 +399,8 @@ export function SprintsView() {
               <>
                 <strong>{moveError.key}</strong> wasn't moved to{" "}
                 <strong>{moveError.sprintLabel}</strong>. The assignment wasn't
-                saved. {moveError.message}
+                saved.{" "}
+                {moveTargetGone ? "That sprint no longer exists." : moveError.message}
               </>
             )}
           </span>

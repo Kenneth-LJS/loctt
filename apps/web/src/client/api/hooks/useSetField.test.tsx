@@ -64,3 +64,33 @@ describe("useSetField integrity invalidation (DEG-31)", () => {
     expect(invalidatedKeys()).toContain("tasks");
   });
 });
+
+describe("useSetField create_missing (K150)", () => {
+  // @verifies TSK-C15
+  it("sends create_missing and refetches the workflow", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ id: "01M15", key: "T-1", title: "A task", fields: { area: "billing" } }),
+    );
+    const { wrapper, invalidatedKeys } = harness();
+    const { result } = renderHook(() => useSetField("T-1"), { wrapper });
+
+    result.current.mutate({ field: "area", value: "Billing", createMissing: true });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    const body = JSON.parse(fetchSpy.mock.calls[0]?.[1]?.body as string) as Record<string, unknown>;
+    expect(body).toMatchObject({ field: "area", value: "Billing", create_missing: true });
+    await waitFor(() => { expect(invalidatedKeys()).toContain("workflow"); });
+  });
+
+  it("an ordinary write does not send create_missing", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ id: "01M15", key: "T-1", title: "A task" }),
+    );
+    const { wrapper } = harness();
+    const { result } = renderHook(() => useSetField("T-1"), { wrapper });
+    result.current.mutate({ field: "status", value: "done" });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    const body = JSON.parse(fetchSpy.mock.calls[0]?.[1]?.body as string) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("create_missing");
+  });
+});

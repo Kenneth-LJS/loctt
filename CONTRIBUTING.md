@@ -33,17 +33,19 @@ it outside the repo with only its declared dependencies, and runs it.
 ```bash
 npm run typecheck         # type-check all workspaces
 npm run lint               # eslint across all workspaces
-npm run test                # unit tests (vitest) — fast, no e2e
-npm run test:integration    # CLI binary + MCP stdio against a real tracker
-npm run test:e2e            # full user-journey e2e specs
-npm run test:runthrough     # every runthrough case, CLI then MCP, over the seed tracker
+npm run test                # unit tests (vitest) — fast, no integration
+npm run test:integration    # how each surface behaves: flags, output, exit codes, errors (+ doctor after every write)
+npm run test:runthrough     # data behaviour and the user journeys, CLI then MCP, over the seed tracker
 npm run test:packaging      # pack + install `loctt` outside the repo and run it
 ```
 
 Run `npm run lint:fix` for auto-fixable lint issues. A PR should pass
 `typecheck`, `lint` (no new warnings), and `test` at minimum;
-`test:integration`, `test:e2e` and `test:runthrough` are expected for
-anything touching the CLI, MCP, or web UI end to end.
+`test:integration` and `test:runthrough` are expected for anything
+touching the CLI, MCP, or web UI end to end. (The old `test:e2e` journeys
+are runthrough scenarios now, under `tests/runthrough/cases/journeys/`;
+see [`tests/README.md`](tests/README.md#which-suite) for which suite a
+new test belongs in.)
 See [`tests/runthrough/README.md`](tests/runthrough/README.md) for the
 runthrough cases and the seed tracker they run against.
 

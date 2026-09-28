@@ -59,8 +59,9 @@ describe("web: create with a parent, and the relationship repair", () => {
     const locttDir = resolveLocttDir(root);
     const p = await lookupTask(locttDir, "T-1");
     const c = await lookupTask(locttDir, "T-2");
-    expect(c.frontmatter.relationships).toEqual([{ type: "parent", target: p.frontmatter.id }]);
-    expect(p.frontmatter.relationships).toEqual([{ type: "child", target: c.frontmatter.id }]);
+    // K143: both sides carry a rank.
+    expect(c.frontmatter.relationships).toEqual([{ type: "parent", target: p.frontmatter.id, rank: "u" }]);
+    expect(p.frontmatter.relationships).toEqual([{ type: "child", target: c.frontmatter.id, rank: "u" }]);
   });
 
   it("POST /api/tasks with a missing parent is a 400 at the parent field, and creates nothing", async () => {
@@ -80,10 +81,11 @@ describe("web: create with a parent, and the relationship repair", () => {
     await post("/api/tasks", { title: "the child" });
     const locttDir = resolveLocttDir(root);
     const c = await lookupTask(locttDir, "T-2");
-    // What `create --parent T-1` wrote before the fix.
+    // What `create --parent T-1` wrote before the fix (ranked by the
+    // 0.1.0 → 0.3.0 upgrade, as every link is since K143).
     const file = join(locttDir, "tasks", c.frontmatter.id, "task.md");
     const text = await readFile(file, "utf8");
-    await writeFile(file, text.replace(/^---\n$/m, "relationships:\n  - type: parent\n    target: T-1\n---\n"), "utf8");
+    await writeFile(file, text.replace(/^---\n$/m, "relationships:\n  - type: parent\n    target: T-1\n    rank: u\n---\n"), "utf8");
 
     const before = await getTask("T-2");
     expect(before.relationships).toEqual([{ type: "parent", target: "T-1", missing: true }]);
@@ -92,7 +94,7 @@ describe("web: create with a parent, and the relationship repair", () => {
     expect(repair.status).toBe(200);
     expect(repair.json).toEqual({
       action: "repair-relationships",
-      relationships: { rewritten: 1, added: 1, merged: 0 },
+      relationships: { rewritten: 1, added: 1, merged: 0, ranked: 0 },
     });
 
     const after = await getTask("T-2");
@@ -106,6 +108,6 @@ describe("web: create with a parent, and the relationship repair", () => {
     expect(res.status).toBe(200);
     expect(res.json["action"]).toBe("fix-all");
     expect(typeof res.json["entries"]).toBe("number");
-    expect(res.json["relationships"]).toEqual({ rewritten: 0, added: 0, merged: 0 });
+    expect(res.json["relationships"]).toEqual({ rewritten: 0, added: 0, merged: 0, ranked: 0 });
   });
 });

@@ -1,0 +1,25 @@
+id: journey-git-remote
+name: "Journey: git-backed mode with a remote"
+description: >
+  Folded in from tests/e2e/08 (B43, K145): publish pushes to the remote;
+  a commit pushed to the remote from another clone arrives with sync.
+tags: [journey, git, b43]
+surfaces: [cli]
+seed: empty
+git: remote
+steps:
+  - name: enable
+    cli: [git enable, git status]
+    post:
+      - output: { contains: ["Enabled: true"] }
+  - name: create and publish pushes
+    cli: [create first, git publish]
+    post:
+      - output: { contains: ["Pushed to remote"] }
+      - git: { ref: loctt, repo: remote }
+  - name: another clone pushes a commit to the remote's loctt branch
+    script: push-out-of-band.ts
+  - name: sync fetches it
+    cli: git sync
+    post:
+      - git_show: { spec: "loctt:out-of-band.txt", contains: external }

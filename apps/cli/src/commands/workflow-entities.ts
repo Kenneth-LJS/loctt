@@ -101,10 +101,10 @@ const ACCEPTED_FLAGS: readonly string[] = [
   "--inverse",
   "--inverse-label",
   "--graph",
-  "--ranked",
   "--type",
   "--multi",
   "--searchable",
+  "--allow-new-values",
   "--task-types",
   "--enum-value",
   "--statuses",
@@ -498,14 +498,13 @@ export async function relationship(args: string[], root: string): Promise<void> 
         const kind = r.kind !== undefined ? ` [${r.kind}]` : "";
         const inv = r.inverse ? ` ↔ ${r.inverse}` : "";
         const graph = r.graph && r.graph !== "none" ? ` [${r.graph}]` : "";
-        const ranked = r.ranked ? " [ranked]" : "";
-        console.log(`${r.key}: ${r.label}${inv}${kind}${graph}${ranked}`);
+        console.log(`${r.key}: ${r.label}${inv}${kind}${graph}`);
       }
       break;
     }
     case "add": {
       await runCommand(async () => {
-        const usage = `loctt relationship add <key> --label <text> [--kind <directional|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none|acyclic|tree>] [--ranked] [--icon <s>] [--color <${COLOR_ARG_SYNTAX}>]`;
+        const usage = `loctt relationship add <key> --label <text> [--kind <directional|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none|acyclic|tree>] [--icon <s>] [--color <${COLOR_ARG_SYNTAX}>]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -521,7 +520,6 @@ export async function relationship(args: string[], root: string): Promise<void> 
           ...(inverse !== undefined ? { inverse } : {}),
           ...(inverseLabel !== undefined ? { inverse_label: inverseLabel } : {}),
           ...(graph !== undefined ? { graph } : {}),
-          ...(hasFlag(args, "--ranked") ? { ranked: true } : {}),
           ...iconColorCreate(args),
         });
         console.log(`Created relationship "${key}"`);
@@ -530,7 +528,7 @@ export async function relationship(args: string[], root: string): Promise<void> 
     }
     case "edit": {
       await runCommand(async () => {
-        const usage = `loctt relationship edit <key> [--label <text>] [--kind <k>] [--inverse <key>] [--inverse-label <text>] [--graph <g>] [--ranked] [--icon <s|->] [--color <${COLOR_ARG_SYNTAX}|->]`;
+        const usage = `loctt relationship edit <key> [--label <text>] [--kind <k>] [--inverse <key>] [--inverse-label <text>] [--graph <g>] [--icon <s|->] [--color <${COLOR_ARG_SYNTAX}|->]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -538,11 +536,10 @@ export async function relationship(args: string[], root: string): Promise<void> 
         const inverse = getArg(args, "--inverse");
         const inverseLabel = getArg(args, "--inverse-label");
         const graph = enumArg(args, "--graph", VALID_RELATIONSHIP_GRAPHS);
-        const ranked = hasFlag(args, "--ranked");
         const iconColor = iconColorChange(args);
         if (
           label === undefined && kind === undefined && inverse === undefined &&
-          inverseLabel === undefined && graph === undefined && !ranked &&
+          inverseLabel === undefined && graph === undefined &&
           iconColor.icon === undefined && iconColor.color === undefined
         ) {
           throw new UsageError("nothing to change", usage);
@@ -553,7 +550,6 @@ export async function relationship(args: string[], root: string): Promise<void> 
           ...(inverse !== undefined ? { inverse } : {}),
           ...(inverseLabel !== undefined ? { inverse_label: inverseLabel } : {}),
           ...(graph !== undefined ? { graph } : {}),
-          ...(ranked ? { ranked: true } : {}),
           ...iconColor,
         });
         console.log(`Updated relationship "${key}"`);
@@ -604,8 +600,9 @@ export async function customField(args: string[], root: string): Promise<void> {
       for (const f of cfg.custom_fields) {
         const multi = f.multi ? " multi" : "";
         const searchable = f.searchable ? " searchable" : "";
+        const open = f.allow_new_values === true ? " allows new values" : "";
         const scope = f.task_types ? `  [types: ${f.task_types.join(",")}]` : "";
-        console.log(`${f.key} (${f.type}${multi}${searchable}): ${f.label}${scope}`);
+        console.log(`${f.key} (${f.type}${multi}${searchable}${open}): ${f.label}${scope}`);
         for (const v of f.values ?? []) {
           console.log(`    - ${v.key}: ${v.label}`);
         }
@@ -614,7 +611,7 @@ export async function customField(args: string[], root: string): Promise<void> {
     }
     case "add": {
       await runCommand(async () => {
-        const usage = `loctt custom-field add <key> --label <text> --type <${VALID_FIELD_TYPES.join("|")}> [--multi] [--searchable] [--task-types a,b] [--enum-value key=label]…`;
+        const usage = `loctt custom-field add <key> --label <text> --type <${VALID_FIELD_TYPES.join("|")}> [--multi] [--searchable] [--allow-new-values] [--task-types a,b] [--enum-value key=label]…`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -645,6 +642,9 @@ export async function customField(args: string[], root: string): Promise<void> {
           type,
           multi: hasFlag(args, "--multi"),
           searchable: hasFlag(args, "--searchable"),
+          // K150: an enum field whose values may be created on the fly.
+          // Core refuses it on a non-enum type.
+          ...(hasFlag(args, "--allow-new-values") ? { allow_new_values: true } : {}),
           ...(values.length > 0 ? { values } : {}),
           // task_types: `-` (clear) is nonsensical on create; treat only a
           // real list as given. parseTaskTypes returns null for `-`.
@@ -657,7 +657,7 @@ export async function customField(args: string[], root: string): Promise<void> {
     case "edit": {
       await runCommand(async () => {
         // NO --type / --multi: both immutable after create (SET-16).
-        const usage = `loctt custom-field edit <key> [--label <text>] [--searchable[=true|false]] [--task-types a,b|-]`;
+        const usage = `loctt custom-field edit <key> [--label <text>] [--searchable[=true|false]] [--allow-new-values[=true|false]] [--task-types a,b|-]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -665,13 +665,16 @@ export async function customField(args: string[], root: string): Promise<void> {
         // its presence/absence is the change signal, so read explicitly.
         const searchableGiven = args.some(a => a === "--searchable" || a.startsWith("--searchable="));
         const searchable = searchableGiven ? hasFlag(args, "--searchable") : undefined;
+        const allowGiven = args.some(a => a === "--allow-new-values" || a.startsWith("--allow-new-values="));
+        const allowNewValues = allowGiven ? hasFlag(args, "--allow-new-values") : undefined;
         const taskTypes = parseTaskTypes(getArg(args, "--task-types"));
-        if (label === undefined && searchable === undefined && taskTypes === undefined) {
+        if (label === undefined && searchable === undefined && allowNewValues === undefined && taskTypes === undefined) {
           throw new UsageError("nothing to change", usage);
         }
         await editCustomField(locttDir, key, {
           ...(label !== undefined ? { label } : {}),
           ...(searchable !== undefined ? { searchable } : {}),
+          ...(allowNewValues !== undefined ? { allow_new_values: allowNewValues } : {}),
           ...(taskTypes !== undefined ? { task_types: taskTypes } : {}),
         });
         console.log(`Updated custom field "${key}"`);

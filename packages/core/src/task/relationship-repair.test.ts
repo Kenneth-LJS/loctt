@@ -70,12 +70,24 @@ describe("repairRelationships (K141)", () => {
     return id;
   }
 
-  const rels = (...edges: [string, string, string?][]): string =>
+  /**
+   * A `relationships` block. Every link carries a rank since K143 (a
+   * 0.2.x tracker gets them from the 0.1.0 → 0.3.0 upgrade before any
+   * repair runs), so a link given without one gets "u"; pass `null` for
+   * a hand-edited link that has none.
+   */
+  const rels = (...edges: [string, string, (string | null)?][]): string =>
     ["relationships:", ...edges.flatMap(([type, target, rank]) => [
       `  - type: ${type}`,
       `    target: ${target}`,
-      ...(rank !== undefined ? [`    rank: ${rank}`] : []),
+      ...(rank === null ? [] : [`    rank: ${rank ?? "u"}`]),
     ])].join("\n");
+
+  /** The ranks of `type` links on a task, in stored order. */
+  async function ranksOf(id: string, type: string): Promise<(string | undefined)[]> {
+    return ((await readTask(locttDir, id)).frontmatter.relationships ?? [])
+      .filter(r => r.type === type).map(r => r.rank);
+  }
 
   async function fileOf(id: string): Promise<string> {
     return readFile(getTaskFilePath(locttDir, id), "utf-8");
@@ -122,15 +134,21 @@ describe("repairRelationships (K141)", () => {
 
       for (const c of children) {
         expect((await readTask(locttDir, c)).frontmatter.relationships).toEqual([
-          { type: "parent", target: parent },
+          { type: "parent", target: parent, rank: "u" },
         ]);
         // The rewrite writes no history (A357): no existing kind says
         // "the same link, stored correctly".
         expect(await readHistory(locttDir, c)).toEqual([]);
       }
-      expect((await readTask(locttDir, parent)).frontmatter.relationships).toEqual(
+      // The added sides carry ranks (K143), ascending in the order added.
+      const added = (await readTask(locttDir, parent)).frontmatter.relationships ?? [];
+      expect(added.map(r => ({ type: r.type, target: r.target }))).toEqual(
         children.map(c => ({ type: "child", target: c })),
       );
+      const addedRanks = added.map(r => r.rank ?? "");
+      expect(addedRanks.every(r => r !== "")).toBe(true);
+      expect([...addedRanks].sort()).toEqual(addedRanks);
+      expect(new Set(addedRanks).size).toBe(addedRanks.length);
       // The added side gets the `link_added` entry `link` writes.
       const history = await readHistory(locttDir, parent);
       expect(history.map(h => [h.kind, h.meta?.["type"], h.meta?.["target"]])).toEqual(
@@ -178,9 +196,9 @@ describe("repairRelationships (K141)", () => {
     expect((await readTask(locttDir, child)).frontmatter.relationships).toEqual([
       { type: "parent", target: parent, rank: "m" },
     ]);
-    // The added side is unranked (K141 7: ordering every link is B41).
+    // The added side is ranked at the end of its group (K143).
     expect((await readTask(locttDir, parent)).frontmatter.relationships).toEqual([
-      { type: "child", target: child },
+      { type: "child", target: child, rank: "u" },
     ]);
   });
 
@@ -190,8 +208,8 @@ describe("repairRelationships (K141)", () => {
     // One link stored as a key and again as the id: identical once the
     // key is rewritten. Plus a plain duplicate.
     const c = await writeRaw("GAME-3", rels(
-      ["blocks", "GAME-1"],
-      ["relates_to", b],
+      ["blocks", "GAME-1", null],
+      ["relates_to", b, "p"],
       ["blocks", a, "k"],
       ["relates_to", b],
     ));
@@ -202,7 +220,7 @@ describe("repairRelationships (K141)", () => {
     ]);
     expect((await readTask(locttDir, c)).frontmatter.relationships).toEqual([
       { type: "blocks", target: a, rank: "k" },
-      { type: "relates_to", target: b },
+      { type: "relates_to", target: b, rank: "p" },
     ]);
     expect(await checkDataIntegrity(locttDir)).toEqual([]);
   });
@@ -213,9 +231,42 @@ describe("repairRelationships (K141)", () => {
     const c = await writeRaw("GAME-3", rels(["relates_to", a]));
     await repairRelationships(locttDir);
     expect((await readTask(locttDir, a)).frontmatter.relationships).toEqual([
-      { type: "parent", target: b },
-      { type: "relates_to", target: c },
+      { type: "parent", target: b, rank: "u" },
+      { type: "relates_to", target: c, rank: "u" },
     ]);
+    expect(await checkDataIntegrity(locttDir)).toEqual([]);
+  });
+
+  // K143: a link stored without a rank (a hand-edit, a merge from a
+  // branch written before 0.3.0) is ranked at the end of its group, in
+  // the order it is listed; ranked links keep their rank.
+  // @verifies REL-C10
+  it("ranks links that have none after the ranked ones, in stored order, and counts them", async () => {
+    const a = await writeRaw("GAME-1", "");
+    const b = await writeRaw("GAME-2", "");
+    const c = await writeRaw("GAME-3", "");
+    const holder = await writeRaw("GAME-4", rels(
+      ["relates_to", c, null],
+      ["relates_to", a, "k"],
+      ["relates_to", b, null],
+    ));
+    for (const [id, other] of [[a, holder], [b, holder], [c, holder]] as const) {
+      await writeFile(getTaskFilePath(locttDir, id), (await fileOf(id)).replace(
+        "status: backlog\n", `status: backlog\nrelationships:\n  - type: relates_to\n    target: ${other}\n    rank: u\n`,
+      ), "utf-8");
+    }
+    const findings = await checkDataIntegrity(locttDir);
+    expect(findings.map(f => f.message.split(":")[0])).toEqual(["relationships[0].rank", "relationships[2].rank"]);
+
+    const plan = await repairRelationships(locttDir);
+    expect(plan.ranked).toEqual([{ taskId: holder, taskKey: "GAME-4", count: 2 }]);
+    expect(repairActionCount(plan)).toBe(2);
+    const ranks = await ranksOf(holder, "relates_to");
+    // Positions unchanged; the ranked one keeps "k"; the two unranked
+    // ones sort after it, first-stored first.
+    expect(ranks[1]).toBe("k");
+    expect((ranks[0] ?? "") > "k").toBe(true);
+    expect((ranks[2] ?? "") > (ranks[0] ?? "")).toBe(true);
     expect(await checkDataIntegrity(locttDir)).toEqual([]);
   });
 

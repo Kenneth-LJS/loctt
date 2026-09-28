@@ -11,7 +11,8 @@
  * - `loctt mcp` answering initialize, listing every tool the MCP
  *   workspace registers, and reading the tracker the CLI made;
  * - the version-skew guard: a tracker from a newer LocTT is refused by
- *   the CLI and by `loctt mcp`.
+ *   the CLI and by `loctt mcp`, naming the release to install;
+ * - the automatic upgrade: a 0.1.0 tracker is upgraded on first use.
  *
  * Before A352, `loctt ui` from an installed CLI answered `/` with a 404
  * because the CLI shipped no client. Inside the monorepo it passed.
@@ -23,9 +24,10 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { cp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -36,6 +38,9 @@ import { getTools } from "../../apps/mcp/src/index.ts";
 import { isolatedEnv, outsideTmp, packAndInstall, PUBLISHED_DIR, readManifest } from "./lib.ts";
 
 const exec = promisify(execFile);
+
+/** The runthrough seed frozen at format 0.1.0 (B41). */
+const FROZEN_SEED = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/trackers/seed-0.1.0/.loctt");
 
 interface Installed { readonly pkgDir: string; readonly project: string }
 let cli: Installed;
@@ -193,22 +198,36 @@ describe("the published `loctt` package installs and runs on its own (RR-B4)", (
   }, 60_000);
 
   // @verifies ONB-C8
-  it("refuses a tracker written by a newer LocTT, from the CLI and from `loctt mcp`", async () => {
+  // @verifies ONB-C19
+  it("refuses a tracker written by a newer LocTT, naming the release, from the CLI and from `loctt mcp`", async () => {
     const versionFile = path.join(tracker, ".loctt", ".schema-version");
     const original = await readFile(versionFile, "utf8");
-    await writeFile(versionFile, "999\n", "utf8");
+    await writeFile(versionFile, "9.9.9\n", "utf8");
     try {
       const list = await run(cliBin(), ["list"], tracker);
       expect(list.code).not.toBe(0);
-      expect(list.stderr).toMatch(/newer version of LocTT/);
+      expect(list.stderr).toContain("This tracker needs loctt 9.9.9 or newer.");
 
       await withMcp([cliBin(), "mcp", "--root", tracker], cli.project, async client => {
         const res = await client.callTool({ name: "list_tasks", arguments: {} });
         expect(res.isError).toBe(true);
-        expect(text(res)).toMatch(/newer version of LocTT/);
+        expect(text(res)).toContain("This tracker needs loctt 9.9.9 or newer.");
       });
     } finally {
       await writeFile(versionFile, original, "utf8");
     }
+  }, 60_000);
+
+  // @verifies ONB-C19
+  it("upgrades a 0.1.0 tracker on first use, printing the line, and runs the command (K143)", async () => {
+    const old = await outsideTmp("loctt-pack-old-");
+    cleanup.push(old);
+    await cp(FROZEN_SEED, path.join(old, ".loctt"), { recursive: true });
+    const list = await run(cliBin(), ["list", "--limit", "1"], old);
+    expect(list.code, list.stderr).toBe(0);
+    expect(list.stderr).toMatch(/^Upgraded this tracker from 0\.1\.0 to 0\.3\.0 \(backup: .+\.loctt\.backup-v0\.1\.0-.+\)\.$/m);
+    expect((await readFile(path.join(old, ".loctt", ".schema-version"), "utf8")).trim()).toBe("0.3.0");
+    const again = await run(cliBin(), ["list", "--limit", "1"], old);
+    expect(again.stderr).not.toMatch(/Upgraded/);
   }, 60_000);
 });

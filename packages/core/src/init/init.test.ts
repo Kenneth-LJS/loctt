@@ -196,13 +196,13 @@ describe("initLoctt", () => {
   it("over an empty .loctt, overwrites a stale .schema-version and lists only what it wrote", async () => {
     const dir = join(root, ".loctt");
     await mkdir(dir);
-    await writeFile(join(dir, ".schema-version"), `${String(CURRENT_SCHEMA_VERSION + 6)}\n`, "utf-8");
+    await writeFile(join(dir, ".schema-version"), "9.9.9\n", "utf-8");
     await writeFile(join(dir, ".gitignore"), "# the user's own\n", "utf-8");
 
     const result = await initLoctt(root);
 
     expect((await readFile(join(dir, ".schema-version"), "utf-8")).trim())
-      .toBe(String(CURRENT_SCHEMA_VERSION));
+      .toBe(CURRENT_SCHEMA_VERSION);
     expect(result.created).toContain(join(dir, ".schema-version"));
     // The user's .gitignore is kept, so it is not reported as created.
     expect(await readFile(join(dir, ".gitignore"), "utf-8")).toBe("# the user's own\n");
@@ -217,14 +217,14 @@ describe("initLoctt", () => {
     expect(result.created.some(f => f.includes("state.yaml"))).toBe(true);
   });
 
+  // @verifies ONB-C11
   it("stamps the schema version at .loctt/.schema-version", async () => {
     const result = await initLoctt(root);
     const versionPath = join(result.locttDir, ".schema-version");
     const raw = (await readFile(versionPath, "utf-8")).trim();
-    // Should be a positive integer matching CURRENT_SCHEMA_VERSION (≥ 1).
-    const n = Number(raw);
-    expect(Number.isInteger(n)).toBe(true);
-    expect(n).toBeGreaterThanOrEqual(1);
+    // K142: the format version, the release that introduced the format.
+    expect(raw).toBe(CURRENT_SCHEMA_VERSION);
+    expect(raw).toBe("0.3.0");
     expect(result.created.some(f => f.endsWith(".schema-version"))).toBe(true);
   });
 });
@@ -295,6 +295,60 @@ describe("loadCalendarConfig — absent file", () => {
       await rm(join(locttDir, "config", "calendar.yaml"), { force: true });
       const cfg = await loadCalendarConfig(locttDir);
       expect(cfg.timezone).toBe("UTC");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// A365: `init --repair` over a tracker that lost config/ minted a fresh
+// project id, so every surviving task pointed at a project that no longer
+// existed and the next create had no counter for the new id.
+describe("initLoctt repair — projects.yaml lost", () => {
+  const P1 = "01J0000000000000000000000A";
+  const P2 = "01J0000000000000000000000B";
+  const P3 = "01J0000000000000000000000C";
+
+  it("keeps the surviving project id when there was one project", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-repair-one-"));
+    try {
+      await initLoctt(root, { docs: false, timezone: "UTC" });
+      const locttDir = resolveLocttDir(root);
+      const { loadProjectsConfig } = await import("../config/projects.js");
+      const before = (await loadProjectsConfig(locttDir)).projects[0];
+      await rm(join(locttDir, "config"), { recursive: true, force: true });
+
+      await initLoctt(root, { repair: true, timezone: "UTC" });
+      const after = await loadProjectsConfig(locttDir);
+      expect(after.projects.map(p => [p.id, p.name, p.prefix])).toEqual([[before?.id, "Tasks", "T"]]);
+      expect(after.default).toBe(before?.id);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("recreates every project state.yaml and the tasks name", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-repair-many-"));
+    try {
+      await initLoctt(root, { docs: false, timezone: "UTC" });
+      const locttDir = resolveLocttDir(root);
+      await writeFile(join(locttDir, "state.yaml"),
+        `keys:\n  ${P1}:\n    prefix: T\n    next_number: 3\n  ${P2}:\n    prefix: WEB\n    next_number: 2\n`, "utf-8");
+      const { writeTask } = await import("../task/io.js");
+      await writeTask(locttDir, "01J0000000000000000000000T", {
+        frontmatter: {
+          id: "01J0000000000000000000000T", key: "OPS-4", title: "ops", project: P3,
+          created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        },
+        body: "",
+      });
+      await rm(join(locttDir, "config"), { recursive: true, force: true });
+
+      await initLoctt(root, { repair: true, timezone: "UTC" });
+      const { loadProjectsConfig } = await import("../config/projects.js");
+      const after = await loadProjectsConfig(locttDir);
+      expect(after.projects.map(p => [p.id, p.prefix])).toEqual([[P1, "T"], [P2, "WEB"], [P3, "OPS"]]);
+      expect(after.default).toBe(P1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

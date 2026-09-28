@@ -16,8 +16,10 @@ import { access } from "node:fs/promises";
 import {
   getTrackerInfo,
   recoverInterruptedPrefixRename,
-  requireSupportedSchema,
   resolveLocttDir,
+  SchemaUnmigratableError,
+  upgradeIfSafe,
+  upgradeNotice,
 } from "@loctt/core";
 import { z } from "zod";
 
@@ -113,11 +115,21 @@ export async function executeTool(
   // partial reads against an unfamiliar schema. `init` is the one
   // legitimately tool that runs against a pre-version tracker; it
   // sets `exemptFromSchemaGuard: true`.
+  // K143: an older tracker whose upgrade has no risky step is upgraded
+  // on the first tool call, after a backup. The one line saying so goes
+  // to stderr (the host's server log) and rides on that call's result,
+  // after its own content, so the agent can tell the user.
+  let upgradeLine: string | undefined;
   if (!registered.exemptFromSchemaGuard && (await trackerNeedsSchemaCheck(root, locttDir))) {
     try {
-      await requireSupportedSchema(locttDir);
+      const upgraded = await upgradeIfSafe(locttDir);
+      if (upgraded !== null) {
+        upgradeLine = upgradeNotice(upgraded);
+        process.stderr.write(`${upgradeLine}\n`);
+      }
     } catch (err) {
-      return errorResult((err as Error).message);
+      const message = (err as Error).message;
+      return errorResult(err instanceof SchemaUnmigratableError ? `${message} ${err.remedy}` : message);
     }
     // Finish an interrupted prefix rename before the tool reads any
     // task key. Success is deliberately silent — the agent asked for a
@@ -134,6 +146,19 @@ export async function executeTool(
     }
   }
 
+  const result = await validateAndRun(root, locttDir, name, registered.handler, args);
+  if (upgradeLine === undefined) return result;
+  return { ...result, content: [...result.content, { type: "text", text: upgradeLine }] };
+}
+
+/** Validates `args` against the tool's schema and runs its handler. */
+async function validateAndRun(
+  root: string,
+  locttDir: string,
+  name: string,
+  handler: NonNullable<ReturnType<typeof lookupTool>>["handler"],
+  args: Record<string, unknown>,
+): Promise<McpToolResult> {
   // Validate args against the tool's declared inputSchema. Strict
   // mode rejects unknown fields with a structured error pointing
   // at the offending path.
@@ -153,7 +178,7 @@ export async function executeTool(
   }
 
   try {
-    return await registered.handler({ root, locttDir }, parsed.data);
+    return await handler({ root, locttDir }, parsed.data);
   } catch (err) {
     if (isKnownDomainError(err)) return errorResult(err.message);
     // Re-throw anything else — a TypeError or unexpected I/O

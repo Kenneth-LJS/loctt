@@ -290,7 +290,7 @@ function UNKNOWN_INFO(): TrackerInfoResponse {
     taskCount: 0,
     keyPrefix: null,
     nextKey: null,
-    schemaStatus: { kind: "current", version: 0 },
+    schemaStatus: { kind: "current", version: "" },
     cwd: "",
     today: new Date().toISOString().slice(0, 10),
     // Nothing is known here, so the zone matches the server's own

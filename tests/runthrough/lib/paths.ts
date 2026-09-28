@@ -17,6 +17,9 @@ export const seedRoot = path.join(repoRoot, "tests/fixtures/trackers/seed");
 export const seedLoctt = path.join(seedRoot, ".loctt");
 export const seedIndexPath = path.join(seedRoot, "seed-index.json");
 
+/** The seed frozen at format 0.1.0, for the upgrade cases (B41). */
+export const frozenSeedLoctt = path.join(repoRoot, "tests/fixtures/trackers/seed-0.1.0/.loctt");
+
 export const casesRoot = path.join(repoRoot, "tests/runthrough/cases");
 
 /** Per-test temp trackers are created here (gitignored). */

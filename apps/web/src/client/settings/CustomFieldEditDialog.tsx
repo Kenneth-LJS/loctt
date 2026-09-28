@@ -96,6 +96,8 @@ export function CustomFieldEditDialog({
   const [type, setType] = useState<CustomFieldType>(initial?.type ?? "string");
   const [multi, setMulti] = useState(initial?.multi ?? false);
   const [searchable, setSearchable] = useState(initial?.searchable ?? false);
+  // K150: an open choice field grows from the task picker's create row.
+  const [allowNew, setAllowNew] = useState(initial?.allow_new_values ?? false);
   const [values, setValues] = useState<readonly ValueRow[]>(
     (initial?.values ?? []).map(v => ({
       key: v.key,
@@ -118,6 +120,7 @@ export function CustomFieldEditDialog({
     type,
     multi,
     searchable,
+    allow_new_values: allowNew,
     values,
     // Empty selection = global; the builder drops the key so the field is
     // stored without `task_types` (the consumption default is absent ⇒ all).
@@ -291,6 +294,17 @@ export function CustomFieldEditDialog({
           />
           Include in search
         </label>
+
+        {type === "enum" && (
+          <label className="flex items-center gap-2 text-text-secondary">
+            <Checkbox
+              data-testid="custom-field-dialog-allow-new-values"
+              checked={allowNew}
+              onChange={e => { setAllowNew(e.target.checked); }}
+            />
+            Allow new values from a task
+          </label>
+        )}
 
         {/* K91/TSK-12: scope the field to specific task types. Empty =
             shows for every type (the backward-compatible default). The

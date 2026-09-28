@@ -21,6 +21,8 @@ import {
 } from "../paths/index.js";
 import { assertValidPrefix } from "../projects/prefix.js";
 import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
+import { loadState } from "../state/state.js";
+import { loadAllTasks } from "../task/load-all.js";
 import { ensureDefaultUser } from "../users/index.js";
 import { fileExists } from "../utils/fs.js";
 import { missingCoreFiles } from "./core-files.js";
@@ -29,6 +31,7 @@ import {
   defaultQueriesYaml,
   defaultStateYaml,
   defaultWorkflowYaml,
+  recoveredProjectsYaml,
 } from "./defaults.js";
 
 export interface InitOptions {
@@ -113,6 +116,12 @@ async function repairLoctt(
   // project by id (P-2), so minting a new one would orphan every task.
   let projectId = opts.projectId;
   let prefix = opts.prefix;
+  // With projects.yaml itself gone, the ids are still named by what
+  // survived — state.yaml's counters and the tasks' `project` field — and
+  // the recreated file must carry those, or every surviving task points
+  // at a project that no longer exists and the next create reissues
+  // `T-1` under a fresh id with no counter (A365).
+  let recovered: readonly RecoveredProject[] = [];
   if (await fileExists(getProjectsConfigPath(locttDir))) {
     try {
       const cfg = await loadProjectsConfig(locttDir);
@@ -125,6 +134,13 @@ async function repairLoctt(
       // Unreadable projects.yaml: fall through to the generated id
       // rather than failing the repair outright.
     }
+  } else {
+    recovered = await recoverProjectIdentities(locttDir);
+    const first = recovered[0];
+    if (first) {
+      projectId = first.id;
+      prefix = first.prefix;
+    }
   }
 
   const writes: [string, string, string][] = [
@@ -136,7 +152,9 @@ async function repairLoctt(
       working_days: [1, 2, 3, 4, 5],
       holidays: [],
     }), "config/calendar.yaml"],
-    [getProjectsConfigPath(locttDir), defaultProjectsYaml(projectId, opts.projectName, prefix), "config/projects.yaml"],
+    [getProjectsConfigPath(locttDir), recovered.length > 1
+      ? recoveredProjectsYaml(recovered)
+      : defaultProjectsYaml(projectId, opts.projectName, prefix), "config/projects.yaml"],
   ];
   for (const [path, content, label] of writes) {
     if (await fileExists(path)) continue;
@@ -159,6 +177,41 @@ async function repairLoctt(
   }
 
   return { locttDir, created };
+}
+
+interface RecoveredProject {
+  readonly id: string;
+  readonly prefix: string;
+}
+
+/**
+ * The projects the surviving data names, when projects.yaml is gone:
+ * state.yaml's `keys.<id>.prefix` first (its order is the order the
+ * projects were made), then any project id a task holds that state.yaml
+ * does not, with the prefix read off the task's key. Unreadable sources
+ * are skipped: this is a best-effort recovery inside a repair.
+ */
+async function recoverProjectIdentities(locttDir: string): Promise<RecoveredProject[]> {
+  const out = new Map<string, string>();
+  try {
+    const state = await loadState(locttDir);
+    for (const [id, entry] of Object.entries(state.keys)) {
+      if (typeof entry.prefix === "string" && entry.prefix.length > 0) out.set(id, entry.prefix);
+    }
+  } catch {
+    // Absent or unreadable: the tasks may still name the projects.
+  }
+  try {
+    for (const task of await loadAllTasks(locttDir)) {
+      const id = task.frontmatter.project;
+      if (typeof id !== "string" || out.has(id)) continue;
+      const dash = task.frontmatter.key.lastIndexOf("-");
+      if (dash > 0) out.set(id, task.frontmatter.key.slice(0, dash));
+    }
+  } catch {
+    // No readable tasks: nothing more to recover.
+  }
+  return [...out].map(([id, prefix]) => ({ id, prefix }));
 }
 
 /**

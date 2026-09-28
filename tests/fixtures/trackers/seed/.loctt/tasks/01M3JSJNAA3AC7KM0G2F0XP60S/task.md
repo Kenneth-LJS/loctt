@@ -14,4 +14,5 @@ labels:
 relationships:
   - type: duplicates
     target: 01M3JSJMA4QMRD2K7SV9RSV90T
+    rank: u
 ---

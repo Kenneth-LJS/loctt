@@ -13,8 +13,10 @@ milestone: 01M3JSJ9XTVVQT0EBTXQNVH4T8
 relationships:
   - type: child
     target: 01M3JSJTGQC6CHGCKCB3GTT7AC
+    rank: u
   - type: child
     target: 01M3JSJV624ZZ0JR1S1YD0EMGJ
+    rank: w
 fields:
   team: mobile
   platforms:

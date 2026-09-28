@@ -1,0 +1,29 @@
+- timestamp: 2026-09-28T01:20:29.536Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJRAZQJWGD0342RFY6YPP
+      key: WEB-22
+      project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+      title: Accessibility audit
+      created_at: 2026-09-28T01:20:29.536Z
+      updated_at: 2026-09-28T01:20:29.536Z
+      status: backlog
+      task_type: task
+      priority: high
+      estimate: "3"
+      sprint: 01M3JSJA7B45F8KE7TZVWD7W19
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:38.000Z
+  kind: custom_field_change
+  field: signed_off
+  before: null
+  after: true
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:40.795Z
+  kind: field_change
+  field: status
+  before: backlog
+  after: done
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

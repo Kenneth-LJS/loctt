@@ -55,7 +55,7 @@ describe("migrateToCurrent", () => {
   });
 
   it("throws SchemaTooNewError when tracker is newer than supported", async () => {
-    await writeSchemaVersion(dir, CURRENT_SCHEMA_VERSION + 5);
+    await writeSchemaVersion(dir, "9.9.9");
     await expect(migrateToCurrent(dir)).rejects.toThrow(SchemaTooNewError);
   });
 });
@@ -74,7 +74,7 @@ describe("planMigration", () => {
   });
 
   it("throws SchemaTooNewError when tracker is newer", async () => {
-    await writeSchemaVersion(dir, CURRENT_SCHEMA_VERSION + 1);
+    await writeSchemaVersion(dir, "9.9.9");
     await expect(planMigration(dir)).rejects.toThrow(SchemaTooNewError);
   });
 });
@@ -84,17 +84,20 @@ describe("requireSupportedSchema", () => {
     await expect(requireSupportedSchema(dir)).rejects.toThrow(SchemaVersionError);
   });
 
-  it.skipIf(CURRENT_SCHEMA_VERSION === 1)(
-    "throws when older than current",
-    async () => {
-      await writeSchemaVersion(dir, CURRENT_SCHEMA_VERSION - 1);
-      await expect(requireSupportedSchema(dir)).rejects.toThrow(SchemaVersionError);
-    },
-  );
+  it("throws when older than current", async () => {
+    await writeSchemaVersion(dir, "0.1.0");
+    await expect(requireSupportedSchema(dir)).rejects.toThrow(SchemaVersionError);
+  });
 
-  it("throws when newer than current", async () => {
-    await writeSchemaVersion(dir, CURRENT_SCHEMA_VERSION + 1);
+  it("throws when newer than current, naming the release to install (K142)", async () => {
+    await writeSchemaVersion(dir, "9.9.9");
     await expect(requireSupportedSchema(dir)).rejects.toThrow(SchemaTooNewError);
+    await expect(requireSupportedSchema(dir)).rejects.toThrow("This tracker needs loctt 9.9.9 or newer.");
+  });
+
+  it("compares as semver: 0.10.0 is newer than 0.3.0", async () => {
+    await writeSchemaVersion(dir, "0.10.0");
+    await expect(requireSupportedSchema(dir)).rejects.toThrow("This tracker needs loctt 0.10.0 or newer.");
   });
 
   it("passes silently when at current version", async () => {
@@ -103,8 +106,7 @@ describe("requireSupportedSchema", () => {
   });
 
   it("error message points the user at `loctt migrate`", async () => {
-    if (CURRENT_SCHEMA_VERSION === 1) return; // can't go below 1
-    await writeSchemaVersion(dir, CURRENT_SCHEMA_VERSION - 1);
+    await writeSchemaVersion(dir, "0.1.0");
     await expect(requireSupportedSchema(dir)).rejects.toThrow(/loctt migrate/);
   });
 
@@ -113,7 +115,7 @@ describe("requireSupportedSchema", () => {
     // the same path is used as a lock target.
     await writeSchemaVersion(dir, CURRENT_SCHEMA_VERSION);
     const exists = await readFile(join(dir, ".schema-version"), "utf-8");
-    expect(exists.trim()).toBe(String(CURRENT_SCHEMA_VERSION));
+    expect(exists.trim()).toBe(CURRENT_SCHEMA_VERSION);
     await expect(requireSupportedSchema(dir)).resolves.toBeUndefined();
   });
 });
@@ -140,34 +142,21 @@ describe("migrateToCurrent: a step fails partway (SET-37)", () => {
   });
 
   it("leaves the sentinel recording the failed step and the intermediate version, and does not report partial success", async () => {
-    // No real multi-step migration exists yet to start below (today's
-    // only registered CURRENT_SCHEMA_VERSION is 1, with nothing below
-    // it to migrate from), so this test raises the ceiling too: a
-    // three-step path from v1 to a fake v4, with step two throwing.
-    const startVersion = 1;
-    const fakeCurrent = startVersion + 3;
-    await writeSchemaVersion(dir, startVersion);
+    // A three-step path from 0.1.0 to a fake 0.4.0, with step two
+    // throwing. The real registry has one step; this raises the ceiling.
+    const fakeCurrent = "0.4.0";
+    await writeSchemaVersion(dir, "0.1.0");
     const steps: Migration[] = [
+      { from: "0.1.0", to: "0.2.0", description: "step one", apply: async () => {} },
       {
-        from: startVersion,
-        to: startVersion + 1,
-        description: "step one",
-        apply: async () => {},
-      },
-      {
-        from: startVersion + 1,
-        to: startVersion + 2,
+        from: "0.2.0",
+        to: "0.3.0",
         description: "step two (fails)",
         apply: () => {
           throw new Error("step two blew up");
         },
       },
-      {
-        from: startVersion + 2,
-        to: startVersion + 3,
-        description: "step three",
-        apply: async () => {},
-      },
+      { from: "0.3.0", to: "0.4.0", description: "step three", apply: async () => {} },
     ];
 
     vi.doMock("./version.js", async (importOriginal) => {
@@ -187,17 +176,17 @@ describe("migrateToCurrent: a step fails partway (SET-37)", () => {
     await expect(migrateWithFakePath(dir)).rejects.toThrow(/step two blew up/);
 
     // The intermediate version: step one's writeSchemaVersion landed
-    // (startVersion + 1), step two's never did.
+    // (0.2.0), step two's never did.
     const versionOnDisk = (await readFile(join(dir, ".schema-version"), "utf-8")).trim();
-    expect(versionOnDisk).toBe(String(startVersion + 1));
+    expect(versionOnDisk).toBe("0.2.0");
 
     // The sentinel records exactly the step that was in flight when it
     // threw — step two's from/to — plus the backup path, by absolute
     // path (backupLocttDir always returns an absolute sibling path).
     const sentinelPath = getSchemaMigrationInProgressPath(dir);
     const sentinel = await readFile(sentinelPath, "utf-8");
-    expect(sentinel).toContain(`from: ${startVersion + 1}`);
-    expect(sentinel).toContain(`to: ${startVersion + 2}`);
+    expect(sentinel).toContain("from: 0.2.0");
+    expect(sentinel).toContain("to: 0.3.0");
     expect(sentinel).toMatch(/backup: \/.*\.backup-v/);
 
     // A second attempt (the "does not clear the schema banner" /

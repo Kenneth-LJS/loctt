@@ -172,22 +172,22 @@ export const TOOLS: readonly ToolDef[] = [
         if (!confirm) {
           const plan = await planMigration(locttDir);
           if (plan.steps.length === 0) {
-            return text(`Already at schema v${plan.to}. Nothing to migrate.`);
+            return text(`Already at format ${plan.to}. Nothing to migrate.`);
           }
           const lines = [
-            `Plan: v${plan.from} → v${plan.to} (${plan.steps.length} step(s)).`,
+            `Plan: ${plan.from} → ${plan.to} (${plan.steps.length} step(s)).`,
             "Re-run with confirm: true to apply.",
           ];
           for (const st of plan.steps) {
-            lines.push(`  v${st.from}→v${st.to}: ${st.description}${st.risky === true ? "  [RISKY]" : ""}`);
+            lines.push(`  ${st.from}→${st.to}: ${st.description}${st.risky === true ? "  [RISKY]" : ""}`);
           }
           return text(lines.join("\n"));
         }
         const result = await migrateToCurrent(locttDir);
         if (result.steps.length === 0) {
-          return text(`Already at schema v${result.to}. Nothing to migrate.`);
+          return text(`Already at format ${result.to}. Nothing to migrate.`);
         }
-        const lines = [`Migrated v${result.from} → v${result.to}.`];
+        const lines = [`Migrated ${result.from} → ${result.to}.`];
         if (result.backupPath !== undefined) lines.push(`Backup: ${result.backupPath}`);
         return text(lines.join("\n"));
       } catch (err) {

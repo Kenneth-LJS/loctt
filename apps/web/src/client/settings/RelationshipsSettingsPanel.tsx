@@ -28,8 +28,8 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
  * `.strict()`. The Create/Edit dialog writes `kind`; ticking symmetric
  * drops `inverse` and `inverse_label`.
  *
- * **Edit model (B2):** value edits (label, symmetric, inverse, graph,
- * ranked) live behind an **Edit** dialog — view-by-default. Creating a
+ * **Edit model (B2):** value edits (label, symmetric, inverse, graph)
+ * live behind an **Edit** dialog — view-by-default. Creating a
  * relationship goes through the same dialog in create mode (SET-48).
  * REORDER stays inline (open decision #3).
  */
@@ -240,7 +240,7 @@ function RelationshipsEditor({
 }
 
 /**
- * A view-by-default relationship row: label, key, symmetric/graph/ranked
+ * A view-by-default relationship row: label, key, symmetric/graph
  * read out, the inverse note, refcount, and Edit / Delete controls.
  */
 function RelationshipRow({
@@ -286,15 +286,6 @@ function RelationshipRow({
         >
           graph: {rel.graph ?? "none"}
         </span>
-
-        {rel.ranked === true && (
-          <span
-            data-testid={`relationship-ranked-${rel.key}`}
-            className="text-[0.8571rem] text-text-tertiary"
-          >
-            ranked
-          </span>
-        )}
 
         <span
           data-testid={`relationships-refcount-${rel.key}`}

@@ -95,7 +95,7 @@ describe("web schema guard", () => {
 
   it("offers no command for a tracker from a newer LocTT", async () => {
     const { root, base } = await harness();
-    await writeFile(join(root, ".loctt/.schema-version"), "99\n", "utf8");
+    await writeFile(join(root, ".loctt/.schema-version"), "9.9.9\n", "utf8");
 
     const res = await fetch(`${base}/api/info`);
     expect(res.status).toBe(409);
@@ -103,7 +103,8 @@ describe("web schema guard", () => {
     expect(body.code).toBe("schema_mismatch");
     // No local command produces a newer LocTT.
     expect(body.recovery?.kind).toBe("none");
-    expect(body.message).toMatch(/newer version of LocTT/);
+    // K142: the release to install, by name.
+    expect(body.message).toBe("This tracker needs loctt 9.9.9 or newer.");
   });
 
   it("keeps the migrate endpoints reachable while the guard is refusing", async () => {
@@ -167,13 +168,13 @@ describe("the guard names which schema state it refused for", () => {
    */
   it("reports `future` with both versions for a too-new tracker", async () => {
     const { root, base } = await harness();
-    await writeFile(join(root, ".loctt/.schema-version"), "99\n", "utf8");
+    await writeFile(join(root, ".loctt/.schema-version"), "0.10.0\n", "utf8");
 
     const body = await (await fetch(`${base}/api/info`)).json() as Envelope;
     expect(body.schema_status?.kind).toBe("future");
-    expect(body.schema_status?.on_disk).toBe(99);
-    expect(typeof body.schema_status?.current).toBe("number");
-    expect(body.schema_status?.current).toBeLessThan(99);
+    // Newer only when compared as semver (K142).
+    expect(body.schema_status?.on_disk).toBe("0.10.0");
+    expect(body.schema_status?.current).toBe("0.3.0");
     // Migration cannot help, so no command is offered.
     expect(body.recovery?.kind).toBe("none");
   });
@@ -181,30 +182,37 @@ describe("the guard names which schema state it refused for", () => {
   /**
    * @verifies XS-35
    *
-   * The `outdated` state cannot be reached on this build.
-   * `CURRENT_SCHEMA_VERSION` is 1 and `readSchemaVersion` rejects
-   * anything below 1, so there is no value a tracker can hold that
-   * reads as behind. XS-35's *copy* is covered where the banner is
-   * tested; what this pins is that the gap is arithmetic and will
-   * close on its own at version 2 — not a missing branch someone
-   * should go and write.
-   *
-   * If this test starts failing, `CURRENT_SCHEMA_VERSION` has moved
-   * and the real scenario is now reachable: replace this with a
-   * fixture that writes `CURRENT_SCHEMA_VERSION - 1`.
+   * `outdated` is reachable since 0.3.0 (a 0.1.0 tracker), and
+   * `computeSchemaStatus` reports it with both versions. The guard does
+   * not refuse it: the 0.1.0 → 0.3.0 step is not risky, so the first
+   * API request upgrades the tracker and `/api/info` carries the notice
+   * (K143). The banner's `outdated` copy is for a path with a risky
+   * step, and is covered where the banner is tested.
    */
-  it("cannot yet produce an outdated tracker, because version 1 is the floor", async () => {
-    const { computeSchemaStatus, CURRENT_SCHEMA_VERSION } = await import("@loctt/core");
-    expect(CURRENT_SCHEMA_VERSION).toBe(1);
+  it("reports `outdated` for 0.1.0, and the first request upgrades it and says so (K143)", async () => {
+    const { computeSchemaStatus } = await import("@loctt/core");
+    const { root, base } = await harness();
+    await writeFile(join(root, ".loctt/.schema-version"), "0.1.0\n", "utf8");
+    expect(await computeSchemaStatus(join(root, ".loctt"))).toEqual({
+      kind: "outdated", on_disk: "0.1.0", current: "0.3.0",
+    });
 
-    const { root } = await harness();
-    const status = await computeSchemaStatus(join(root, ".loctt"));
-    expect(status.kind).toBe("current");
-
-    // The one value below current is not a legal version, so it reads
-    // as unreadable rather than as behind.
-    await writeFile(join(root, ".loctt/.schema-version"), "0\n", "utf8");
-    expect((await computeSchemaStatus(join(root, ".loctt"))).kind).toBe("unknown");
+    const res = await fetch(`${base}/api/info`);
+    expect(res.status).toBe(200);
+    const info = await res.json() as {
+      schemaStatus: { kind: string };
+      completedUpgrade?: { from: string; to: string; backup?: string; line: string };
+    };
+    expect(info.schemaStatus.kind).toBe("current");
+    expect(info.completedUpgrade?.from).toBe("0.1.0");
+    expect(info.completedUpgrade?.to).toBe("0.3.0");
+    expect(info.completedUpgrade?.line).toBe(
+      `Upgraded this tracker from 0.1.0 to 0.3.0 (backup: ${info.completedUpgrade?.backup ?? ""}).`,
+    );
+    // Held for the life of the server, like the rename notice, so a
+    // reload still shows it.
+    const again = await (await fetch(`${base}/api/info`)).json() as typeof info;
+    expect(again.completedUpgrade?.line).toBe(info.completedUpgrade?.line);
   });
 
   /**
@@ -238,8 +246,8 @@ describe("an interrupted migration", () => {
   it("is reported as its own kind, carrying the sentinel's recovery details", async () => {
     const { root, base } = await harness();
     const sentinel = join(root, ".loctt/.schema-migration-in-progress");
-    const backup = join(root, ".loctt.backup-v1-20260828-abc123");
-    await writeFile(sentinel, `from: 1\nto: 2\nbackup: ${backup}\n`, "utf8");
+    const backup = join(root, ".loctt.backup-v0.1.0-20260828-abc123");
+    await writeFile(sentinel, `from: 0.1.0\nto: 0.3.0\nbackup: ${backup}\n`, "utf8");
 
     const res = await fetch(`${base}/api/info`);
     expect(res.status).toBe(409);
@@ -247,10 +255,10 @@ describe("an interrupted migration", () => {
     expect(body.schema_status?.kind).toBe("interrupted");
 
     const status = body.schema_status as unknown as {
-      from?: number; to?: number; backup?: string; sentinel_path?: string;
+      from?: string; to?: string; backup?: string; sentinel_path?: string;
     };
-    expect(status.from).toBe(1);
-    expect(status.to).toBe(2);
+    expect(status.from).toBe("0.1.0");
+    expect(status.to).toBe("0.3.0");
     expect(status.backup).toBe(backup);
     expect(status.sentinel_path).toBe(sentinel);
 
@@ -272,7 +280,7 @@ describe("an interrupted migration", () => {
 
     await writeFile(
       join(locttDir, ".schema-migration-in-progress"),
-      "from: 1\nto: 2\nbackup: /tmp/x\n",
+      "from: 0.1.0\nto: 0.3.0\nbackup: /tmp/x\n",
       "utf8",
     );
     expect((await computeSchemaStatus(locttDir)).kind).toBe("interrupted");

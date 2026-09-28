@@ -15,4 +15,5 @@ milestone: 01M3JSJ9XTVVQT0EBTXQNVH4T8
 relationships:
   - type: is_blocked_by
     target: 01M3JSJNYW9VNP65VG99VM4GX4
+    rank: u
 ---

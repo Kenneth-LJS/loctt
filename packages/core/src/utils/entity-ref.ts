@@ -12,10 +12,9 @@ import { ID_SHAPED_NAME_MESSAGE, isIdShaped } from "@loctt/contracts";
  *   unique case-insensitive prefix of their name, as before.
  * - A name held by more than one entity is refused, listing each with
  *   its ID. A name held by none says so.
- * - A non-ID-shaped input that matches no name falls back to an exact
- *   ID match. LocTT only writes ULIDs, so this only reaches an entity
- *   whose ID was hand-edited into another shape, which would otherwise
- *   be unreachable (A360).
+ * - A non-ID-shaped input is only ever a name: it never falls back to
+ *   an ID match, even when an entity's ID was hand-edited into that
+ *   shape (K149).
  */
 export type EntityKind = "label" | "user" | "milestone" | "sprint" | "project";
 
@@ -71,8 +70,6 @@ export function matchEntityRef<T extends NamedEntity>(
     if (prefixed.length === 1) return { kind: "match", entity: prefixed[0] as T };
     if (prefixed.length > 1) return { kind: "ambiguous", matches: prefixed };
   }
-  const byOddId = pool.find(e => e.id === input);
-  if (byOddId !== undefined) return { kind: "match", entity: byOddId };
   return { kind: "not_found" };
 }
 

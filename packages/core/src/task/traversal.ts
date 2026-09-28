@@ -60,6 +60,19 @@ export function relationshipFindings(
           message: `unknown relationship type "${rel.type}"`,
         });
       }
+      // K143: every link carries a rank. One without (a hand-edit, a
+      // merge from a branch written before 0.3.0) is listed after the
+      // ranked ones, which may not be where the user put it.
+      if (rel.rank === undefined) {
+        errors.push({
+          taskId: id,
+          field: `relationships[${i}].rank`,
+          message:
+            `"${rel.type}" to "${rel.target}" has no rank, so its place in the list `
+            + `isn't stored. The relationship repair ranks it at the end of its group.`,
+        });
+      }
+
       if (!taskIds.has(rel.target)) {
         const rewrite = rewriteOf.get(`${id}\u0000${rel.target}`);
         const unresolved = unresolvedOf.get(`${id}\u0000${i}`);

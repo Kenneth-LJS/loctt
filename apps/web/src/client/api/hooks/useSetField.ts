@@ -84,6 +84,13 @@ const SET_FIELD_TIMEOUT_MS = Number(
 export interface SetFieldVars {
   readonly field: string;
   readonly value?: unknown;
+  /**
+   * K150: the value names something the field does not list yet (an open
+   * choice field's "Create 'x'" row). The server creates it; the stored
+   * key is only known from the response, so nothing is applied
+   * optimistically, and the workflow is refetched for the new value.
+   */
+  readonly createMissing?: boolean;
 }
 
 interface Context {
@@ -119,7 +126,12 @@ export function useSetField(ref: string, expectedId?: string) {
           )
         : apiClient.post<TaskFrontmatterPublic>(
             `/api/tasks/${encodeURIComponent(ref)}/set`,
-            { field: vars.field, value: vars.value, ...(expectedId !== undefined ? { expectedId } : {}) },
+            {
+              field: vars.field,
+              value: vars.value,
+              ...(expectedId !== undefined ? { expectedId } : {}),
+              ...(vars.createMissing === true ? { create_missing: true } : {}),
+            },
             { timeoutMs: SET_FIELD_TIMEOUT_MS },
           ),
 
@@ -129,7 +141,9 @@ export function useSetField(ref: string, expectedId?: string) {
       // a refetch nobody asked for.
       await qc.cancelQueries({ queryKey });
       const previous = qc.getQueryData(queryKey);
-      qc.setQueryData(queryKey, (old: unknown) => applyLocally(old, vars));
+      if (vars.createMissing !== true) {
+        qc.setQueryData(queryKey, (old: unknown) => applyLocally(old, vars));
+      }
       return { previous };
     },
 
@@ -139,7 +153,13 @@ export function useSetField(ref: string, expectedId?: string) {
       if (context !== undefined) qc.setQueryData(queryKey, context.previous);
     },
 
-    onSettled: () => {
+    onSettled: (_data, _err, vars) => {
+      // K150: a created value lives in workflow.yaml; the picker needs it
+      // to show the new value by its label.
+      if (vars.createMissing === true) {
+        void qc.invalidateQueries({ queryKey: ["workflow"] });
+        void qc.invalidateQueries({ queryKey: ["config"] });
+      }
       // `isMutating` includes the one that is settling right now, so
       // 1 means "this is the last". See the TSK-37 note above.
       if (qc.isMutating({ mutationKey: ["set-field", ref] }) > 1) return;

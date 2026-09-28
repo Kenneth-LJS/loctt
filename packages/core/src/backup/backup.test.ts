@@ -112,14 +112,14 @@ describe("export/restore round trip", () => {
     // archived one and one with an attachment — the multi-task
     // properties an all-fields single task would never exercise.
     await patchFrontmatter(srcDir, a, fm => {
-      fm["relationships"] = [{ type: "blocks", target: b }];
+      fm["relationships"] = [{ type: "blocks", target: b, rank: "k" }];
       fm["fields"] = { severity: "high" };
       fm["key_history"] = ["OLD-9"];
       fm["rank"] = "0|hzzzzz:";
       fm["board_rank"] = "0|i00000:";
     });
     await patchFrontmatter(srcDir, b, fm => {
-      fm["relationships"] = [{ type: "blocked_by", target: a }];
+      fm["relationships"] = [{ type: "blocked_by", target: a, rank: "k" }];
     });
     await patchFrontmatter(srcDir, c, fm => {
       fm["archived"] = true;
@@ -136,7 +136,7 @@ describe("export/restore round trip", () => {
     // Read the far end: task.md on disk, not a return value.
     const restoredA = await lookupTask(dstDir, a);
     expect(restoredA.body).toContain("A body the CSV would have dropped.");
-    expect(restoredA.frontmatter.relationships).toEqual([{ type: "blocks", target: b }]);
+    expect(restoredA.frontmatter.relationships).toEqual([{ type: "blocks", target: b, rank: "k" }]);
     expect(restoredA.frontmatter.fields).toEqual({ severity: "high" });
     expect(restoredA.frontmatter.key_history).toEqual(["OLD-9"]);
     // `rank` is not a schema-known key, so the corruption framework lifts
@@ -156,7 +156,7 @@ describe("export/restore round trip", () => {
     // and no two restored tasks share a key.
     const restoredB = await lookupTask(dstDir, b);
     expect(restoredB.frontmatter.relationships)
-      .toEqual([{ type: "blocked_by", target: a }]);
+      .toEqual([{ type: "blocked_by", target: a, rank: "k" }]);
     const ids = await readdir(join(dstDir, "tasks"));
     const keys = await Promise.all(
       ids.map(async i => (await lookupTask(dstDir, i)).frontmatter.key),
@@ -166,6 +166,34 @@ describe("export/restore round trip", () => {
     // The attachment is on disk, in the task's own directory.
     expect(await readFile(join(getAttachmentsDir(dstDir, a), "note.txt"), "utf-8"))
       .toBe("attached");
+  });
+
+  // K143: every link a restore writes carries a rank. A backup of this
+  // format already has them; one whose links were hand-edited without
+  // may not, and those are ranked at the end of their group in stored
+  // order. Ranked links keep their rank.
+  // @verifies REL-C10
+  it("ranks a link the backup carries without one, after the ranked ones", async () => {
+    const a = await seed(srcDir, "Alpha");
+    const b = await seed(srcDir, "Beta");
+    const c = await seed(srcDir, "Gamma");
+    await patchFrontmatter(srcDir, a, fm => {
+      fm["relationships"] = [
+        { type: "relates_to", target: c },
+        { type: "relates_to", target: b, rank: "k" },
+      ];
+    });
+    await patchFrontmatter(srcDir, b, fm => { fm["relationships"] = [{ type: "relates_to", target: a, rank: "u" }]; });
+    await patchFrontmatter(srcDir, c, fm => { fm["relationships"] = [{ type: "relates_to", target: a, rank: "u" }]; });
+
+    await exportBackup(srcDir, { outputPath: out });
+    await initDest();
+    await restoreBackup(dstDir, [out], { mode: "bare" });
+
+    const rels = (await lookupTask(dstDir, a)).frontmatter.relationships ?? [];
+    expect(rels.map(r => r.target)).toEqual([c, b]);
+    expect(rels[1]?.rank).toBe("k");
+    expect((rels[0]?.rank ?? "") > "k").toBe(true);
   });
 
   // @verifies BAK-C2

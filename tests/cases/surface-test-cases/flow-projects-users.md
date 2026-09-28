@@ -143,7 +143,8 @@ of the documented project-resolution chain has no writer.
   `.loctt/users/<current>/settings.yaml`, and a subsequent `create_task`
   with no `project` lands in that project.
 - A schema-contract test (extending
-  `tests/e2e/11-mcp-schema-contract.test.ts`) asserts every tool named in
+  `tests/integration/mcp/tool-contract.test.ts`, moved there from
+  `tests/e2e/` by B43) asserts every tool named in
   the reference is registered — preventing the two from diverging again.
 
 **Given** the reference documents the tool, **when** an agent enumerates

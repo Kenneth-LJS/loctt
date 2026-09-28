@@ -3601,7 +3601,10 @@ test.describe("A11Y — zoom and blocking screens", () => {
     const backup = path.join(tracker.root, ".loctt.backup-v1-20260828-abc123");
     await writeFile(
       path.join(tracker.root, ".loctt", ".schema-migration-in-progress"),
-      `from: 1\nto: 2\nbackup: ${backup}\n`,
+      // K142: format versions are semver, and the sentinel records them
+      // so. This wrote `from: 1 / to: 2` before K142, which the server
+      // now reads as no versions at all.
+      `from: 0.2.0\nto: 0.3.0\nbackup: ${backup}\n`,
       "utf8",
     );
 
@@ -3628,8 +3631,11 @@ test.describe("A11Y — zoom and blocking screens", () => {
     // truncated. Assert the *rendered text* carries the real path in
     // full (a middle-truncated path would drop the substring), and that
     // it lives in a real text node the browser exposes, not an <img>.
-    await expect(alert).toContainText("v1");
-    await expect(alert).toContainText("v2");
+    // The versions as the screen prints them. (This asserted "v1" and
+    // "v2" before K142; "v1" kept passing only because the backup path
+    // contains "backup-v1", which is why the missing versions went
+    // unnoticed until "v2" failed.)
+    await expect(alert).toContainText("0.2.0 → 0.3.0");
     await expect(alert).toContainText(backup);
 
     // "Selectable and copyable" is the load-bearing half: the path is

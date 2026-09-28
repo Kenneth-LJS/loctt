@@ -164,6 +164,7 @@ function renderTreePanel(opts: {
   relationships: readonly ResolvedRelationshipResponse[];
   workflow?: WorkflowConfig | undefined;
   statusOf?: (key: string | undefined) => (typeof TREE_WORKFLOW.statuses)[number] | undefined;
+  taskIndex?: ReadonlyMap<string, TaskFrontmatterPublic>;
 }): void {
   const stored = opts.relationships.map(r => ({ type: r.type, target: r.target }));
   const workflow = "workflow" in opts ? opts.workflow : TREE_WORKFLOW;
@@ -182,7 +183,7 @@ function renderTreePanel(opts: {
         stored={stored}
         workflow={workflow}
         statusOf={opts.statusOf ?? treeStatusOf}
-        taskIndex={new Map()}
+        taskIndex={opts.taskIndex ?? new Map()}
       />
     ),
   });
@@ -378,3 +379,96 @@ describe("L4 child-progress meter", () => {
     expect(screen.queryByTestId("child-progress")).toBeNull();
   });
 });
+
+// --- B40: the Children tree's direct children reorder -----------------
+
+/** c1 has a child g1 (a grandchild of the root); c2 has none. */
+const TREE_INDEX: ReadonlyMap<string, TaskFrontmatterPublic> = new Map([
+  ["c1", { id: "c1", key: "C1", title: "Title c1", status: "backlog",
+    relationships: [{ type: "child", target: "g1", rank: "a" }] } as unknown as TaskFrontmatterPublic],
+  ["c2", { id: "c2", key: "C2", title: "Title c2", status: "backlog", relationships: [] } as unknown as TaskFrontmatterPublic],
+  ["g1", { id: "g1", key: "G1", title: "Title g1", status: "backlog", relationships: [] } as unknown as TaskFrontmatterPublic],
+]);
+
+function renderChildren(): void {
+  renderTreePanel({
+    relationships: [childEdge("c1", "backlog"), childEdge("c2", "backlog")],
+    taskIndex: TREE_INDEX,
+  });
+}
+
+/** Rendered tree-node targets in the child group, depth-first. */
+function treeOrder(): string[] {
+  return Array.from(document.querySelectorAll('[data-group="child"] [data-testid="tree-node"]'))
+    .map(el => el.getAttribute("data-target") ?? "");
+}
+
+function childHandles(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-group="child"] [data-testid="drag-handle"]'));
+}
+
+describe("Children tree reorder (B40, REL-13, REL-14, REL-15)", () => {
+  // @verifies REL-5 REL-6
+  it("every direct child gets the shared handle; a grandchild gets none", async () => {
+    renderChildren();
+    await ready();
+    expect(treeOrder()).toEqual(["c1", "g1", "c2"]);
+    expect(childHandles()).toHaveLength(2);
+    const grandchild = document.querySelector('[data-testid="tree-node"][data-target="g1"]');
+    expect(grandchild?.querySelector('[data-testid="drag-handle"]')).toBeNull();
+  });
+
+  // @verifies REL-6 REL-15
+  it("the handle is a drawn icon, a 24px target, named with its position", async () => {
+    renderChildren();
+    await ready();
+    const [first] = childHandles();
+    expect(first?.getAttribute("aria-label")).toBe(
+      "Reorder C1, position 1 of 2. Arrow up and down to move, Enter to drop, Escape to cancel.",
+    );
+    expect(first?.textContent).not.toContain("⠿");
+    expect(first?.querySelector("svg")).not.toBeNull();
+    expect(first?.className).toContain("min-h-[24px]");
+    expect(first?.className).toContain("min-w-[24px]");
+  });
+
+  // @verifies REL-14 REL-15
+  it("arrow keys move a child with its subtree, visually only; Enter commits one rerank", async () => {
+    renderChildren();
+    await ready();
+    const [first] = childHandles();
+    first?.focus();
+    fireEvent.keyDown(first as HTMLElement, { key: "ArrowDown" });
+    // g1 travels with c1.
+    expect(treeOrder()).toEqual(["c2", "c1", "g1"]);
+    expect(rerankMutate).not.toHaveBeenCalled();
+    fireEvent.keyDown(childHandles()[1] as HTMLElement, { key: "Enter" });
+    expect(rerankMutate).toHaveBeenCalledTimes(1);
+    expect(rerankMutate.mock.calls[0]?.[0]).toEqual({ type: "child", target: "C1", after: "C2" });
+  });
+
+  // @verifies REL-15
+  it("Escape puts the child back and writes nothing", async () => {
+    renderChildren();
+    await ready();
+    fireEvent.keyDown(childHandles()[0] as HTMLElement, { key: "ArrowDown" });
+    fireEvent.keyDown(childHandles()[1] as HTMLElement, { key: "Escape" });
+    expect(treeOrder()).toEqual(["c1", "g1", "c2"]);
+    expect(rerankMutate).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId("reorder-announcement").some(a => a.textContent === "Move cancelled")).toBe(true);
+  });
+
+  // @verifies REL-13 REL-14
+  it("dragging a child onto another commits one rerank against that neighbour", async () => {
+    renderChildren();
+    await ready();
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-group="child"] li[draggable="true"]'));
+    expect(rows).toHaveLength(2);
+    fireEvent.dragStart(rows[1] as HTMLElement);
+    fireEvent.dragOver(rows[0] as HTMLElement);
+    fireEvent.drop(rows[0] as HTMLElement);
+    expect(rerankMutate).toHaveBeenCalledTimes(1);
+    expect(rerankMutate.mock.calls[0]?.[0]).toEqual({ type: "child", target: "C2", before: "C1" });
+  });
+});
+

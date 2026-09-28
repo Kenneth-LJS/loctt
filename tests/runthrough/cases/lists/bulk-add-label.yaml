@@ -1,0 +1,15 @@
+id: bulk-add-label
+name: Add a label to several tasks at once
+description: >
+  K152: `--add` / `bulk_update_tasks` `add` on several tasks applies to
+  each task's own list in one operation; each keeps its other labels.
+tags: [lists, labels, bulk, b47]
+pre:
+  - field: { task: "${task.search_index.key}", field: labels, equals: ["${label.backend.id}", "${label.infra.id}"] }
+  - field: { task: "${task.theme_tokens.key}", field: labels, equals: ["${label.frontend.id}", "${label.tech_debt.id}"] }
+cli: set ${task.search_index.key},${task.theme_tokens.key} labels --add urgent
+mcp:
+  call: { tool: bulk_update_tasks, args: { refs: ["${task.search_index.key}", "${task.theme_tokens.key}"], add: { labels: [urgent] } } }
+post:
+  - field: { task: "${task.search_index.key}", field: labels, equals: ["${label.backend.id}", "${label.infra.id}", "${label.urgent.id}"] }
+  - field: { task: "${task.theme_tokens.key}", field: labels, equals: ["${label.frontend.id}", "${label.tech_debt.id}", "${label.urgent.id}"] }

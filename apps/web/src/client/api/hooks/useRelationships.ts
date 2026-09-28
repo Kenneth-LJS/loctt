@@ -91,6 +91,9 @@ function invalidateBoth(
   void qc.invalidateQueries({ queryKey: ["activity", target] });
   void qc.invalidateQueries({ queryKey: ["tasks"] });
   void qc.invalidateQueries({ queryKey: ["tasks-feed"] });
+  // The tree render's whole-tracker graph (useTaskGraph): a link or
+  // unlink changes the subtree an ancestor's page draws (B40).
+  void qc.invalidateQueries({ queryKey: ["task-graph"] });
 }
 
 export function useLinkTask(ref: string) {
@@ -144,6 +147,10 @@ export function useRerankRelationship(ref: string) {
       // — so the far end is not invalidated here.
       void qc.invalidateQueries({ queryKey: ["task", ref] });
       void qc.invalidateQueries({ queryKey: ["activity", ref] });
+      // B40: the Children tree on an *ancestor's* page draws this task's
+      // children from the whole-tracker graph, so a reorder here must
+      // refresh it too, or the grandparent keeps the old order.
+      void qc.invalidateQueries({ queryKey: ["task-graph"] });
     },
   });
 }

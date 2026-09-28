@@ -75,7 +75,7 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
   await cli(["init"]);
   // Claim a schema far newer than this build supports, so every `/api/`
   // route refuses with a 409 carrying `schema_status`.
-  await writeFile(path.join(root, ".loctt", ".schema-version"), "9\n", "utf8");
+  await writeFile(path.join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf8");
 
   const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
     cwd: root,
@@ -97,8 +97,9 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
     // 1. The banner is reachable at all, and names both versions.
     const banner = page.locator('[data-kind="future"]');
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText("9");
-    await expect(banner).toContainText("1");
+    // K142: the release to install, and the format this build reads.
+    await expect(banner).toContainText("needs loctt 9.9.9 or newer");
+    await expect(banner).toContainText("0.3.0");
 
     // 2. It is inside the shell, not instead of it.
     await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
@@ -194,7 +195,7 @@ test("A11Y-32: the schema banner is a page-level alert, read before the main con
   };
 
   await cli(["init"]);
-  await writeFile(path.join(root, ".loctt", ".schema-version"), "9\n", "utf8");
+  await writeFile(path.join(root, ".loctt", ".schema-version"), "9.9.9\n", "utf8");
 
   const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
     cwd: root,
@@ -231,8 +232,8 @@ test("A11Y-32: the schema banner is a page-level alert, read before the main con
     // command is real text, not an image". `innerText` is what a
     // reader traverses; an <img> would contribute nothing to it.
     const text = await banner.innerText();
-    expect(text).toContain("9");
-    expect(text).toContain("1");
+    expect(text).toContain("9.9.9");
+    expect(text).toContain("0.3.0");
     await expect(banner.locator("img")).toHaveCount(0);
 
     // Fourth bullet: the four kinds read as four different messages.
@@ -243,6 +244,67 @@ test("A11Y-32: the schema banner is a page-level alert, read before the main con
     // bullet is about, at the granularity this harness can reach.
     expect(text).toMatch(/update LocTT/i);
     expect(text).not.toMatch(/loctt migrate/i);
+  } finally {
+    child.kill("SIGTERM");
+    await Promise.race([
+      child.catch(() => undefined),
+      new Promise(r => setTimeout(r, 2_000)),
+    ]);
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+/**
+ * @verifies ONB-C17
+ *
+ * K143: a 0.1.0 tracker opened in the web is upgraded by the first API
+ * request (the non-risky 0.1.0 → 0.3.0 step, after a backup), and the
+ * shell shows the one line every surface prints, as a status notice
+ * above the app, until dismissed. The app is usable, not blocked.
+ */
+test("ONB-C17: a 0.1.0 tracker is upgraded on first use and the shell says so once", async ({ page }) => {
+  const root = await mkdtemp(path.join(workspaceRoot, "loctt-schema-upgrade-"));
+  const port = await freePort();
+  const baseURL = `http://127.0.0.1:${String(port)}`;
+
+  const cli = async (args: readonly string[]): Promise<void> => {
+    const r = await execa(process.execPath, [cliEntry, ...args], { cwd: root, reject: false });
+    if (r.exitCode !== 0) throw new Error(`loctt ${args.join(" ")} failed: ${r.stderr}`);
+  };
+
+  await cli(["init"]);
+  await cli(["create", "first"]);
+  await writeFile(path.join(root, ".loctt", ".schema-version"), "0.1.0\n", "utf8");
+
+  const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
+    cwd: root,
+    reject: false,
+  });
+
+  try {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const status = await fetch(`${baseURL}/api/info`).then(r => r.status).catch(() => 0);
+      if (status === 200) break;
+      if (Date.now() > deadline) throw new Error(`server not ready: ${String(status)}`);
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    await page.goto(`${baseURL}/list`);
+    const notice = page.getByTestId("upgrade-notice");
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveRole("status");
+    await expect(notice).toContainText("Upgraded this tracker from 0.1.0 to 0.3.0 (backup: ");
+    await expect(notice).toContainText(".loctt.backup-v0.1.0-");
+    // Not the mismatch banner: the tracker is current now, and usable.
+    await expect(page.locator("[role=alert][data-kind]")).toHaveCount(0);
+    await expect(page.getByLabel("New task")).toBeEnabled();
+
+    await page.getByTestId("upgrade-notice-dismiss").click();
+    await expect(notice).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByLabel("New task")).toBeVisible();
+    await expect(page.getByTestId("upgrade-notice")).toHaveCount(0);
   } finally {
     child.kill("SIGTERM");
     await Promise.race([

@@ -4,8 +4,9 @@
  * (`loctt migrate`), never by regenerating it: the seed's history,
  * ids and timestamps survive, exactly as a user's tracker would.
  *
- * Today the format has one version, so this is a no-op; B41 adds the
- * 0.1.0 → 0.3.0 step (K142, K143) and this script picks it up unchanged.
+ * B41 ran it for the first real step, 0.1.0 → 0.3.0 (K142, K143). The
+ * 0.1.0 seed is kept frozen at tests/fixtures/trackers/seed-0.1.0/ for
+ * the upgrade tests.
  *
  * Works on a temp copy and replaces the seed only when the upgraded copy
  * is doctor-clean, so a failed upgrade never leaves a half-written seed.
@@ -35,7 +36,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    const findings = await doctorFindings(root);
+    // A checkout carries no key index (`.loctt/local/` is not checked in),
+    // so doctor always says so on a fresh copy: the one finding in the
+    // pristine baseline (README, "The seed"). Anything else fails.
+    const findings = (await doctorFindings(root)).filter(f => !/^! key index: no index on disk/.test(f));
     if (findings.length > 0) {
       throw new Error(`the upgraded seed is not doctor-clean; the seed was not changed:\n${findings.join("\n")}`);
     }

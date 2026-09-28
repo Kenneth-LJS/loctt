@@ -1,0 +1,15 @@
+id: bulk-create-label
+name: A bulk add creates a missing label once, when asked
+description: >
+  K152 with K150: an unknown label on a bulk add is created only with
+  `--create` / `create_missing`, once, and added to every task.
+tags: [lists, labels, bulk, b47]
+cli: set ${task.search_index.key},${task.theme_tokens.key} labels --add brand-new --create
+mcp:
+  call: { tool: bulk_update_tasks, args: { refs: ["${task.search_index.key}", "${task.theme_tokens.key}"], add: { labels: [brand-new] }, create_missing: true } }
+capture:
+  l: { entity: { kind: label, name: brand-new } }
+post:
+  - entity: { kind: label, name: brand-new }
+  - field: { task: "${task.search_index.key}", field: labels, contains: "${var.l.id}" }
+  - field: { task: "${task.theme_tokens.key}", field: labels, contains: "${var.l.id}" }

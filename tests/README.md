@@ -1,10 +1,10 @@
 # LocTT Test Plan
 
-Integration, E2E, and performance tests for the LocTT CLI and MCP server. Core-library unit tests live alongside the source under `packages/core/src/**/*.test.ts`.
+Integration, runthrough, UI and performance tests for the LocTT CLI, MCP server and web app. Core-library unit tests live alongside the source under `packages/core/src/**/*.test.ts`.
 
 There are two kinds of test in this folder:
 
-- **Automated (deterministic)** — described below. Vitest, real CLI binary spawns, real MCP-stdio transport, isolated tmpdir per test. Run via `npm run test:integration`, `npm run test:e2e`, etc.
+- **Automated (deterministic)** — described below. Vitest, real CLI binary spawns, real MCP-stdio transport, isolated tmpdir per test. Run via `npm run test:integration`, `npm run test:runthrough`, etc.
 - **LLM runbook** — `tests/llm/README.md`. Manual scenarios for verifying that an LLM can drive the MCP tools correctly. Run after the automated suite, results logged to `tests/llm/results/`.
 
 ---
@@ -26,8 +26,8 @@ tests/
       edges/                 # MCP-protocol edge-case tests
     git/                     # git-backed scenarios
     parity.test.ts           # one scenario across all adapters
-  e2e/
-    *.test.ts                # full user journeys
+  runthrough/                # one YAML case per behaviour, over a seed tracker
+    cases/journeys/          # the user journeys (tests/e2e until B43)
   perf/
     01-bulk-create.test.ts   # bulk task creation throughput (in-process)
     02-chain-traversal.test.ts # parent-chain walk on a 1k-node DAG (in-process)
@@ -50,17 +50,16 @@ Test workspaces are created via `mkdtemp(repoRoot/tests/workspace/loctt-)`. They
 ```bash
 npm run test                 # unit + thin integration (existing) + tools
 npm run test:integration     # builds CLI/MCP, runs tests/integration
-npm run test:e2e             # builds CLI/MCP, runs tests/e2e
 npm run test:ui              # builds, runs the Playwright specs in tests/ui
 npm run test:runthrough      # builds, runs the runthrough cases (tests/runthrough/README.md)
 npm run test:perf            # opt-in, runs tests/perf — does NOT rebuild
 ```
 
-`pretest:integration`, `pretest:e2e`, `pretest:ui` and `pretest:runthrough` run `npm run build` so the spawned CLI/MCP binaries are current.
+`pretest:integration`, `pretest:ui` and `pretest:runthrough` run `npm run build` so the spawned CLI/MCP binaries are current.
 
 **Never run two of these suites concurrently.** Each `pretest` hook runs
 `tsc --build`, which empties and rewrites `dist/` — and `integration`,
-`e2e`, `ui` and `perf` all spawn `apps/cli/dist/index.js`. A build started
+`runthrough`, `ui` and `perf` all spawn `apps/cli/dist/index.js`. A build started
 by one suite while another is running replaces the binary mid-run, and the
 second suite fails in scattered, unrelated-looking ways (~30 failures
 across ~16 files, none reproducible in isolation). The failures are an
@@ -68,11 +67,40 @@ artifact of the race, not a defect. Run the suites one at a time.
 
 **`test:perf` does not have a pretest hook by design.** `concurrent-create.test.ts` spawns the bundled CLI binary, so when iterating on CLI / MCP / core source you must `npm run build` first. The other perf tests use core APIs in-process and don't need the build.
 
-For interactive sanity checks, [`tests/scripts/smoke.sh`](./scripts/smoke.sh) runs E2E journey #1 against the bundled binary directly — useful when you want pass/fail in <1 second without Vitest startup overhead.
+For interactive sanity checks, [`tests/scripts/smoke.sh`](./scripts/smoke.sh) runs the first user journey (now the `journey-init-lifecycle` runthrough case) against the bundled binary directly — useful when you want pass/fail in <1 second without Vitest startup overhead.
 
 ### Watch mode
 
 `apps/cli` and `apps/mcp` each have an `npm run dev` script that runs `tsup --watch`. Use it in a separate terminal so `dist/index.js` rebuilds on source change. Pairs naturally with `npm link --workspace apps/cli` for testing the global `loctt` binary.
+
+---
+
+## Which suite
+
+Decided by Ken in K145 (B43):
+
+- **Integration (`tests/integration/`) tests surface mechanics** — how
+  the CLI and the MCP server behave as programs: flags and their parsing,
+  output and its format, exit codes, error text, locks, git, stdin. A new
+  test about *what a surface prints or refuses* goes here.
+- **The runthrough (`tests/runthrough/`) tests data behaviour** — what a
+  command does to the tracker, checked by reading the files, on both
+  surfaces, with doctor after every step. A new test about *what ends up
+  on disk* goes here, and so do the user journeys
+  (`cases/journeys/`, formerly `tests/e2e`).
+- Existing integration tests move to the runthrough only when they are
+  touched for another reason.
+
+**The doctor gate.** Every integration test that writes through the CLI
+or MCP (via the shared `runCli` / `startMcpClient` adapters, inside
+`withTmpLoctt`) is followed by `loctt doctor`, and the test fails on any
+finding the tracker did not have before those writes
+(`integration/fixtures/doctor-gate.ts`). State a test creates itself
+between commands (a corrupt file, a task removed out of band) starts a
+new baseline, so a degradation test is not blamed for its own setup. A
+test whose writes are *meant* to leave a finding passes
+`allowDoctorFindings: [/…/]` to `withTmpLoctt`, with the reason at the
+call site; `doctorGate: false` is for a test of doctor's own reporting.
 
 ---
 
@@ -85,8 +113,7 @@ For interactive sanity checks, [`tests/scripts/smoke.sh`](./scripts/smoke.sh) ru
 | Frontend integration (in-process) | CLI `main()` and MCP `executeTool()` called directly | Vitest | `apps/{cli,mcp}/src/*.test.ts` |
 | Frontend integration (transport) | Real CLI binary via `execa`, real MCP server over stdio | Vitest + spawn | `tests/integration/{cli,mcp}/` |
 | Parity | Same scenario through all adapters, assert `.loctt/` identical | Vitest + scenario DSL | `tests/integration/parity.test.ts` |
-| E2E | Full user journeys end-to-end | Vitest + spawn | `tests/e2e/` |
-| Runthrough | One YAML case per behaviour, CLI then scripted MCP, over a checked-in seed tracker; checks read the files | Vitest + spawn | `tests/runthrough/` |
+| Runthrough | One YAML case per behaviour, CLI then scripted MCP, over a checked-in seed tracker; checks read the files. The user journeys (formerly `tests/e2e`) are its scenarios | Vitest + spawn | `tests/runthrough/` |
 | Stress / perf | Bulk tasks, concurrent writers, deep trees | Vitest, separate config | `tests/perf/` |
 
 ---
@@ -278,8 +305,8 @@ Each step is shippable: tests pass, repo builds, no skipped cleanup.
 
 - Confirm test root at `tests/` (not per-workspace).
 - Add root dev deps: `execa`. (`@modelcontextprotocol/sdk` already in `apps/cli`.)
-- Add root scripts: `test:integration`, `test:e2e`, `test:perf`, plus `pretest:integration` / `pretest:e2e` → `npm run build`.
-- Create `tests/{scripts,integration,e2e,perf,workspace}` skeleton with `.gitkeep` files.
+- Add root scripts: `test:integration`, `test:perf`, plus `pretest:integration` → `npm run build`. (`test:e2e` existed until B43.)
+- Create `tests/{scripts,integration,perf,workspace}` skeleton with `.gitkeep` files.
 - `tests/workspace/.gitignore` ignores everything except `.gitkeep`.
 - Root `vitest.config.ts` for `tests/integration/**/*.test.ts` etc.
 
@@ -351,9 +378,13 @@ Pick the highest-value edges first. Each is ~1–3 tests under `tests/integratio
 
 **Exit:** git-backed single-machine path covered, both with and without a remote, including auto_push / auto_fetch toggles and failure modes.
 
-### Step 8 — E2E journeys
+### Step 8 — User journeys
 
-Under `tests/e2e/`. Same fixtures, same cleanup. Each journey exercises a full user flow.
+Originally `tests/e2e/`; since B43 (K145) each journey is a runthrough
+scenario under `tests/runthrough/cases/journeys/` with the same steps and
+assertions plus the runthrough's automatic doctor and bilateral checks,
+and journey 11 (the MCP tool-list snapshot and the em-dash guard) is
+`tests/integration/mcp/tool-contract.test.ts`.
 
 1. Init → create → set → link → archive → log → list-with-query (CLI only)
 2. Init variants: default, `--prefix BUG-`, `--no-docs`, re-init refusal
@@ -367,7 +398,7 @@ Under `tests/e2e/`. Same fixtures, same cleanup. Each journey exercises a full u
 10. Error-path journey: unknown command, bad query, missing `.loctt/`, bad ref, cycle attempt, double-delete on already-archived task without `--hard`, `config set` before `git enable`
 11. MCP schema contract: fetch `tools/list`, snapshot and compare
 
-**Exit:** all 11 E2E journeys pass locally.
+**Exit:** every journey case passes (`npm run test:runthrough -- -t "#journey"`).
 
 ### Step 9 — stress / perf (opt-in)
 

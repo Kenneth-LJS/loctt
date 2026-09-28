@@ -3,7 +3,8 @@ name: show and get_task list links in rank order
 description: >
   B39: `loctt show` and MCP `get_task` list a task's relationships in
   rank order. The seed reranked ${task.search_typo.key} under
-  ${task.epic_search.key}, so it carries the only rank and comes first.
+  ${task.epic_search.key}, so it comes first; every link carries a rank
+  since the 0.1.0 → 0.3.0 upgrade (K143), which kept that order.
 tags: [queries, links, b39]
 pre:
   - relationship_order:

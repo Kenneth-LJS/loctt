@@ -18,7 +18,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defined } from "./fixtures/defined.ts";
-import { deleteFromOtherClone, editFromOtherClone, expect, type GitTrackerFixture, linkFromOtherClone, test } from "./fixtures/git-tracker.ts";
+import { deleteFromOtherClone, editFromOtherClone, expect, type GitTrackerFixture, linkFromOtherClone, SYNC_SETTLE_MS, test } from "./fixtures/git-tracker.ts";
 
 function syncYamlPath(root: string): string {
   return path.join(root, ".loctt", "local", "sync.yaml");
@@ -100,7 +100,7 @@ test("GIT-6: sync opens the panel listing each conflicting field with both value
 
   // The panel opens; the result does NOT say "synced".
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await expect(page.getByTestId("git-sync-result")).toHaveCount(0);
 
   // A row per conflicting field, each showing local and remote.
@@ -142,7 +142,7 @@ test("GIT-7: Apply writes keep-local/keep-remote/typed values and finishes the s
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // keep-local on the title.
   const titleRow = panel.locator('[data-testid="git-reconcile-row"][data-field="title"]');
@@ -189,7 +189,7 @@ test("GIT-11: same custom-field key differing is a conflict; enum renders labels
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   const row = panel.locator('[data-testid="git-reconcile-row"][data-field="priority"]');
   await expect(row).toHaveCount(1);
@@ -283,7 +283,7 @@ test("GIT-14: a drift value renders with a marker; keep-remote warns; pick-value
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   const row = panel.locator('[data-testid="git-reconcile-row"][data-field="status"]');
   // The remote side renders the raw key with a drift marker (not blank).
@@ -320,7 +320,7 @@ test("GIT-13: a parent conflict renders tasks (not ULIDs), a picker, and fixes t
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   const row = panel.locator('[data-testid="git-reconcile-row"][data-field="parent"]');
   // Rendered as task key + title, not a raw ULID.
@@ -368,7 +368,7 @@ test("GIT-31: with a reconciliation pending, publish and sync are blocked and ne
   );
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
-  await expect(page.getByTestId("git-reconcile-panel")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-panel")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Publish and Sync are disabled while the panel is open; the block names it.
   await expect(page.getByTestId("git-publish")).toBeDisabled();
@@ -396,7 +396,7 @@ test("GIT-18/GIT-26: an in-progress reconciliation is detected on load and prese
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Make one decision, then reload — the panel is reachable again without
   // re-triggering sync, and the decision is preserved (GIT-26).
@@ -442,7 +442,7 @@ test("GIT-12: conflicts on several tasks group per task, with bulk actions and a
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Grouped by task — one group per task, not a flat list.
   await expect(panel.getByTestId("git-reconcile-task-group")).toHaveCount(3);
@@ -479,7 +479,7 @@ test("GIT-15: publish detects divergence, opens reconciliation tagged publish, p
   // Publish, not sync — it must reconcile first rather than push-then-ask.
   await page.getByTestId("git-publish").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
   // The panel says it was opened by a publish.
   await expect(page.getByTestId("git-reconcile-panel")).toHaveAttribute("data-reconcile-mode", "publish");
   // The remote branch head is unchanged while the panel is open.
@@ -516,7 +516,7 @@ test("GIT-16: a task deleted on the remote and edited locally surfaces a keep-de
 
   // The delete-vs-edit is surfaced explicitly, not resolved silently.
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
   const dveRow = panel.getByTestId("git-reconcile-dve-row");
   await expect(dveRow).toHaveCount(1);
   // It states which side deleted and which edited, in plain terms.
@@ -553,7 +553,7 @@ test("GIT-16: choosing keep-the-deletion removes the task", async ({
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
   const panel = page.getByTestId("git-reconcile-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Keep the deletion.
   await panel.getByTestId("git-reconcile-dve-keep-deletion").click();
@@ -615,7 +615,7 @@ test("GIT-38: the controls disable while a sync runs, and a left-behind reconcil
   );
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
-  await expect(page.getByTestId("git-reconcile-panel")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-panel")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // With the reconcile pending, both controls are disabled — a second
   // trigger is hard to reach by misclick, not merely refused after.
@@ -625,7 +625,7 @@ test("GIT-38: the controls disable while a sync runs, and a left-behind reconcil
   // Reload: the panel recovers the in-progress state rather than wedging.
   await page.reload();
   await expect(page.getByTestId("git-panel")).toBeVisible();
-  await expect(page.getByTestId("git-reconcile-panel")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-panel")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await expect(page.getByTestId("git-sync")).toBeDisabled();
   expect(errors).toEqual([]);
 });

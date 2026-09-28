@@ -110,8 +110,8 @@ function SchemaRemoteNewerRefusal({
   readonly testId: string;
 }) {
   const remote = info.remote_version !== null
-    ? `schema v${info.remote_version}`
-    : "a newer schema";
+    ? `format ${info.remote_version}`
+    : "a format this version doesn't recognise";
   return (
     <div
       role="alert"
@@ -123,8 +123,9 @@ function SchemaRemoteNewerRefusal({
     >
       <p className="font-semibold">
         The {info.branch} branch was written by a newer LocTT ({remote}). This
-        version supports up to <code className="text-[0.8571rem]">schema v{info.local_version}</code>.
-        Nothing was changed. Update LocTT, then sync again.
+        version reads <code className="text-[0.8571rem]">format {info.local_version}</code>.
+        Nothing was changed. Update LocTT
+        {info.remote_version !== null ? ` to ${info.remote_version} or newer` : ""}, then sync again.
       </p>
     </div>
   );

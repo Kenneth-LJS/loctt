@@ -18,10 +18,13 @@ sprint: 01M3JSJA7B45F8KE7TZVWD7W19
 relationships:
   - type: parent
     target: 01M3JSJCXVVR2BJYKNPCHAZMK1
+    rank: u
   - type: child
     target: 01M3JSJFEC57FA6J034XYYW1G8
+    rank: u
   - type: child
     target: 01M3JSJFT1SWNAVZQ5T2A375GF
+    rank: w
 fields:
   team: web
   area: ui

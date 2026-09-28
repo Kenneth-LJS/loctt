@@ -22,8 +22,8 @@ import {
  * The Create / Edit dialog for a relationship type (SET-48, and the
  * SET-28/SET-51 edit-model).
  *
- * Collects key + label + symmetric + inverse/inverse_label + graph +
- * ranked (the `RelationshipDef` fields, minus the presentational
+ * Collects key + label + symmetric + inverse/inverse_label + graph
+ * (the `RelationshipDef` fields, minus the presentational
  * icon/color). Ticking symmetric hides the inverse fields — the schema
  * rejects a symmetric rel whose `inverse` differs from its `key`. On a
  * failed save the dialog stays open with the error anchored (SET-51);
@@ -75,7 +75,6 @@ export function RelationshipEditDialog({
   const [inverse, setInverse] = useState(initial?.inverse ?? "");
   const [inverseLabel, setInverseLabel] = useState(initial?.inverse_label ?? "");
   const [graph, setGraph] = useState<RelationshipDef["graph"]>(initial?.graph ?? "none");
-  const [ranked, setRanked] = useState(initial?.ranked === true);
   // Presentational fields — seeded from the row on edit, editable on both
   // create and edit. Previously these were carried straight from `initial`
   // (survived a round-trip) but had no control; now they are set here.
@@ -92,7 +91,6 @@ export function RelationshipEditDialog({
     inverse,
     inverse_label: inverseLabel,
     graph,
-    ranked,
     icon: icon !== undefined && icon.trim().length > 0 ? icon.trim() : undefined,
     color,
   };
@@ -246,15 +244,6 @@ export function RelationshipEditDialog({
             aria-label="Graph constraint"
             options={GRAPHS.map(g => ({ value: g, label: GRAPH_LABEL[g] }))}
           />
-        </label>
-
-        <label className="flex items-center gap-2 text-text-secondary">
-          <Checkbox
-            data-testid="relationships-entry-ranked"
-            checked={ranked}
-            onChange={e => { setRanked(e.target.checked); }}
-          />
-          Ranked — links of this type keep an explicit order.
         </label>
 
         {/* K104 — see EntryEditDialog. */}

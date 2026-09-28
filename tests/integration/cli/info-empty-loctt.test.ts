@@ -59,7 +59,7 @@ describe("info on an empty .loctt directory", () => {
     // leave both assertions above passing.
     await withTmpLoctt(async ({ root }) => {
       const res = await runCli(["info"], { cwd: root });
-      expect(res.stdout).toMatch(/Schema: 1/);
+      expect(res.stdout).toMatch(/Schema: 0\.3\.0 \(current\)/);
       expect(res.stdout).not.toMatch(/not a tracker yet/i);
     });
   });

@@ -1,0 +1,13 @@
+id: list-add-label
+name: Add a label to the labels a task already has
+description: >
+  K150: `--add` / MCP `add` applies to the task's current list; the
+  existing labels stay, the new one is appended, stored by ID.
+tags: [lists, labels, b45]
+pre:
+  - field: { task: "${task.search_index.key}", field: labels, equals: ["${label.backend.id}", "${label.infra.id}"] }
+cli: set ${task.search_index.key} labels --add urgent
+mcp:
+  call: { tool: update_task, args: { ref: "${task.search_index.key}", add: { labels: [urgent] } } }
+post:
+  - field: { task: "${task.search_index.key}", field: labels, equals: ["${label.backend.id}", "${label.infra.id}", "${label.urgent.id}"] }

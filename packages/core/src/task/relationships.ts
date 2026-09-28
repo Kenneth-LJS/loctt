@@ -4,6 +4,7 @@ import { effectiveInverseKey, isSymmetricRelationship, relationshipTypeKeys } fr
 import type { LocttErrorOptions } from "../errors.js";
 import { LocttError } from "../errors.js";
 import { withStateLock } from "../state/lock.js";
+import { appendRankedEdge } from "./edge-rank.js";
 import { CorruptFieldError } from "./health.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
@@ -127,7 +128,8 @@ function addEdge(
   if (existing.some(r => r.type === type && r.target === target)) {
     return null;
   }
-  return [...existing, { type, target }];
+  // K143: every link carries a rank, at the end of its type's group.
+  return appendRankedEdge(existing, type, target);
 }
 
 /**

@@ -13,4 +13,5 @@ labels:
 relationships:
   - type: is_blocked_by
     target: 01M3JSJXXE3RA1JV3DHNF9T1P0
+    rank: u
 ---

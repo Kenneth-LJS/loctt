@@ -18,10 +18,13 @@ milestone: 01M3JSJ9M0WG2M7184TA0P6SRQ
 relationships:
   - type: child
     target: 01M3JSJEBW0H9P9ECSS368TCEN
+    rank: u
   - type: child
     target: 01M3JSJG51T05GT0922363J3Q1
+    rank: w
   - type: child
     target: 01M3JSJHWXMH9R3476VHE32PCM
+    rank: x
 fields:
   team: web
   area: ui

@@ -4,10 +4,11 @@ import { getSchemaMigrationInProgressPath } from "../paths/index.js";
 import { withStateLockForMigration } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
-import { withMigrationLock } from "./lock.js";
+import { isMigrationLocked, withMigrationLock } from "./lock.js";
 import { findMigrationPath, type Migration } from "./migrations.js";
 import {
   backupLocttDir,
+  compareFormatVersions,
   CURRENT_SCHEMA_VERSION,
   readSchemaVersion,
   SchemaTooNewError,
@@ -17,10 +18,10 @@ import {
 } from "./version.js";
 
 export interface MigrationResult {
-  /** Version the tracker was at before migration. */
-  readonly from: number;
-  /** Version the tracker is at after migration. */
-  readonly to: number;
+  /** Format version the tracker was at before migration. */
+  readonly from: string;
+  /** Format version the tracker is at after migration. */
+  readonly to: string;
   /** Path to the pre-migration backup. Always set when steps run. */
   readonly backupPath?: string;
   /** Migrations that were applied, in order. Empty if no work was needed. */
@@ -28,10 +29,10 @@ export interface MigrationResult {
 }
 
 export interface MigrationPlan {
-  /** Current recorded version. */
-  readonly from: number;
-  /** Target version (`CURRENT_SCHEMA_VERSION`). */
-  readonly to: number;
+  /** Current recorded format version. */
+  readonly from: string;
+  /** Target format version (`CURRENT_SCHEMA_VERSION`). */
+  readonly to: string;
   /** Migrations the framework would apply, in order. */
   readonly steps: readonly Migration[];
 }
@@ -68,17 +69,17 @@ export async function planMigration(locttDir: string): Promise<MigrationPlan> {
       + `there is no recorded version to migrate from.`,
     );
   }
-  if (recorded > CURRENT_SCHEMA_VERSION) {
+  if (compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) > 0) {
     throw new SchemaTooNewError(recorded, CURRENT_SCHEMA_VERSION);
   }
-  if (recorded === CURRENT_SCHEMA_VERSION) {
+  if (compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) === 0) {
     return { from: recorded, to: recorded, steps: [] };
   }
 
   const path = findMigrationPath(recorded, CURRENT_SCHEMA_VERSION);
   if (path === null) {
     throw new SchemaVersionError(
-      `No migration path found from schema v${recorded} to v${CURRENT_SCHEMA_VERSION}.`,
+      `No upgrade path found from format ${recorded} to ${CURRENT_SCHEMA_VERSION}.`,
     );
   }
   return { from: recorded, to: CURRENT_SCHEMA_VERSION, steps: path };
@@ -140,10 +141,10 @@ export async function migrateToCurrent(
       + `there is no recorded version to migrate from.`,
     );
   }
-  if (recorded > CURRENT_SCHEMA_VERSION) {
+  if (compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) > 0) {
     throw new SchemaTooNewError(recorded, CURRENT_SCHEMA_VERSION);
   }
-  if (recorded === CURRENT_SCHEMA_VERSION) {
+  if (compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) === 0) {
     return { from: recorded, to: recorded, steps: [] };
   }
 
@@ -171,17 +172,17 @@ export async function migrateToCurrent(
           `.schema-version disappeared while waiting for migration lock`,
         );
       }
-      if (after > CURRENT_SCHEMA_VERSION) {
+      if (compareFormatVersions(after, CURRENT_SCHEMA_VERSION) > 0) {
         throw new SchemaTooNewError(after, CURRENT_SCHEMA_VERSION);
       }
-      if (after === CURRENT_SCHEMA_VERSION) {
+      if (compareFormatVersions(after, CURRENT_SCHEMA_VERSION) === 0) {
         return { from: after, to: after, steps: [] };
       }
 
       const path = findMigrationPath(after, CURRENT_SCHEMA_VERSION);
       if (path === null || path.length === 0) {
         throw new SchemaVersionError(
-          `No migration path found from schema v${after} to v${CURRENT_SCHEMA_VERSION}.`,
+          `No upgrade path found from format ${after} to ${CURRENT_SCHEMA_VERSION}.`,
         );
       }
 
@@ -191,7 +192,7 @@ export async function migrateToCurrent(
       const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
 
       for (const migration of path) {
-        if (migration.from !== current) {
+        if (compareFormatVersions(migration.from, current) !== 0) {
           // Unreachable through `findMigrationPath`, which BFS-walks
           // the edge graph and can only return steps that already
           // chain. Kept anyway, and deliberately: it costs one
@@ -205,8 +206,8 @@ export async function migrateToCurrent(
           // would remove the guard exactly when someone edits the
           // table by hand — the case it exists for.
           throw new SchemaVersionError(
-            `migration ordering invariant violated: at v${current}, ` +
-            `next migration starts at v${migration.from}`,
+            `migration ordering invariant violated: at ${current}, ` +
+            `next migration starts at ${migration.from}`,
           );
         }
         // Drop a sentinel before applying so a mid-step crash leaves a
@@ -272,13 +273,136 @@ export async function requireSupportedSchema(locttDir: string): Promise<void> {
       + `there is no recorded version to migrate from.`,
     );
   }
-  if (recorded > CURRENT_SCHEMA_VERSION) {
+  if (compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) > 0) {
     throw new SchemaTooNewError(recorded, CURRENT_SCHEMA_VERSION);
   }
-  if (recorded < CURRENT_SCHEMA_VERSION) {
+  if (compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) < 0) {
     throw new SchemaVersionError(
-      `Tracker schema is v${recorded}; expected v${CURRENT_SCHEMA_VERSION}. ` +
+      `This tracker's format is ${recorded}; this build reads ${CURRENT_SCHEMA_VERSION}. ` +
       `Run \`loctt migrate\` to upgrade.`,
     );
+  }
+}
+
+/** The one line every surface shows after an automatic upgrade (K143). */
+export function upgradeNotice(result: MigrationResult): string {
+  return `Upgraded this tracker from ${result.from} to ${result.to}`
+    + `${result.backupPath !== undefined ? ` (backup: ${result.backupPath})` : ""}.`;
+}
+
+/** How long an automatic upgrade waits for another process's upgrade. */
+const WAIT_FOR_OTHER_UPGRADE_MS = 60_000;
+const POLL_MS = 100;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => { setTimeout(resolve, ms); });
+}
+
+/**
+ * Waits while another process holds the migration lock. Returns false
+ * when it is still held after the wait (a crashed holder's lock goes
+ * stale after five minutes; a live upgrade of a large tracker could
+ * still be running), true once it is free.
+ */
+async function waitForOtherUpgrade(locttDir: string, deadline: number): Promise<boolean> {
+  while (await isMigrationLocked(locttDir)) {
+    if (Date.now() >= deadline) return false;
+    await sleep(POLL_MS);
+  }
+  return true;
+}
+
+function isLockContention(err: unknown): boolean {
+  return typeof err === "object" && err !== null
+    && ((err as { code?: unknown }).code === "ELOCKED"
+      || (err as { code?: unknown }).code === "conflict");
+}
+
+/**
+ * Boot guard with automatic non-risky upgrades (K143).
+ *
+ * Every surface calls this where it used to call `requireSupportedSchema`,
+ * on first use of a tracker:
+ *
+ *  - A tracker at `CURRENT_SCHEMA_VERSION` passes and returns null.
+ *  - A tracker whose upgrade path is made only of steps that are not
+ *    `risky` is upgraded here, through `migrateToCurrent` (backup of
+ *    `.loctt/` first, the crash sentinel around each step), and the
+ *    result is returned so the surface can show `upgradeNotice`.
+ *  - A path with a risky step refuses exactly as before: `loctt migrate`.
+ *  - Too new, missing, unreadable, or interrupted: the same refusals as
+ *    `requireSupportedSchema`.
+ *
+ * Concurrency: two processes opening the same old tracker upgrade it
+ * once. The second waits while the first holds the migration lock (the
+ * sentinel the first writes is not mistaken for a crash while that lock
+ * is held), then finds the tracker current and returns null.
+ * `migrateToCurrent` re-reads the version inside its lock, so the second
+ * never runs a step twice even when both pass the first check together.
+ */
+export async function upgradeIfSafe(locttDir: string): Promise<MigrationResult | null> {
+  const deadline = Date.now() + WAIT_FOR_OTHER_UPGRADE_MS;
+  const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
+  for (;;) {
+    const sentinel = await fileExists(sentinelPath);
+    const recorded = await readSchemaVersion(locttDir).catch(() => undefined);
+    const behind = recorded !== undefined && recorded !== null
+      && compareFormatVersions(recorded, CURRENT_SCHEMA_VERSION) < 0;
+
+    // Nothing to upgrade: current, too new, missing or unreadable. Refuse
+    // or pass exactly as the guard does, without waiting on any lock (a
+    // write racing a migration is refused by `withStateLock` itself).
+    if (!sentinel && !behind) {
+      await requireSupportedSchema(locttDir);
+      return null;
+    }
+
+    // Behind, or a sentinel: if another process is upgrading, its lock is
+    // held (and the sentinel is its live one, not a crash). Wait for it,
+    // then look again.
+    if (await isMigrationLocked(locttDir)) {
+      if (!(await waitForOtherUpgrade(locttDir, deadline))) {
+        throw new SchemaVersionError(
+          `A schema migration is in progress for ${locttDir}. `
+          + `Wait for it to complete before retrying.`,
+        );
+      }
+      continue;
+    }
+
+    // A sentinel nobody holds a lock for is a crashed upgrade.
+    if (sentinel || recorded === undefined || recorded === null) {
+      await requireSupportedSchema(locttDir);
+      return null;
+    }
+
+    const path = findMigrationPath(recorded, CURRENT_SCHEMA_VERSION);
+    if (path === null || path.length === 0) {
+      throw new SchemaVersionError(
+        `No upgrade path found from format ${recorded} to ${CURRENT_SCHEMA_VERSION}.`,
+      );
+    }
+    const risky = path.filter(step => step.risky === true);
+    if (risky.length > 0) {
+      throw new SchemaVersionError(
+        `This tracker's format is ${recorded}; this build reads ${CURRENT_SCHEMA_VERSION}. `
+        + `The upgrade includes a step that needs your go-ahead `
+        + `(${risky.map(step => step.description).join("; ")}). `
+        + `Run \`loctt migrate\` to upgrade.`,
+      );
+    }
+
+    try {
+      const result = await migrateToCurrent(locttDir);
+      return result.steps.length > 0 ? result : null;
+    } catch (err) {
+      // Another process took a lock between our check and ours: go back
+      // to waiting for it, then re-read the version.
+      if (isLockContention(err) && Date.now() < deadline) {
+        await sleep(POLL_MS);
+        continue;
+      }
+      throw err;
+    }
   }
 }

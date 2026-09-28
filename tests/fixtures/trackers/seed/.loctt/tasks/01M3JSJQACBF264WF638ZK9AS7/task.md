@@ -14,4 +14,5 @@ labels:
 relationships:
   - type: relates_to
     target: 01M3JSJPNEP4W08EEACNVFJ7B4
+    rank: u
 ---

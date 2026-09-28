@@ -1,0 +1,7 @@
+milestones:
+  - id: 01M3JSJ9M0WG2M7184TA0P6SRQ
+    name: Beta
+    target_date: 2026-11-02
+  - id: 01M3JSJ9XTVVQT0EBTXQNVH4T8
+    name: GA
+    target_date: 2027-01-18

@@ -12,7 +12,7 @@ let dir: string;
 beforeEach(async () => {
   dir = join(tmpdir(), `loctt-mlock-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(dir, { recursive: true });
-  await writeSchemaVersion(dir, 1);
+  await writeSchemaVersion(dir, "0.3.0");
 });
 
 afterEach(async () => {

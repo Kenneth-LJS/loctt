@@ -74,9 +74,9 @@ describe("createTask with a parent (K140)", () => {
 
   async function expectLinkedBothWays(child: Task, parentId: string): Promise<void> {
     const onDiskChild = await readTask(locttDir, child.frontmatter.id);
-    expect(onDiskChild.frontmatter.relationships).toEqual([{ type: "parent", target: parentId }]);
+    expect(onDiskChild.frontmatter.relationships).toEqual([{ type: "parent", target: parentId, rank: "u" }]);
     const parent = await readTask(locttDir, parentId);
-    expect(parent.frontmatter.relationships).toEqual([{ type: "child", target: child.frontmatter.id }]);
+    expect(parent.frontmatter.relationships).toEqual([{ type: "child", target: child.frontmatter.id, rank: "u" }]);
     expect(await validateRelationships(locttDir, workflowConfig)).toEqual([]);
     expect(await checkDataIntegrity(locttDir)).toEqual([]);
   }

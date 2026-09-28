@@ -6,14 +6,48 @@ import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 
 /**
- * Current schema version expected by this code. Bump whenever any
- * on-disk schema changes — config files, frontmatter shape, state
- * structure, file layout, etc.
+ * The tracker format this code reads and writes (K142).
  *
- * Migrations are registered in `migrations.ts` and run sequentially
- * to bring an older tracker up to this version.
+ * A format version is the semver of the `loctt` release that introduced
+ * that format, not a counter: `0.1.0` is the first format, `0.3.0` the
+ * one where every link carries a rank (K143). A build writes the highest
+ * format-changing release at or below its own version. Set it to the
+ * release a format change ships in, and never change it once that
+ * release is published. No pre-release tags.
+ *
+ * Migrations are registered in `migrations.ts`, keyed by these versions,
+ * and run in order to bring an older tracker up to this one.
  */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = "0.3.0";
+
+/** `MAJOR.MINOR.PATCH`, each a whole number without leading zeros. */
+const FORMAT_VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+/** True when `raw` is a format version: plain semver, no pre-release tag. */
+export function isFormatVersion(raw: string): boolean {
+  return FORMAT_VERSION_RE.test(raw);
+}
+
+function parts(v: string): [number, number, number] {
+  const m = FORMAT_VERSION_RE.exec(v);
+  if (m === null) throw new SchemaVersionError(`Not a format version: ${v}.`);
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+/**
+ * Compares two format versions as semver: negative when `a` is older,
+ * zero when equal, positive when `a` is newer. Throws on a string that
+ * is not a format version (callers only pass validated ones).
+ */
+export function compareFormatVersions(a: string, b: string): number {
+  const pa = parts(a);
+  const pb = parts(b);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
 
 const SCHEMA_VERSION_FILENAME = ".schema-version";
 
@@ -45,15 +79,16 @@ export class SchemaUnmigratableError extends SchemaVersionError {
   }
 }
 
+/**
+ * The tracker's format is newer than this build reads. The format
+ * version is the `loctt` release that introduced it, so the message
+ * names the release to install (K142).
+ */
 export class SchemaTooNewError extends SchemaVersionError {
-  readonly trackerVersion: number;
-  readonly expectedVersion: number;
-  constructor(trackerVersion: number, expectedVersion: number) {
-    super(
-      `This tracker was created by a newer version of LocTT (schema v${trackerVersion}), ` +
-      `but this CLI only supports up to schema v${expectedVersion}. ` +
-      `Please update your LocTT installation.`,
-    );
+  readonly trackerVersion: string;
+  readonly expectedVersion: string;
+  constructor(trackerVersion: string, expectedVersion: string) {
+    super(`This tracker needs loctt ${trackerVersion} or newer.`);
     this.name = "SchemaTooNewError";
     this.trackerVersion = trackerVersion;
     this.expectedVersion = expectedVersion;
@@ -61,44 +96,55 @@ export class SchemaTooNewError extends SchemaVersionError {
 }
 
 /**
- * Reads the schema version recorded on disk. Returns null if the
- * file is absent (legacy tracker, or a fresh directory).
- *
- * Throws SchemaVersionError if the file exists but its contents are
- * not a valid positive integer.
+ * What `.schema-version` must hold, for the refusal of anything else.
+ * A tracker made before 0.3.0 holds the old counter `1`; K142 gives it
+ * no compatibility (Ken edits his trackers by hand), so the remedy says
+ * what to write instead.
  */
-export async function readSchemaVersion(locttDir: string): Promise<number | null> {
+const REPAIR = `Put the tracker's format version in ${".schema-version"}: `
+  + `0.1.0 for a tracker made by loctt 0.2.x or earlier (which wrote 1). `
+  + `If you don't know it, re-initialize with 'loctt init --repair'. `
+  + `'loctt migrate' cannot help: there is no readable version to migrate from.`;
+
+/**
+ * Reads the format version recorded on disk. Returns null if the file
+ * is absent (a tracker from before versioning, or a fresh directory).
+ *
+ * Throws `SchemaUnmigratableError` if the file exists but does not hold
+ * a format version (`MAJOR.MINOR.PATCH`), including the old integer `1`.
+ */
+export async function readSchemaVersion(locttDir: string): Promise<string | null> {
   const path = getSchemaVersionPath(locttDir);
   if (!(await fileExists(path))) return null;
   const raw = (await readFile(path, "utf-8")).trim();
   // A file that exists but does not hold a version is not a migratable
   // state: there is no version to migrate *from*, so `loctt migrate`
   // refuses exactly as it does for a missing file (ONB-C6).
-  const REPAIR = `Fix ${SCHEMA_VERSION_FILENAME} by hand (it holds a single `
-    + `positive integer), or re-initialize with 'loctt init --repair'. `
-    + `'loctt migrate' cannot help: there is no readable version to migrate from.`;
   if (raw === "") {
-    throw new SchemaUnmigratableError(`${SCHEMA_VERSION_FILENAME} is empty.`, REPAIR);
-  }
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1) {
     throw new SchemaUnmigratableError(
-      `${SCHEMA_VERSION_FILENAME} must be a positive integer. Got: ${raw}.`,
+      `${SCHEMA_VERSION_FILENAME} is empty. It must hold a format version such as ${CURRENT_SCHEMA_VERSION}.`,
       REPAIR,
     );
   }
-  return n;
+  if (!isFormatVersion(raw)) {
+    throw new SchemaUnmigratableError(
+      `${SCHEMA_VERSION_FILENAME} must hold a format version such as ${CURRENT_SCHEMA_VERSION} `
+      + `(three whole numbers separated by dots). Got: ${raw}.`,
+      REPAIR,
+    );
+  }
+  return raw;
 }
 
 /**
- * Writes the schema version atomically.
+ * Writes the format version atomically.
  */
 export async function writeSchemaVersion(
   locttDir: string,
-  version: number,
+  version: string,
 ): Promise<void> {
-  if (!Number.isInteger(version) || version < 1) {
-    throw new SchemaVersionError(`Schema version must be a positive integer. Got: ${version}.`);
+  if (!isFormatVersion(version)) {
+    throw new SchemaVersionError(`A format version is three whole numbers separated by dots (e.g. 0.3.0). Got: ${version}.`);
   }
   await writeFileAtomically(getSchemaVersionPath(locttDir), `${version}\n`);
 }
@@ -110,7 +156,7 @@ export async function writeSchemaVersion(
  */
 export async function backupLocttDir(
   locttDir: string,
-  fromVersion: number,
+  fromVersion: string,
 ): Promise<string> {
   // ISO timestamp has 1-second resolution; two migrations triggered
   // within the same second would collide. Append a short random

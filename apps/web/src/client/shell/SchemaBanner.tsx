@@ -74,7 +74,7 @@ export function SchemaBanner({ status }: { status: SchemaStatusResponse }) {
  * the button un-double-clickable: the confirm is a different control
  * from the trigger, and it disables itself while pending.
  */
-function MigrateNow({ from, to }: { readonly from: number; readonly to: number }) {
+function MigrateNow({ from, to }: { readonly from: string; readonly to: string }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   // NEW-29's guard, which this button never got: `isPending` only turns
@@ -95,7 +95,7 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
   if (migrate.isSuccess) {
     return (
       <span data-testid="schema-migrate-success" className="opacity-90">
-        Migrated from v{String(migrate.data.from)} to v{String(migrate.data.to)}.
+        Migrated from {migrate.data.from} to {migrate.data.to}.
         {migrate.data.backupPath !== undefined && ` Backup: ${migrate.data.backupPath}`}
       </span>
     );
@@ -142,7 +142,7 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
     <span data-testid="schema-migrate-confirm" className="flex items-center gap-2">
       <span className="opacity-90">
         This will copy `.loctt/` to a sibling backup directory, then step the
-        schema from v{String(from)} to v{String(to)}.
+        format from {from} to {to}.
       </span>
       {/*
         A311: the matched set (Migrate now / Run migration / Cancel)
@@ -194,8 +194,8 @@ function describe(status: SchemaStatusResponse): {
         // "Writes are blocked until you run this" without it asks the
         // user to take an irreversible-looking step on trust.
         detail:
-          `The data directory is at schema v${status.on_disk}, but this build expects ` +
-          `v${status.current}. Use Migrate now below to update it. It takes a backup ` +
+          `The tracker's format is ${status.on_disk}, but this build reads ` +
+          `${status.current}. Use Migrate now below to update it. It takes a backup ` +
           "before changing anything. Writes are blocked until then.",
       };
     case "future":
@@ -206,9 +206,9 @@ function describe(status: SchemaStatusResponse): {
         // cannot move a schema backwards, so the suggestion would only
         // invite a destructive attempt.
         detail:
-          `The data directory is at schema v${status.on_disk}, ahead of this build ` +
-          `(v${status.current}). Update LocTT to continue (\`npm install -g ` +
-          "loctt@latest\`). A newer schema can't be downgraded.",
+          `This tracker needs loctt ${status.on_disk} or newer; this build reads ` +
+          `format ${status.current}. Update LocTT to continue (\`npm install -g ` +
+          "loctt@latest\`). A newer format can't be downgraded.",
       };
     case "unknown":
       return {

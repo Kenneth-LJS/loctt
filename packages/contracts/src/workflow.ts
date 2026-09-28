@@ -154,15 +154,29 @@ export type RelationshipGraph = z.infer<typeof RelationshipGraphSchema>;
  *
  * `graph` defaults to `"none"` when omitted, so only constrained kinds
  * carry the field.
+ *
+ * `ranked` is retired (K143): every kind is ordered since format 0.3.0.
+ * A `ranked:` line left in a user's workflow.yaml is dropped on read
+ * rather than failing the strict parse, so it never breaks loading;
+ * `loctt doctor` reports it and the 0.1.0 → 0.3.0 upgrade removes it.
  */
-export const RelationshipDefSchema = z.object({
+export const RETIRED_RELATIONSHIP_KEYS = ["ranked"] as const;
+
+function dropRetiredRelationshipKeys(input: unknown): unknown {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
+  if (!RETIRED_RELATIONSHIP_KEYS.some(k => k in input)) return input;
+  const copy: Record<string, unknown> = { ...(input as Record<string, unknown>) };
+  for (const k of RETIRED_RELATIONSHIP_KEYS) delete copy[k];
+  return copy;
+}
+
+const RelationshipDefObjectSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
   kind: RelationshipKindSchema.optional(),
   inverse: z.string().min(1).optional(),
   inverse_label: z.string().min(1).optional(),
   graph: RelationshipGraphSchema.optional(),
-  ranked: z.boolean().optional(),
   icon: IconStringSchema.optional(),
   color: EntityColorSchema.optional(),
 }).strict().superRefine((rel, ctx) => {
@@ -205,6 +219,7 @@ export const RelationshipDefSchema = z.object({
     }
   }
 });
+export const RelationshipDefSchema = z.preprocess(dropRetiredRelationshipKeys, RelationshipDefObjectSchema);
 export type RelationshipDef = z.infer<typeof RelationshipDefSchema>;
 
 /** Returns true when the relationship is symmetric (its own inverse). */
@@ -280,6 +295,13 @@ export const CustomFieldDefSchema = z.object({
   // valid to store and is kept on disk (K91) — nothing here validates a
   // task value against scope.
   task_types: z.array(z.string().min(1)).optional(),
+  // K150. An enum field whose value list may grow as it is used: the web
+  // picker offers "Create 'x'", the CLI creates with `--create`, MCP with
+  // `create_missing: true`. ABSENT or false ⇒ closed (listed values only),
+  // which is every field declared before this option existed. Meaningless
+  // on a non-enum field; core's create/edit refuse it there, and a
+  // hand-written one is ignored rather than failing the field.
+  allow_new_values: z.boolean().optional(),
 }).strict().superRefine((def, ctx) => {
   // `values` is conditional, the same shape as EstimationConfig's
   // `preset_values` below. Without this an enum field with no values
@@ -350,6 +372,41 @@ export function customFieldsForType<T extends Pick<CustomFieldDef, "task_types">
   taskType: string | undefined,
 ): readonly T[] {
   return defs.filter(def => customFieldInScope(def, taskType));
+}
+
+/**
+ * Whether new values may be created on the fly for this field (K150):
+ * an enum field with `allow_new_values: true`. Every other field is
+ * closed — a non-enum field has no value list to grow.
+ */
+export function allowsNewValues(
+  def: Pick<CustomFieldDef, "type" | "allow_new_values">,
+): boolean {
+  return def.type === "enum" && def.allow_new_values === true;
+}
+
+/**
+ * A value key derived from a label for a value created on the fly
+ * (K150): lower case, runs of anything outside `[a-z0-9]` become `_`,
+ * a leading non-letter gets a `v_` prefix, and a key already in `taken`
+ * gets `_2`, `_3`, … appended. The result always satisfies the entity
+ * key charset (`^[a-z][a-z0-9_-]*$`).
+ */
+export function deriveValueKey(label: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  let base = label
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (base === "") base = "value";
+  else if (!/^[a-z]/.test(base)) base = `v_${base}`;
+  if (!used.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base}_${String(n)}`;
+    if (!used.has(candidate)) return candidate;
+  }
 }
 
 /** Key prefix configuration from workflow.yaml. */

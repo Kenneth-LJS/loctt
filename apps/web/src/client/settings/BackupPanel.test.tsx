@@ -198,7 +198,7 @@ describe("BackupPanel — split backup (several parts)", () => {
   /** A file whose first line is a real backup header. */
   function partFile(part: number, parts: number, backupId = "abc123"): File {
     const header = JSON.stringify({
-      kind: "loctt-backup", format: 1, schema_version: 1,
+      kind: "loctt-backup", format: 1, schema_version: "0.3.0",
       created_at: "2026-09-23T00:00:00.000Z",
       part, parts, backup_id: backupId,
       includes_history: true, excluded: [],

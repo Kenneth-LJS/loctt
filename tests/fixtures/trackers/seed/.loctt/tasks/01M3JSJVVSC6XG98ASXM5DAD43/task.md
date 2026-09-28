@@ -13,6 +13,7 @@ labels:
 relationships:
   - type: is_caused_by
     target: 01M3JSJV624ZZ0JR1S1YD0EMGJ
+    rank: u
 fields:
   platforms:
     - ios

@@ -13,8 +13,10 @@ labels:
 relationships:
   - type: relates_to
     target: 01M3JSJQACBF264WF638ZK9AS7
+    rank: u
   - type: relates_to
     target: 01M3JSJW6XHV058Y2T07D4JH63
+    rank: w
 fields:
   area: ui
   platforms:

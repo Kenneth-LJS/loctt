@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "../ui/Icon.tsx";
 import type { RelationshipRow } from "./group.ts";
 import { RelationshipRowView } from "./RelationshipRow.tsx";
+import type { Reorder } from "./Reorder.tsx";
 import type { TreeNode } from "./tree.ts";
 
 /**
@@ -24,6 +25,13 @@ import type { TreeNode } from "./tree.ts";
  * page is not showing. Depth-0 rows carry the remove control (they are
  * this task's own edges); deeper rows are navigational, and their link
  * takes the user to the task that owns them.
+ *
+ * ## Only the top level can be reordered (B40)
+ *
+ * For the same reason, the depth-0 rows carry the shared reorder handle
+ * and are the drag rows; a row's subtree is inside its `<li>`, so it
+ * moves with it. Grandchildren are ordered by rank (see `tree.ts`) and
+ * are reordered from their own parent's page.
  */
 export function TreeRows({
   nodes,
@@ -31,25 +39,31 @@ export function TreeRows({
   statusOf,
   removing,
   onRemove,
+  reorder,
 }: {
+  /** The depth-0 nodes, in the order to render them. */
   readonly nodes: readonly TreeNode[];
   /** The group's own rows, by target, for the depth-0 remove control. */
   readonly rows: readonly RelationshipRow[];
   readonly statusOf: (key: string | undefined) => StatusDef | undefined;
   readonly removing: boolean;
   readonly onRemove: (row: RelationshipRow) => void;
+  /** The group's reorder control, for the depth-0 rows (B40). */
+  readonly reorder?: Reorder | undefined;
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
-  const render = (node: TreeNode, path: string): React.JSX.Element => {
+  /** `top` is the depth-0 row's rendered index; undefined deeper down. */
+  const render = (node: TreeNode, path: string, top: number | undefined): React.JSX.Element => {
     const nodePath = `${path}/${node.target}`;
     const isCollapsed = collapsed.has(nodePath);
     const own = node.depth === 0
       ? rows.find(r => r.target === node.target)
       : undefined;
+    const reorderable = reorder !== undefined && top !== undefined && own !== undefined;
 
     return (
-      <li key={nodePath} className="list-none">
+      <li key={nodePath} className="list-none" {...(reorderable ? reorder.rowProps(top) : {})}>
         <div
           data-testid="tree-node"
           data-depth={String(node.depth)}
@@ -86,7 +100,9 @@ export function TreeRows({
                 statusOf={statusOf}
                 removing={removing}
                 onRemove={() => { onRemove(own); }}
-              />
+              >
+                {reorderable ? reorder.handle(top, own.resolvedKey ?? own.target) : null}
+              </RelationshipRowView>
             ) : (
               /* A descendant: key, title and status so the subtree is
                  scannable (REL-5's third bullet), without a remove
@@ -130,7 +146,7 @@ export function TreeRows({
 
         {!isCollapsed && node.children.length > 0 && (
           <ul className="m-0 list-none p-0">
-            {node.children.map(child => render(child, nodePath))}
+            {node.children.map(child => render(child, nodePath, undefined))}
           </ul>
         )}
       </li>
@@ -139,7 +155,7 @@ export function TreeRows({
 
   return (
     <ul className="m-0 list-none p-0">
-      {nodes.map(node => render(node, ""))}
+      {nodes.map((node, i) => render(node, "", i))}
     </ul>
   );
 }

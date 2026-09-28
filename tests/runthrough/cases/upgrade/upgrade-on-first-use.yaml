@@ -1,0 +1,31 @@
+id: upgrade-on-first-use
+name: The first command upgrades a 0.1.0 tracker, ranking every link as it was shown
+description: >
+  K143: opening a tracker at format 0.1.0 runs the non-risky 0.1.0 → 0.3.0
+  step on first use, after a backup, and says so in one line. Every link
+  gets a rank in the order 0.1.0 showed it (the check script compares
+  against the frozen seed), the retired `ranked` setting is removed, and
+  doctor is as clean as the current seed. Starts from the frozen 0.1.0
+  seed, whose ${task.epic_search.key} lists its reranked child first.
+tags: [upgrade, b41]
+seed: "0.1.0"
+pre:
+  - yaml: { file: .schema-version, equals: "0.1.0" }
+  - yaml: { file: config/workflow.yaml, path: "relationships[key=blocks].ranked", equals: true }
+  - relationship_order:
+      task: "${task.epic_search.key}"
+      type: child
+      targets: ["${task.search_typo.key}", "${task.search_index.key}", "${task.search_ui.key}"]
+cli: list --limit 1
+mcp:
+  call: { tool: list_tasks, args: { limit: 1 } }
+post:
+  - output: { contains: ["Upgraded this tracker from 0.1.0 to 0.3.0 (backup: ", ".loctt.backup-v0.1.0-"] }
+  - yaml: { file: .schema-version, equals: "0.3.0" }
+  - yaml: { file: config/workflow.yaml, path: "relationships[key=blocks].ranked", absent: true }
+  - yaml: { file: config/workflow.yaml, path: "relationships[key=parent].ranked", absent: true }
+  - relationship_order:
+      task: "${task.epic_search.key}"
+      type: child
+      targets: ["${task.search_typo.key}", "${task.search_index.key}", "${task.search_ui.key}"]
+check_script: upgrade-on-first-use.check.ts

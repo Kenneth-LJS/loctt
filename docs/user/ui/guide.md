@@ -168,14 +168,21 @@ Opening a task shows everything about it on one page.
   discards your changes, asking first. Clicking elsewhere keeps the
   editor open, and unsaved text survives a reload of the same tab.
 - **Related** — the task's relationships (blocks, parent/child, and any you
-  configure); add and remove links here.
+  configure); add and remove links here. Links keep the order you give
+  them: drag a row by its handle (or focus the handle, move it with the
+  arrow keys, and press Enter to drop or Escape to cancel) to move it
+  within its group. This includes a task's direct children: a child moves
+  with its own subtree; grandchildren are reordered on their parent's
+  page. New links go to the end.
 - **Attachments** — files on the task; upload more.
 - **Comments / Activity / All** — a tabbed lane. Comments has a composer
   and the discussion; Activity shows the change history.
 - **Details panel** — every field as an inline editor: status, type,
   priority, project, assignee (with "Assign to me"), reporter, labels,
-  milestone, sprint, start and due dates, estimate. Pickers search as you
-  type.
+  milestone, sprint, start and due dates, estimate, and custom fields.
+  Pickers search as you type. The labels picker offers **Create “x”** for
+  a name no label has; so does a choice field set to allow new values
+  (Settings → Custom fields → "Allow new values from a task").
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../assets/screenshots/dark/task-detail.png">
@@ -238,7 +245,8 @@ hand — the results are the same.
 When a problem has an automatic fix, a button for it appears above the
 list: **Rebuild key index**, **Restore missing files**, or **Repair
 relationships** (links stored with a task's key instead of its id, links
-only one task lists, and duplicate links; no link is ever removed).
+only one task lists, duplicate links, and links with no stored place; no
+link is ever removed).
 **Fix all** appears when more than one safe fix applies and runs them
 together, like `loctt doctor --fix`. The buttons that change your files
 ask first, and the checks run again when a fix finishes.

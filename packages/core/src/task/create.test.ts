@@ -295,7 +295,7 @@ describe("createTask", () => {
       });
 
       const edges = task.frontmatter.relationships ?? [];
-      expect(edges).toEqual([{ type: "child_of", target: parentId }]);
+      expect(edges).toEqual([{ type: "child_of", target: parentId, rank: "u" }]);
       // Explicitly: the old hard-coded key is not used.
       expect(edges.some(e => e.type === "parent")).toBe(false);
     });
@@ -315,7 +315,7 @@ describe("createTask", () => {
         options: { project: "task", title: "child", parent: parent.frontmatter.key },
       });
       expect(task.frontmatter.relationships ?? []).toEqual([
-        { type: "parent", target: parentId },
+        { type: "parent", target: parentId, rank: "u" },
       ]);
     });
   });

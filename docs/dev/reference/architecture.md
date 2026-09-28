@@ -32,7 +32,7 @@ A LocTT tracker is everything under `.loctt/` in the project root:
 
 ```
 .loctt/
-  .schema-version                  Positive integer; gates every entry point
+  .schema-version                  Format version (semver, K142); gates every entry point
   .schema-migration-in-progress    Sentinel; presence blocks all boots
   .current-user                    ULID of the active user (gitignored)
   state.yaml                       Per-project key counters + retired counters
@@ -66,16 +66,18 @@ Path helpers live in `packages/core/src/paths/index.ts`. Every config file has a
 
 ## Schema Versioning
 
-`.schema-version` holds a positive integer. `CURRENT_SCHEMA_VERSION` lives in `packages/core/src/schema/version.ts`. Every CLI/MCP/HTTP entry point calls `requireSupportedSchema(locttDir)` first; it refuses to boot if:
+`.schema-version` holds a format version: the semver of the `loctt` release that introduced the format (K142), compared as semver (`compareFormatVersions`). `CURRENT_SCHEMA_VERSION` (`"0.3.0"`) lives in `packages/core/src/schema/version.ts`. Every CLI/MCP/HTTP entry point calls `upgradeIfSafe(locttDir)` first (K143); it refuses to boot if:
 
-- the file is missing (legacy/uninitialized tracker),
-- the recorded version is greater than `CURRENT_SCHEMA_VERSION` (`SchemaTooNewError`),
-- the recorded version is less than `CURRENT_SCHEMA_VERSION` (user must run `loctt migrate`),
-- or the `.schema-migration-in-progress` sentinel is present (a previous migration crashed mid-run; the sentinel records the from/to/backup path for manual recovery).
+- the file is missing (legacy/uninitialized tracker), or does not hold a format version (including 0.2.x's `1`),
+- the recorded version is newer than `CURRENT_SCHEMA_VERSION` (`SchemaTooNewError`: "This tracker needs loctt <version> or newer."),
+- the recorded version is older and the upgrade path has a `risky` step (user must run `loctt migrate`),
+- or the `.schema-migration-in-progress` sentinel is present with no process holding the migration lock (a previous migration crashed mid-run; the sentinel records the from/to/backup path for manual recovery).
+
+An older tracker whose path is all non-risky steps is upgraded there, through `migrateToCurrent`, and the result comes back for the surface to show `upgradeNotice` (CLI stderr, MCP extra content item + stderr, web `/api/info.completedUpgrade` → `UpgradeNotice`). A second process opening the tracker meanwhile waits while the migration lock is held (a live sentinel is not a crash), then finds it current. `requireSupportedSchema` is the strict form without the upgrade. The CLI's `doctor` and `info` are exempt from the guard, so they describe an older tracker without upgrading it.
 
 ### Migration framework
 
-Migrations are registered in `packages/core/src/schema/migrations.ts` as edges in a directed graph. Each `Migration` has a `from`, a `to` (usually `from + 1`, but skip-paths are allowed), and an idempotent `apply(locttDir)`. `findMigrationPath` runs BFS to find the shortest path between two versions and tiebreaks by minimizing the number of edges marked `deprecated`. This lets a skip-path fast-route (e.g. one that jumps over a buggy intermediate version) coexist with the original step-by-step edges: when two routes are equally short, the framework prefers the one with fewer deprecated edges.
+Migrations are registered in `packages/core/src/schema/migrations.ts` as edges in a directed graph. Each `Migration` has a semver `from` and `to` (consecutive formats are not consecutive numbers: 0.1.0 → 0.3.0; skip-paths are allowed), an optional `risky` flag (risky steps never run automatically), and an idempotent `apply(locttDir)`. The first registered step is 0.1.0 → 0.3.0 (`schema/steps/rank-every-link.ts`). `findMigrationPath` runs BFS to find the shortest path between two versions and tiebreaks by minimizing the number of edges marked `deprecated`. This lets a skip-path fast-route (e.g. one that jumps over a buggy intermediate version) coexist with the original step-by-step edges: when two routes are equally short, the framework prefers the one with fewer deprecated edges.
 
 `migrateToCurrent` takes the migration lock, snapshots the entire `.loctt/` to a sibling `.loctt.backup-v<from>-<ts>-<rand>/`, then runs each step in order — writing the sentinel before applying, calling `apply`, stamping `.schema-version`, and clearing the sentinel. A crash anywhere in that loop leaves the sentinel behind so the next boot refuses to start until the user investigates.
 
@@ -178,7 +180,7 @@ Each file under `.loctt/config/` is parsed via a Zod schema exported from `@loct
 
 `packages/core/src/rank/lexorank.ts` implements a minimal lexorank: lowercase base-36 strings that compare lexicographically. Used in two places:
 
-- `TaskRelationship.rank` — when a relationship type is configured `ranked: true`, ranks order the targets of that type within one source task.
+- `TaskRelationship.rank` — orders the targets of one type within one source task. Every kind is ordered and every write that creates an edge ranks it at the end of its group (`task/edge-rank.ts`, K143); `orderRelationships` lists each group by rank, then any unranked edge in stored order.
 - `TaskFrontmatter.board_rank` — manual drag-reorder within a board column. Independent from relationship rank.
 
 `MIN = "0"`, `MAX = "z"`, `INITIAL = "u"` (a fresh insert into an empty ordering). `between(a, b)` returns the shortest string strictly between two ranks. Results are guaranteed never to end in `'0'` (a trailing zero would be a phantom prefix that breaks future descents).

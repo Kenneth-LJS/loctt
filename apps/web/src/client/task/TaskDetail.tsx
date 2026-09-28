@@ -365,7 +365,7 @@ export function TaskDetail({
    *    worst case, and the field's `role="alert"` notice and this
    *    channel agree word-for-word so the two are never in conflict.
    */
-  const writeField = (vars: { field: string; value?: unknown }): void => {
+  const writeField = (vars: { field: string; value?: unknown; createMissing?: boolean }): void => {
     setFieldError(null);
     setField.mutate(vars, {
       onSuccess: () => {
@@ -385,6 +385,11 @@ export function TaskDetail({
 
   const onUnset = (field: string): void => {
     writeField({ field });
+  };
+
+  /** K150: set a value the field does not list yet, creating it. */
+  const onCreateValue = (field: string, value: unknown): void => {
+    writeField({ field, value, createMissing: true });
   };
 
   /**
@@ -799,6 +804,7 @@ export function TaskDetail({
             identityUnknown={currentUser.data === null}
             onSet={onSet}
             onUnset={onUnset}
+            onCreateValue={onCreateValue}
             onCreateLabel={onCreateLabel}
             searchLabels={searchLabels}
             searchMilestones={searchMilestones}

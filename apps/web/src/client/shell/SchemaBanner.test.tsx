@@ -28,7 +28,7 @@ function render(ui: React.ReactElement) {
 describe("SchemaBanner", () => {
   it("renders nothing for the current schema", () => {
     const { container } = render(
-      <SchemaBanner status={{ kind: "current", version: 3 }} />,
+      <SchemaBanner status={{ kind: "current", version: "0.3.0" }} />,
     );
     expect(container.firstChild).toBeNull();
   });
@@ -55,7 +55,7 @@ describe("SchemaBanner", () => {
 
   // @verifies XS-36, SET-15
   it("warns and points at the in-app Migrate now button for an outdated schema", () => {
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     const alert = screen.getByRole("alert");
     expect(alert.getAttribute("data-kind")).toBe("outdated");
     // The outdated banner now points at its OWN "Migrate now" button
@@ -63,8 +63,8 @@ describe("SchemaBanner", () => {
     // be sent to the terminal when the button is right there (Ken's report).
     expect(alert.textContent).toContain("Migrate now");
     expect(alert.textContent).not.toContain("loctt migrate");
-    expect(alert.textContent).toContain("v2");
-    expect(alert.textContent).toContain("v3");
+    expect(alert.textContent).toContain("0.1.0");
+    expect(alert.textContent).toContain("0.3.0");
     // Was `expect(screen.queryByRole("button")).toBeNull()` with the
     // note "No in-app migrate button in M1.1 — that lands in M4."
     // This is M4: the button landed (SET-15, XS-36).
@@ -83,7 +83,7 @@ describe("SchemaBanner", () => {
    * assertion in this file, since none of the others read `className`.
    */
   it("renders Migrate now on the current-tone Button variant, not a fixed tone", () => {
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     const cls = screen.getByTestId("schema-migrate-now").className;
     expect(cls).toContain("border-current");
     expect(cls).not.toMatch(/border-border-default|bg-bg-surface/);
@@ -99,11 +99,11 @@ describe("SchemaBanner", () => {
    * buttons) would pass every other test here.
    */
   it("the confirm step states the from/to versions and the backup snapshot before running", () => {
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     const confirmText = screen.getByTestId("schema-migrate-confirm").textContent ?? "";
-    expect(confirmText).toContain("v2");
-    expect(confirmText).toContain("v3");
+    expect(confirmText).toContain("0.1.0");
+    expect(confirmText).toContain("0.3.0");
     expect(confirmText).toMatch(/backup/i);
     // Nothing has run yet — no outcome text, and the confirm/cancel
     // controls are still the ones offered.
@@ -113,7 +113,7 @@ describe("SchemaBanner", () => {
   });
 
   it("renders Run migration and Cancel on the current-tone Button variant", () => {
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     const confirmCls = screen.getByTestId("schema-migrate-confirm-button").className;
     expect(confirmCls).toContain("border-current");
@@ -122,7 +122,7 @@ describe("SchemaBanner", () => {
   });
 
   it("tells the user to upgrade for a future schema", () => {
-    render(<SchemaBanner status={{ kind: "future", on_disk: 5, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "future", on_disk: "0.5.0", current: "0.3.0" }} />);
     const alert = screen.getByRole("alert");
     expect(alert.getAttribute("data-kind")).toBe("future");
     expect(alert.textContent?.toLowerCase()).toContain("update loctt");
@@ -166,7 +166,7 @@ describe("SchemaBanner distinguishes the four kinds", () => {
     expect(text).toMatch(/do not reinitialize/i);
     expect(text).not.toMatch(/out of date|outdated|behind/i);
     // Nothing is known, so nothing numeric may be claimed.
-    expect(text).not.toMatch(/\bv\d|undefined|NaN/);
+    expect(text).not.toMatch(/\bv\d|\d+\.\d+\.\d+|undefined|NaN/);
   });
 
   /**
@@ -177,11 +177,11 @@ describe("SchemaBanner distinguishes the four kinds", () => {
    * matters.
    */
   it("future: shows both versions, says upgrade, and never offers migrate", () => {
-    render(<SchemaBanner status={{ kind: "future", on_disk: 5, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "future", on_disk: "0.5.0", current: "0.3.0" }} />);
     const text = textOf();
 
-    expect(text).toContain("v5");
-    expect(text).toContain("v3");
+    expect(text).toContain("0.5.0");
+    expect(text).toContain("0.3.0");
     expect(text).toMatch(/update loctt|upgrade/i);
     expect(text).toContain("npm install -g loctt@latest");
     expect(text).not.toContain("loctt migrate");
@@ -195,11 +195,11 @@ describe("SchemaBanner distinguishes the four kinds", () => {
    * already know.
    */
   it("outdated: shows both versions, points at the in-app button, and the backup reassurance", () => {
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     const text = textOf();
 
-    expect(text).toContain("v2");
-    expect(text).toContain("v3");
+    expect(text).toContain("0.1.0");
+    expect(text).toContain("0.3.0");
     // Points at the in-app "Migrate now" button, not the CLI command.
     expect(text).toContain("Migrate now");
     expect(text).not.toContain("loctt migrate");
@@ -224,7 +224,7 @@ describe("SchemaBanner distinguishes the four kinds", () => {
    * none of them may get the button that `outdated` gets.
    */
   it.each([
-    ["future", { kind: "future", on_disk: 9, current: 3 }],
+    ["future", { kind: "future", on_disk: "0.9.0", current: "0.3.0" }],
     ["missing", { kind: "missing" }],
     ["unknown", { kind: "unknown", message: "`.schema-version` contained `abc`." }],
   ] as const)("%s: offers no Migrate now button", (_kind, status) => {
@@ -272,8 +272,8 @@ describe("SchemaBanner distinguishes the four kinds", () => {
   it("tags each kind on the element and gives each distinct copy", () => {
     const kinds: SchemaStatusResponse[] = [
       { kind: "missing" },
-      { kind: "future", on_disk: 5, current: 3 },
-      { kind: "outdated", on_disk: 2, current: 3 },
+      { kind: "future", on_disk: "0.5.0", current: "0.3.0" },
+      { kind: "outdated", on_disk: "0.1.0", current: "0.3.0" },
       { kind: "unknown", message: "bad" },
     ];
     const seen = new Set<string>();
@@ -304,7 +304,7 @@ describe("XS-36: Migrate now drives a real POST /api/migrate to a concrete outco
     const fetchMock = vi.fn((_input: RequestInfo | URL) =>
       new Promise<Response>(resolve => { resolveFetch = resolve; }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     const confirm = screen.getByTestId("schema-migrate-confirm-button");
     fireEvent.click(confirm);
@@ -328,7 +328,7 @@ describe("XS-36: Migrate now drives a real POST /api/migrate to a concrete outco
   it("two clicks in the same tick, before React commits the pending state, still POST once", async () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL) => new Promise<Response>(() => {}));
     vi.stubGlobal("fetch", fetchMock);
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     const confirm = screen.getByTestId("schema-migrate-confirm-button");
     // No await between: the second click lands before `isPending` can
@@ -349,16 +349,16 @@ describe("XS-36: Migrate now drives a real POST /api/migrate to a concrete outco
       vi.fn(() =>
         Promise.resolve(
           new Response(
-            JSON.stringify({ from: 2, to: 3, backupPath: "/tmp/loctt-backup-2026" }),
+            JSON.stringify({ from: "0.1.0", to: "0.3.0", backupPath: "/tmp/loctt-backup-2026" }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ))),
     );
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     fireEvent.click(screen.getByTestId("schema-migrate-confirm-button"));
     const success = await screen.findByTestId("schema-migrate-success");
-    expect(success.textContent).toContain("v2");
-    expect(success.textContent).toContain("v3");
+    expect(success.textContent).toContain("0.1.0");
+    expect(success.textContent).toContain("0.3.0");
     expect(success.textContent).toContain("/tmp/loctt-backup-2026");
     // The confirm/cancel controls are gone once settled.
     expect(screen.queryByTestId("schema-migrate-confirm-button")).toBeNull();
@@ -380,7 +380,7 @@ describe("XS-36: Migrate now drives a real POST /api/migrate to a concrete outco
             { status: 500, headers: { "Content-Type": "application/json" } },
           ))),
     );
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     fireEvent.click(screen.getByTestId("schema-migrate-confirm-button"));
     const failed = await screen.findByTestId("schema-migrate-failed");
@@ -421,7 +421,7 @@ describe("A307: the schema migrate button shows the spinner, not a label swap", 
       () => new Promise<Response>(() => { /* never settles: stays pending */ }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     const btn = screen.getByTestId("schema-migrate-confirm-button");
     fireEvent.click(btn);
@@ -459,7 +459,7 @@ describe("A307: the schema migrate button shows the spinner, not a label swap", 
   });
 
   it("shows no spinner and is not busy before the migration starts", () => {
-    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" }} />);
     fireEvent.click(screen.getByTestId("schema-migrate-now"));
     const btn = screen.getByTestId("schema-migrate-confirm-button");
     expect(btn.getAttribute("aria-busy")).toBeNull();

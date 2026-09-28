@@ -290,6 +290,7 @@ export type {
   WorkflowConfig,
 } from "./workflow.js";
 export {
+  allowsNewValues,
   BoardColumnDefSchema,
   BoardsConfigSchema,
   CliConfigSchema,
@@ -299,6 +300,7 @@ export {
   CustomFieldTypeSchema,
   CustomFieldValueDefSchema,
   defaultStatus,
+  deriveValueKey,
   effectiveInverseKey,
   effectiveInverseLabel,
   EstimationConfigSchema,
@@ -313,6 +315,7 @@ export {
   RelationshipGraphSchema,
   RelationshipKindSchema,
   relationshipTypeKeys,
+  RETIRED_RELATIONSHIP_KEYS,
   StatusCategorySchema,
   StatusDefSchema,
   TaskTypeDefSchema,

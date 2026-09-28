@@ -190,18 +190,28 @@ own claims, another agent's, and every decision record.
   compile cascade, not as failures).
 - **A cross-cutting sweep must run EVERY suite it could touch.**
   `npm run test` runs the workspace *unit* suites only — not
-  integration, e2e, or the Playwright UI specs. A sweep that reports
+  integration, the runthrough, or the Playwright UI specs. A sweep that reports
   "all suites green" on the strength of `npm run test` has verified
   perhaps half of what it changed. Before claiming a repo-wide change is
   done, run `npm run test`, `npm run test:integration`, `npm run
-  test:e2e`, `npm run test:runthrough`, and the Playwright UI suite —
-  and say which you ran.
+  test:runthrough`, and the Playwright UI suite — and say which you
+  ran. (`test:e2e` is gone: its journeys are runthrough scenarios since
+  B43, K145.)
 - **Full integration runs before merge, not per change (K146).** While
   working, run only the integration files a change touches or could
   affect; `npm run test:integration` (~6 min) runs in the pre-merge gate,
   the same pattern as the full Playwright suite (~24 min). Measured
   2026-09-27: unit ~2 min, integration ~6 min, packaging ~10 s plus a
   build, Playwright ~24 min at 2 workers; the full gate set ~35 min.
+  Since B43 every writing integration test also runs `loctt doctor`
+  once (the doctor gate, ~0.5 s a test; not yet re-measured).
+- **Which suite a test goes in (K145).** Integration tests how each
+  surface behaves (flags, output, exit codes, error text, locks, git,
+  stdin); data behaviour goes to the runthrough; the user journeys are
+  runthrough scenarios (`tests/runthrough/cases/journeys/`). Existing
+  integration tests move only when touched. Every writing integration
+  test passes the doctor gate (`tests/integration/fixtures/doctor-gate.ts`).
+  See `tests/README.md` → "Which suite".
 - **`page.on("pageerror")` distinguishes a component that crashes on
   render from one that renders nothing** — reasoning about data flow
   cannot; both give identical "element not found" output. A hook below
@@ -322,7 +332,7 @@ instead.**
   as *timeouts, not assertion failures*, which raising the timeout only
   masks. The tell is timeouts plus summed import time approaching wall
   clock: vitest defaults to one worker per core and each spawns ~10 real
-  processes, so integration/e2e configs pin `maxWorkers: 2`. Raising a
+  processes, so the integration config pins `maxWorkers: 2`. Raising a
   timeout that is not the cause hides the contention.
 - **Distinguish a real defect from ambient flake by running the file,
   not just the test — but know which modes can't be load-dependent.** A

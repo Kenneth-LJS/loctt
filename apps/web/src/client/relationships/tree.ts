@@ -1,4 +1,5 @@
 import type { TaskFrontmatterPublic } from "@loctt/contracts";
+import { compareRankedEdges } from "@loctt/core/task/relationship-order.js";
 
 import type { RelationshipRow } from "./group.ts";
 
@@ -78,7 +79,8 @@ export function buildTaskIndex(
 /**
  * Expands one group's rows into a forest.
  *
- * @param rows the group's direct rows, already ordered
+ * @param rows the group's direct rows, already ordered (the depth-0
+ *   level); each deeper level is sorted by rank here
  * @param type the edge type to follow downward — the same side the
  *   group holds, so a "Child" group walks `child` edges and a "Parent"
  *   group walks `parent` edges
@@ -129,9 +131,15 @@ export function buildTree(
 
     const task = index.get(row.target);
     const nextAncestors = [...ancestors, row.target];
+    // Nested levels in the same order their own task page lists them:
+    // by rank, unranked after ranked, then stored order (B40, K141 6a).
+    // Stored order alone showed a reordered child's children in the
+    // order they were linked, not the order the user set.
     const children = (task?.relationships ?? [])
-      .filter(r => r.type === type)
-      .map(r => {
+      .map((r, index) => ({ r, index, rank: r.rank }))
+      .filter(e => e.r.type === type)
+      .sort(compareRankedEdges)
+      .map(({ r }) => {
         const child = index.get(r.target);
         return walk(
           {

@@ -76,8 +76,10 @@ describe("matchEntityRef / resolveEntityRefOrThrow (K148)", () => {
     expect(resolveEntityRefOrThrow("project", projects, "web", {}, err).id).toBe(ID_B);
   });
 
-  it("falls back to an exact ID for an ID hand-edited into another shape", () => {
-    expect(resolveEntityRefOrThrow("label", [{ id: "bug", name: "Bug" }], "bug", {}, err).id).toBe("bug");
+  it("never reads a non-ID-shaped input as an ID, even one hand-edited into that shape (K149)", () => {
+    expect(() => resolveEntityRefOrThrow("label", [{ id: "bug", name: "Bug" }], "bug", {}, err))
+      .toThrow("No label named 'bug'.");
+    expect(matchEntityRef([{ id: "bug", name: "Bug" }], "bug")).toEqual({ kind: "not_found" });
   });
 });
 

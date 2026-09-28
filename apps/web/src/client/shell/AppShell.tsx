@@ -15,6 +15,7 @@ import { SchemaBanner } from "./SchemaBanner.tsx";
 import { ServerUnreachableBanner } from "./ServerUnreachableBanner.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { MAIN_CONTENT_ID,SkipLink } from "./SkipLink.tsx";
+import { UpgradeNotice } from "./UpgradeNotice.tsx";
 import { useGlobalShortcuts } from "./useGlobalShortcuts.tsx";
 import { useMainScrollRestoration } from "./useMainScrollRestoration.ts";
 import { useRouteAnnouncement } from "./useRouteAnnouncement.ts";
@@ -155,6 +156,8 @@ function ShellChrome({
           nothing from a view-scoped error. */}
       <ServerUnreachableBanner />
       <SchemaBanner status={info.schemaStatus} />
+      {/* K143: an automatic format upgrade the server ran on first use. */}
+      {info.completedUpgrade !== undefined && <UpgradeNotice upgrade={info.completedUpgrade} />}
       {/* XS-50: a boot-time advisory when the tracker sits on a filesystem
           where advisory locks are unsafe. App-level and independent of git
           sync, because the hazard is the filesystem's, not git's. */}

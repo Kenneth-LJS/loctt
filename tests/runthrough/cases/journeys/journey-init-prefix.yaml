@@ -1,0 +1,15 @@
+id: journey-init-prefix
+name: "Journey: init --prefix sets the key prefix new tasks use"
+description: Folded in from tests/e2e/02 (B43, K145).
+tags: [journey, init, b43]
+surfaces: [cli]
+seed: none
+steps:
+  - name: init with a prefix
+    cli: init --prefix BUG
+    post:
+      - yaml: { file: config/workflow.yaml, path: key.prefix, equals: BUG }
+  - name: a new task takes the prefix
+    cli: create "first bug"
+    post:
+      - output: { contains: ["BUG-1"] }

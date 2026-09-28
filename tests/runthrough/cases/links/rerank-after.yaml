@@ -1,14 +1,11 @@
 id: rerank-after
 name: Move a child to just after its first sibling
 description: >
-  Reranking the last child after the first should give first, moved,
-  middle. Among unranked siblings the moved child is the only one given a
-  rank, and ranked links sort before unranked ones, so today it lands
-  first instead. B41 gives every link a rank (K143).
+  Reranking the last child after the first gives first, moved, middle.
+  Before B41 the siblings had no rank, the moved child was the only one
+  given one, and ranked links sort first, so it landed first instead.
+  Every link carries a rank now (K143), so it lands where asked.
 tags: [links, rerank, b41]
-known_bug:
-  cli: "rerank among unranked siblings puts the target before all of them (fixed by B41)"
-  mcp: "rerank among unranked siblings puts the target before all of them (fixed by B41)"
 cli: rerank ${task.epic_checkout.key} child ${task.checkout_confirm.key} --after ${task.checkout_cart.key}
 mcp:
   call:

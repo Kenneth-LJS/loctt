@@ -18,4 +18,5 @@ sprint: 01M3JSJA7B45F8KE7TZVWD7W19
 relationships:
   - type: parent
     target: 01M3JSJEBW0H9P9ECSS368TCEN
+    rank: u
 ---

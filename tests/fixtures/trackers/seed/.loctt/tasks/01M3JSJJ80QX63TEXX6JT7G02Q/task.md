@@ -13,12 +13,14 @@ labels:
 milestone: 01M3JSJ9XTVVQT0EBTXQNVH4T8
 relationships:
   - type: child
-    target: 01M3JSJK9VMZ0D2A3MHZ65VQG8
-  - type: child
-    target: 01M3JSJKMMD9G0E1F7ZFN7MK88
-  - type: child
     target: 01M3JSJKYYFWE9BBQWAVWFY6XA
     rank: u
+  - type: child
+    target: 01M3JSJK9VMZ0D2A3MHZ65VQG8
+    rank: w
+  - type: child
+    target: 01M3JSJKMMD9G0E1F7ZFN7MK88
+    rank: x
 fields:
   team: search
   area: api

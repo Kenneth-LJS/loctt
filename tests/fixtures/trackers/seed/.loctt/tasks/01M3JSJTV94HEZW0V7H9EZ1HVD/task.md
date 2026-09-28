@@ -12,4 +12,5 @@ estimate: "5"
 relationships:
   - type: parent
     target: 01M3JSJTGQC6CHGCKCB3GTT7AC
+    rank: u
 ---

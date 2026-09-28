@@ -3,6 +3,7 @@ import { relationshipTypeKeys } from "@loctt/contracts";
 
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { withStateLock } from "../state/lock.js";
+import { countUnranked, fillMissingRanks } from "./edge-rank.js";
 import { listTaskIds } from "./list-ids.js";
 import { loadAllTasksDetailed } from "./load-all.js";
 import { findInverseType, persistRelationships } from "./relationships.js";
@@ -29,12 +30,15 @@ import { findInverseType, persistRelationships } from "./relationships.js";
  *    the `17fae3f` "reported, not repaired" rule for one-sided edges.
  *    If adding the missing side would create a loop on an `acyclic` or
  *    `tree` kind, it is refused and reported instead.
+ * 4. **Every link without a rank gets one** (K143), at the end of its
+ *    type's group in stored order, which is where it is already listed.
+ *    That includes the sides step 3 adds.
  *
  * ## What it never does
  *
  * - Delete a link. A target that resolves to nothing, or to a key more
  *   than one task has held, is reported and kept (P-11).
- * - Change a link's type or rank (new sides are unranked, K141 7).
+ * - Change a link's type, or a rank a link already has.
  * - Touch a task whose `relationships` could not be read (lifted into
  *   `health`), whether as the source or as the task that would receive
  *   the missing side. Writing it would overwrite what LocTT failed to
@@ -98,6 +102,13 @@ export interface RelationshipRefusal {
   readonly reason: "loop" | "target_unreadable";
 }
 
+/** Links on one task that had no rank and were given one (K143). */
+export interface RelationshipRanked {
+  readonly taskId: string;
+  readonly taskKey: string;
+  readonly count: number;
+}
+
 /** A stored target the repair cannot resolve to a single task. */
 export interface RelationshipUnresolved {
   readonly taskId: string;
@@ -116,6 +127,8 @@ export interface RelationshipRepairPlan {
   readonly rewrites: readonly RelationshipRewrite[];
   readonly merges: readonly RelationshipMerge[];
   readonly inverses: readonly RelationshipInverseAdded[];
+  /** Links given a rank, per task (step 4). */
+  readonly ranked: readonly RelationshipRanked[];
   readonly refused: readonly RelationshipRefusal[];
   readonly unresolved: readonly RelationshipUnresolved[];
   /** Tasks whose `relationships` could not be read, so were left alone. */
@@ -126,7 +139,8 @@ export interface RelationshipRepairPlan {
 
 /** The number of changes the repair would make. */
 export function repairActionCount(plan: RelationshipRepairPlan): number {
-  return plan.rewrites.length + plan.merges.length + plan.inverses.length;
+  return plan.rewrites.length + plan.merges.length + plan.inverses.length
+    + plan.ranked.reduce((n, r) => n + r.count, 0);
 }
 
 /**
@@ -319,6 +333,22 @@ export function planRelationshipRepair(
     }
   }
 
+  // ── 4: rank every link that has none (K143) ──
+  // The sides step 3 added are ranked here too, but counted there: the
+  // count is the links that were stored without a rank.
+  const addedTo = new Map<string, number>();
+  for (const a of inverses) addedTo.set(a.taskId, (addedTo.get(a.taskId) ?? 0) + 1);
+  const ranked: RelationshipRanked[] = [];
+  for (const t of sorted) {
+    const rels = working.get(t.frontmatter.id);
+    if (rels === undefined) continue;
+    const unranked = countUnranked(rels);
+    if (unranked === 0) continue;
+    working.set(t.frontmatter.id, [...fillMissingRanks(rels)]);
+    const count = unranked - (addedTo.get(t.frontmatter.id) ?? 0);
+    if (count > 0) ranked.push({ taskId: t.frontmatter.id, taskKey: t.frontmatter.key, count });
+  }
+
   const changes = new Map<string, readonly TaskRelationship[]>();
   for (const t of sorted) {
     const next = working.get(t.frontmatter.id);
@@ -327,7 +357,7 @@ export function planRelationshipRepair(
     if (JSON.stringify(before) !== JSON.stringify(next)) changes.set(t.frontmatter.id, next);
   }
 
-  return { rewrites, merges, inverses, refused, unresolved, unreadable, changes };
+  return { rewrites, merges, inverses, ranked, refused, unresolved, unreadable, changes };
 }
 
 /** Loads what the planner needs: readable tasks and every on-disk id. */
