@@ -20,6 +20,12 @@ import path from "node:path";
 import { defined } from "./fixtures/defined.ts";
 import { deleteFromOtherClone, editFromOtherClone, expect, type GitTrackerFixture, linkFromOtherClone, SYNC_SETTLE_MS, test } from "./fixtures/git-tracker.ts";
 
+// Each test here makes several real git round trips (enable, publish, a
+// push from another clone, sync, apply). GIT-12 measured 26-29 s alone
+// (2026-09-29), against Playwright's 30 s default, and timed out whenever
+// two ran together. The budget matches the work; no assertion is looser.
+test.describe.configure({ timeout: 90_000 });
+
 function syncYamlPath(root: string): string {
   return path.join(root, ".loctt", "local", "sync.yaml");
 }
@@ -155,7 +161,7 @@ test("GIT-7: Apply writes keep-local/keep-remote/typed values and finishes the s
   await page.getByTestId("git-reconcile-apply").click();
 
   // Far end: title is the local value, due date the typed value on disk.
-  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   const raw = await taskFileByKey(gitTracker.root, key);
   expect(raw).toContain("Local title");
   expect(raw).toContain("2026-06-15");
@@ -335,7 +341,7 @@ test("GIT-13: a parent conflict renders tasks (not ULIDs), a picker, and fixes t
   // Choose keep-remote (p2), apply.
   await row.getByTestId("git-reconcile-keep-remote").click();
   await page.getByTestId("git-reconcile-apply").click();
-  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Far end: the child points at p2, p2 has the inverse child edge, and
   // the losing parent p1's child edge is gone — not dangling.
@@ -457,7 +463,7 @@ test("GIT-12: conflicts on several tasks group per task, with bulk actions and a
   // Apply now writes; the outcome is reported.
   await expect(page.getByTestId("git-reconcile-apply")).toBeEnabled();
   await page.getByTestId("git-reconcile-apply").click();
-  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   expect(errors).toEqual([]);
 });
 
@@ -489,7 +495,7 @@ test("GIT-15: publish detects divergence, opens reconciliation tagged publish, p
   const row = panel.locator('[data-testid="git-reconcile-row"][data-field="title"]');
   await row.getByTestId("git-reconcile-keep-local").click();
   await page.getByTestId("git-reconcile-apply").click();
-  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   // Far end: the branch advanced past its pre-reconcile head.
   await expect.poll(async () => gitTracker.bareCommit("loctt")).not.toBe(branchBefore);
   void key;
@@ -531,7 +537,7 @@ test("GIT-16: a task deleted on the remote and edited locally surfaces a keep-de
   await page.getByTestId("git-reconcile-apply").click();
 
   // Far end: the edited task is still on disk (kept), reconcile.yaml cleared.
-  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   const raw = await taskFileByKey(gitTracker.root, key);
   expect(raw).toContain("Edited locally");
   expect(await fileExists(reconcileYamlPath(gitTracker.root))).toBe(false);
@@ -558,7 +564,7 @@ test("GIT-16: choosing keep-the-deletion removes the task", async ({
   // Keep the deletion.
   await panel.getByTestId("git-reconcile-dve-keep-deletion").click();
   await page.getByTestId("git-reconcile-apply").click();
-  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Far end: the task is gone from disk; reconcile.yaml cleared.
   expect(await taskFileByKey(gitTracker.root, key)).toBe("");

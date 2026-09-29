@@ -482,3 +482,13 @@ search, and no saved views over archived items.
 - A "Repair relationships" button shows only when a check carries the `repair-relationships` fix. It asks for confirmation (it writes task files), then runs the same repair as `loctt doctor --repair-relationships` and re-runs the checks.
 - After the repair, the task page shows the link to the right task rather than a broken row, and the Diagnostics relationships warning is gone.
 - A "Fix all" button shows when more than one safe repair can act. It asks for confirmation, then runs the same repairs as `loctt doctor --fix` (key index rebuild and the relationship repair, not restoring missing files) and re-runs the checks.
+
+### SET-57 · M4 · minor · P8
+**Settings lists show where a moved row will land.** Settings → Statuses
+(and every other reorderable Settings list) (K156).
+- While a row is dragged over another, a 2px accent line is drawn between
+  the two rows where the drop would land; none over the row's own slot.
+- Moving a row from its handle by keyboard uses the same pickup model as
+  the task page (REL-15): arrows move it on screen with the same line,
+  Enter or Space drops it and writes once, Escape puts it back with no
+  write.

@@ -164,13 +164,14 @@ test.describe("K125 — Customize sidebar: nested Filters group", () => {
 
     await openCustomizeSidebar(page);
     // Drag the Filters row (currently after Projects/Saved views) up to
-    // the very top via the keyboard-reorder handle (ArrowUp), which
-    // `ReorderableRows` supports as an alternative to drag-and-drop.
+    // the very top via the keyboard-reorder handle, the alternative to
+    // drag-and-drop: arrows pick it up and move it, Enter drops it (K156).
     const filtersHandle = page.getByTestId("sidebar-group-handle-filters");
     await filtersHandle.focus();
     for (let i = 0; i < 4; i++) {
       await page.keyboard.press("ArrowUp");
     }
+    await page.keyboard.press("Enter");
     await page.keyboard.press("Escape");
 
     await page.reload();

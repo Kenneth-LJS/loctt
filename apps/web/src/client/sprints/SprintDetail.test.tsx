@@ -174,6 +174,15 @@ describe("SprintDetail — sprint progress (F1 / K30)", () => {
     expect(count.textContent).toContain("1/3");
   });
 
+  // @verifies MSL-3
+  it("does not narrate discarded tasks next to the number (K157)", async () => {
+    SPRINT_PROGRESS = { done: 1, total: 3, discarded: 2, fraction: 1 / 3 };
+    await renderDetail();
+    const count = await screen.findByTestId("sprint-progress-count");
+    expect(count.textContent).toContain("1/3");
+    expect(screen.getByTestId("sprint-progress").textContent).not.toMatch(/discarded|excluded/);
+  });
+
   it("surfaces the unreadable count so a short total is explained (K28)", async () => {
     SPRINT_UNREADABLE = [{ id: "tk_bad", path: ".loctt/tasks/tk_bad/task.md", reason: "invalid YAML" }];
     await renderDetail();

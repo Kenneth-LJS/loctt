@@ -572,3 +572,29 @@ the label of the edges shown under it, not its inverse.**
 - A connective form ("Blocked by…", "Parent of…") is permitted but not
   required; the required property is that the side is correct and
   consistent across all relationship types.
+
+### REL-52 · M2 · major · P8
+**Every relationship group's rows line up.** A task with a Blocks link, a
+Parent and a Child that has no children of its own (K156).
+- The drag handle, the key and the title of every row start at the same
+  x in the flat groups (Blocks) and the tree groups (Parent, Child).
+- The expand toggle appears, and takes space, only on a row that has
+  children; a leaf row in a tree group is not pushed right by an empty
+  toggle slot.
+- A row that cannot be reordered (a grandchild, an undeclared kind) keeps
+  the handle's space, so its content does not jump left.
+- The child-progress readout under the Child heading shows its numbers
+  next to its bar and does not run past the list's right edge.
+
+### REL-53 · M2 · major · P8
+**Moving a row shows where it will land.** A group with three or more rows
+(K156).
+- While a row is dragged over another row of its group, a 2px accent line
+  is drawn between the two rows where the drop would land: below the
+  hovered row when moving down, above it when moving up.
+- No line is drawn over the dragged row's own slot, and the line goes
+  away when the drag ends or leaves the list.
+- While a row is picked up from the keyboard and moved, the same line
+  marks the edge it moved across; it goes away on drop or Escape.
+- A row moves within its own level only: in the Children tree a direct
+  child cannot be dropped among grandchildren.

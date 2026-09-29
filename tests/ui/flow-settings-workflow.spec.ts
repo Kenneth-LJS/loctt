@@ -188,6 +188,8 @@ test.describe("SET — reorder", () => {
     // affordance — the same code path the drag drop calls.
     await page.getByTestId(`statuses-handle-${second}`).focus();
     await page.keyboard.press("ArrowUp");
+    // K156: the arrow picks it up and moves it on screen; Enter drops it.
+    await page.keyboard.press("Enter");
 
     await expect(page.getByTestId(`statuses-row-${second}`))
       .toHaveAttribute("data-position", "1");
@@ -234,6 +236,85 @@ test.describe("SET — reorder", () => {
       .toHaveAttribute("data-dragging", "true");
   });
 
+  // @verifies SET-57
+  test("SET-57: a drag draws the drop line between the two rows it will land between", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/statuses`);
+    const keys = await rowKeys(page, "statuses");
+    expect(keys.length).toBeGreaterThan(3);
+    const [first, , third, fourth] = keys as [string, string, string, string];
+    const before = await workflowYaml(tracker.root);
+
+    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+    await page.getByTestId(`statuses-row-${first}`).dispatchEvent("dragstart", { dataTransfer });
+    await page.getByTestId(`statuses-row-${first}`).dispatchEvent("dragover", { dataTransfer });
+    // Its own slot: no line.
+    await expect(page.getByTestId("drop-line")).toHaveCount(0);
+
+    await page.getByTestId(`statuses-row-${third}`).dispatchEvent("dragover", { dataTransfer });
+    const line = page.getByTestId(`statuses-row-${third}`).getByTestId("drop-line");
+    await expect(line).toBeVisible();
+    await expect(line).toHaveAttribute("data-edge", "below");
+    const l = await line.boundingBox();
+    const r3 = await page.getByTestId(`statuses-row-${third}`).boundingBox();
+    const r4 = await page.getByTestId(`statuses-row-${fourth}`).boundingBox();
+    if (l === null || r3 === null || r4 === null) throw new Error("not laid out");
+    // Between row 3's bottom and row 4's top.
+    expect(l.y).toBeGreaterThanOrEqual(r3.y + r3.height - 3);
+    expect(l.y + l.height).toBeLessThanOrEqual(r4.y + 3);
+    expect(l.height).toBeCloseTo(2, 0);
+
+    await page.getByTestId(`statuses-row-${first}`).dispatchEvent("dragend", { dataTransfer });
+    await expect(page.getByTestId("drop-line")).toHaveCount(0);
+    expect(await workflowYaml(tracker.root)).toBe(before);
+  });
+
+  // @verifies SET-57
+  test("SET-57: a keyboard move shows the line, Escape writes nothing, Enter writes once", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/statuses`);
+    const keys = await rowKeys(page, "statuses");
+    const [first, second, third] = keys as [string, string, string];
+    const before = await workflowYaml(tracker.root);
+    const puts: string[] = [];
+    page.on("request", r => { if (r.method() === "PUT") puts.push(r.url()); });
+
+    const handle = page.getByTestId(`statuses-handle-${third}`);
+    await handle.focus();
+    await handle.press("ArrowUp");
+    // The row sits between the first and second now, and the line marks
+    // the edge it crossed.
+    await expect(page.getByTestId(`statuses-row-${third}`)).toHaveAttribute("data-position", "2");
+    const line = page.getByTestId(`statuses-row-${third}`).getByTestId("drop-line");
+    await expect(line).toBeVisible();
+    await expect(line).toHaveAttribute("data-edge", "above");
+    const l = await line.boundingBox();
+    const r1 = await page.getByTestId(`statuses-row-${first}`).boundingBox();
+    if (l === null || r1 === null) throw new Error("not laid out");
+    expect(l.y).toBeGreaterThanOrEqual(r1.y + r1.height - 3);
+
+    await handle.press("Escape");
+    await expect(page.getByTestId("drop-line")).toHaveCount(0);
+    await expect(page.getByTestId(`statuses-row-${third}`)).toHaveAttribute("data-position", "3");
+    await page.waitForTimeout(300);
+    expect(puts).toHaveLength(0);
+    expect(await workflowYaml(tracker.root)).toBe(before);
+
+    await handle.focus();
+    await handle.press("ArrowUp");
+    await handle.press("Enter");
+    await expect.poll(async () => {
+      const yaml = await workflowYaml(tracker.root);
+      const order = [...yaml.matchAll(/^ {2}- key: (\S+)/gm)].map(m => m[1] as string);
+      return order.indexOf(third) < order.indexOf(second);
+    }).toBe(true);
+    expect(puts).toHaveLength(1);
+  });
+
   // @verifies SET-21
   test("SET-21: moving a priority to the front recomputes its value and rewrites no task", async ({
     page,
@@ -259,6 +340,7 @@ test.describe("SET — reorder", () => {
     for (let target = keys.length - 1; target > 0; target -= 1) {
       await page.getByTestId(`priorities-handle-${last}`).focus();
       await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("Enter"); // K156: the drop is the write
       await expect(page.getByTestId(`priorities-row-${last}`))
         .toHaveAttribute("data-position", String(target));
       // Each move is its own read-modify-write round trip. Pressing
@@ -1182,6 +1264,7 @@ test.describe("SET — the panels under stress and failure", () => {
 
     await page.getByTestId(`statuses-handle-${second}`).focus();
     await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter"); // K156: the drop is the write
 
     // The list snaps back rather than showing an order that was not
     // saved. This is the assertion the whole case turns on.
@@ -1272,6 +1355,7 @@ test.describe("SET — the panels under stress and failure", () => {
     // Now reorder from the stale panel.
     await page.getByTestId(`statuses-handle-${second}`).focus();
     await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter"); // K156: the drop is the write
 
     // SET-28: the hand-added status must survive. A panel that PUT its
     // stale copy would delete `added_by_hand` — and the server would

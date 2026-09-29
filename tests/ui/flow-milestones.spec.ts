@@ -190,7 +190,7 @@ test.describe("MSL — the milestones view", () => {
   });
 
   // @verifies MSL-3
-  test("MSL-3: discarded tasks are excluded from the denominator and the rule is stated", async ({
+  test("MSL-3: discarded tasks are excluded from the denominator, with no note saying so (K157)", async ({
     page,
     tracker,
   }) => {
@@ -203,26 +203,17 @@ test.describe("MSL — the milestones view", () => {
     await expect(listReadout).toContainText("4 / 8");
     await expect(listReadout).not.toContainText("4 / 10");
 
-    // And the rule is *stated where the number is shown*, naming the
-    // two excluded tasks. A bare `4 / 8` is exactly the ambiguity the
-    // case's first bullet forbids.
-    const listNote = page.getByTestId(`milestone-${alpha}-discarded-note`);
-    await expect(listNote).toContainText("2 discarded");
-    await expect(listNote).toContainText("excluded");
-    // Captured before navigating away — the list note does not exist
-    // on the detail page, so reading it afterwards waits forever.
-    const listNoteText = await listNote.textContent();
+    // K157 (Ken, 2026-09-29): "we shouldnt be showing this". The
+    // exclusion is not narrated next to the number on any surface.
+    await expect(page.getByText(/excluded from the total/)).toHaveCount(0);
+    await expect(page.getByTestId(`milestone-${alpha}-discarded-note`)).toHaveCount(0);
 
-    // The same rule, identically, on the detail — the case's last
-    // bullet is that one milestone never shows two denominators on two
-    // surfaces. Compared character-for-character, not merely "both
-    // mention discards": two surfaces phrasing it differently is the
-    // drift this component exists to prevent.
+    // The same denominator on the detail: the case's last bullet is
+    // that one milestone never shows two denominators on two surfaces.
     await page.goto(`${tracker.baseURL}/milestones/${alpha}`);
     await expect(page.getByTestId("milestone-detail-readout")).toContainText("4 / 8");
-    const detailNote = page.getByTestId("milestone-detail-discarded-note");
-    await expect(detailNote).toContainText("2 discarded");
-    expect(await detailNote.textContent()).toBe(listNoteText);
+    await expect(page.getByText(/excluded from the total/)).toHaveCount(0);
+    await expect(page.getByTestId("milestone-detail-discarded-note")).toHaveCount(0);
   });
 
   /**

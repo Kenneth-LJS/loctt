@@ -55,9 +55,9 @@ describe("CLI sprint progress (spawned binary)", () => {
     });
   });
 
-  it("excludes discarded tasks from the denominator and says so", async () => {
-    // 1 done + 1 outstanding + 1 discarded reads 1/2, not 1/3 — and the
-    // exclusion is named where the number is shown, mirroring milestones.
+  it("excludes discarded tasks from the denominator without a note (K157)", async () => {
+    // 1 done + 1 outstanding + 1 discarded reads 1/2, not 1/3. Ken
+    // (K157) removed the note naming the exclusion on every surface.
     await withTmpLoctt(async ({ root }) => {
       const id = await setup(root);
       await task(root, "shipped", id, "done");
@@ -66,7 +66,8 @@ describe("CLI sprint progress (spawned binary)", () => {
 
       const out = await runCli(["sprint", "list", "--progress"], { cwd: root });
       expect(out.stdout).toContain("1/2");
-      expect(out.stdout).toContain("discarded");
+      // K157: the exclusion is not narrated next to the number.
+      expect(out.stdout).not.toContain("discarded");
     });
   });
 

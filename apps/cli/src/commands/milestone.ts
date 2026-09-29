@@ -84,14 +84,13 @@ export async function run(args: string[], root: string): Promise<void> {
         const p = progress[m.id];
         // MSL-35: a per-milestone failure reads "progress unavailable" in
         // place of the numbers for THIS row only — the other rows above
-        // and below still print their real done/total. Name the excluded
-        // discarded tasks where the number is shown: silently shrinking a
-        // denominator is as confusing as leaving dead work in it.
+        // and below still print their real done/total. Discarded tasks
+        // are out of the total without a note saying so (K157).
         const prog = p === undefined
           ? ""
           : isProgressUnavailable(p)
             ? "  (progress unavailable)"
-            : `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`;
+            : `  ${p.done}/${p.total}`;
         console.log(`${m.name}${idCol}${due}${prog}${arch}`);
       }
       // DEG-C3: surface a hand-broken milestone entry preserved in

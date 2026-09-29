@@ -556,7 +556,7 @@ export async function show(args: string[], root: string): Promise<void> {
   // forward side points at ancestors, where a progress meter is
   // meaningless). Config-driven, mirroring the web meter and MCP
   // `get_task`'s `children` block; discarded children are excluded from
-  // the total exactly as milestones do.
+  // the total exactly as milestones do, without a note saying so (K157).
   const childSideKey = treeChildSideKey(workflowConfig);
   if (childSideKey !== undefined) {
     const childStatuses = model.relationships
@@ -564,10 +564,9 @@ export async function show(args: string[], root: string): Promise<void> {
       .map(r => r.resolvedStatus);
     if (childStatuses.length > 0 && workflowConfig !== undefined) {
       const p = computeProgressFromStatuses(childStatuses, workflowConfig);
-      const discardedNote = p.discarded > 0 ? ` (${String(p.discarded)} discarded excluded)` : "";
       console.log(
         `Child progress: ${String(p.done)} done, ${String(p.active)} active `
-        + `/ ${String(p.total)}${discardedNote}`,
+        + `/ ${String(p.total)}`,
       );
     }
   }

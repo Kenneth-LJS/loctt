@@ -209,11 +209,6 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
               {readout.percent !== undefined && (
                 <span className="ml-1 text-text-tertiary">({readout.percent}%)</span>
               )}
-              {readout.discarded > 0 && (
-                <span className="ml-1 text-text-tertiary">
-                  ({readout.discarded} discarded, excluded)
-                </span>
-              )}
             </span>
           )}
         </div>

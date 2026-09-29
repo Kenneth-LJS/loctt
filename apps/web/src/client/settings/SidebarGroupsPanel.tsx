@@ -6,7 +6,7 @@ import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { Toggle } from "../ui/Toggle.tsx";
-import { ReorderableRows } from "./ReorderableRows.tsx";
+import { SettingsSortableList } from "./SettingsSortableList.tsx";
 import { readSidebarGroups, resolveGroupedSidebarOrder } from "./sidebarGroups.ts";
 
 /**
@@ -209,7 +209,7 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
           Sidebar groups
         </h1>
       ) : null}
-      <ReorderableRows
+      <SettingsSortableList
         items={rows.map(r => (r.kind === "filters-group" ? "filters" : r.id))}
         rowKey={id => id}
         rowLabel={id => LABELS[id]}
@@ -232,7 +232,7 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
             <div className="flex flex-col gap-1.5">
               <GroupRow id="filters" hidden={groupHidden} onToggle={() => { toggleTopHidden("filters"); }} />
               <div className="ml-4 border-l border-border-subtle pl-3">
-                <ReorderableRows
+                <SettingsSortableList
                   items={filterChildOrder}
                   rowKey={fid => fid}
                   rowLabel={fid => LABELS[fid]}
@@ -247,7 +247,7 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
                       // K125: the whole child row (switch included) is
                       // disabled while the parent group is off — Ken:
                       // "disable switching/reordering its child items
-                      // too". `ReorderableRows`'s own `enabled` prop
+                      // too". `SettingsSortableList`'s own `enabled` prop
                       // above already disables the drag handle; this
                       // disables the switch the same way.
                       disabled={groupHidden}
@@ -255,12 +255,12 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
                       testIdPrefix="sidebar-filter"
                     />
                   )}
-                </ReorderableRows>
+                </SettingsSortableList>
               </div>
             </div>
           );
         }}
-      </ReorderableRows>
+      </SettingsSortableList>
 
       <div className="mt-6 flex items-center gap-3">
         <button
@@ -307,7 +307,7 @@ function GroupRow({
   readonly hidden: boolean;
   readonly disabled?: boolean;
   readonly onToggle: () => void;
-  /** Matches the enclosing `ReorderableRows`'s own `testIdPrefix` — the
+  /** Matches the enclosing `SettingsSortableList`'s own `testIdPrefix` — the
    *  nested filter rows use `sidebar-filter`, distinct from the
    *  top-level `sidebar-group` rows they sit inside. */
   readonly testIdPrefix?: "sidebar-group" | "sidebar-filter";

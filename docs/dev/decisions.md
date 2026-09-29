@@ -23294,6 +23294,151 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A369 · SortableTree and TaskTree; aligned relationship rows; drop line; compact progress; K157 note removed (B51)
+
+#### A369 · SortableTree, TaskTree, drop line, child-progress meter, and K157's note removal (B51)
+
+**Ticket:** B51 · **Date:** 2026-09-29 · **Agent-made** (under K156, K157; K31, K125, A363).
+
+**The situation.** K156 asked for one reorder primitive with nesting
+options (`ui/SortableTree`), a task-row layer on it
+(`relationships/TaskTree`) used by every relationship group so rows align,
+a drop line for drag and keyboard, every Settings list migrated, the old
+reorder components deleted, and a child-progress meter that shows its
+numbers and fits the list. K157 (added mid-ticket) removes the
+"N discarded ... excluded" note on every surface. The calls below were
+not settled by the rulings.
+
+**Options considered / decided.** (chosen first)
+
+1. *Where the leading controls render.* (a) `SortableTree` hands each row
+   `ctx.leading` (a fixed 24px handle slot, then the expand toggle when
+   the item has children) and the caller's `renderItem` places it first
+   inside its own row element. (b) `SortableTree` owns the row element and
+   puts the handle outside the caller's content. (a) chosen: the handle
+   stays inside `relationship-row` / `tree-node`, which every existing
+   spec locates it by (`[data-testid="relationship-row"] [data-testid="drag-handle"]`),
+   and alignment still comes from one component because every group goes
+   through `TaskTree`.
+2. *Keyboard model while picked up.* (a) The rows re-render in the
+   pending order (REL-15's "Escape restores the original position", and
+   the existing B40/REL-15 specs assert the on-screen move) **and** the
+   drop line is drawn on the edge of the held row that it moved across
+   (above when moved up, below when moved down; none when back at its
+   origin). (b) Keep the row in place and show only the line: contradicts
+   REL-15 and six existing assertions. (a) chosen.
+3. *Arrow without a pickup.* An arrow on a handle picks the row up and
+   moves it (as B40's `Reorder.tsx` did); Space or Enter also picks up
+   explicitly; Enter or Space drops; Escape cancels; focus leaving the
+   handle for another control cancels without a write. The handle label
+   keeps B40's text ("Reorder {name}, position N of M. Arrow up and down
+   to move, Enter to drop, Escape to cancel.") so specs and screen-reader
+   copy do not change.
+4. *Settings lists adopt the pickup model.* Before, an arrow on a Settings
+   handle wrote immediately. K156's "one primitive" with "keyboard
+   pick-up/move/drop/cancel" makes Settings the same as the task page:
+   an arrow moves on screen, Enter writes once. Four spec interactions
+   gained an Enter press (SET-6, SET-21, SET-34, SET-28 in
+   `flow-settings-workflow.spec.ts`, and K125-8 in
+   `flow-sidebar-k125.spec.ts`), plus `CardLayoutPanel.test.tsx`. These
+   tests were not asserting a bug; the interaction model changed under
+   K156. Case SET-57 states the new model.
+5. *Drag target semantics.* Dropping on row i moves the item to index i
+   (the model both old components used): the line is below row i when
+   moving down and above it when moving up, and none over the item's own
+   slot. Not pointer-midpoint based: a dispatched drag (the specs) and a
+   real one behave the same, and every position is reachable. The row
+   (`<li draggable>`) is the drag source, the handle is the visible grip;
+   a drag starting on a nested draggable (a link) is ignored.
+6. *Within-level only.* A row of another level is not a drop target (no
+   line, no move). A drop on a deeper row bubbles to its ancestor at the
+   dragged item's level, so it lands next to that ancestor (A363 4's
+   "a drop on any part of a sibling's block").
+7. *Indentation and spacers.* A level that cannot reorder (grandchildren
+   on the task page, an undeclared kind) keeps a 24px spacer, so its
+   content does not jump left. Nested levels indent 32px (slot + gap), so
+   a child's slot starts under its parent's toggle and its key starts to
+   the right of the parent's.
+8. *Settings adapter.* `settings/SettingsSortableList.tsx` is a thin
+   wrapper over `SortableTree` that fixes the Settings conventions
+   (`{prefix}-row-{key}` / `-handle-` / `-announcement` test ids, the
+   K100 `id="row-{key}"` anchor, the boxed row). No test id changed.
+9. *Sidebar Filters group.* Held by the coordinator (Ken's B52/K158
+   redesign): migrated mechanically, keeping today's two composed lists
+   (the Filters row's content holds a second list); **not** restructured
+   into one depth-1 tree. K125's disabled children kept
+   (`enabled={!groupHidden}`).
+10. *Board columns and custom fields.* Neither used `ReorderableRows`:
+    Board columns reorder with up/down buttons inside a draft, and the
+    custom-field panel has no reorder. Left as they are; converting board
+    columns to drag would change that panel's model, which K156 does not
+    rule on.
+11. *Child-progress meter.* Measured before changing anything: the
+    numbers did render ("1 / 3 (33%)"), but at the far right edge of a
+    full-width bar, and in the light theme the empty track is almost
+    invisible, so at 0 done it reads as a bare grey bar with the numbers
+    detached. Fix: the meter moves beside the group heading
+    ("CHILD · 4 ▬▬▭ 1 / 3 (33%)"), using the shared `ProgressReadout` with
+    a new `compact` option (fixed 96px bar, numbers beside it). The
+    readout format stays the shared "done / total (percent%)" used by
+    milestones and sprints, not a new "N of M done" string, so one
+    readout reads the same everywhere (MSL-3's last bullet).
+12. *K157 scope.* Removed: `discardedNote` (web) and its render in
+    `ProgressReadout` (milestone list, milestone detail, child meter); the
+    sprint detail's "(N discarded, excluded)"; the CLI's
+    "(N discarded, excluded)" on `milestone list --progress` and
+    `sprint list --progress` and "(N discarded excluded)" on `show`. Kept:
+    every numeric field (`discarded` in `Progress`, in MCP `get_task`'s
+    `children`, in list/progress JSON). MCP's text output had no such
+    sentence; its tool descriptions still say discarded tasks are
+    excluded from the denominator (a description of the data, not a
+    note next to a number) and were left.
+
+**Why.** One control, one keyboard model and one visual for every
+reorderable list (P8, P10, K156); the existing cases and specs keep
+their meaning; nothing moves on screen that is not on disk (REL-46,
+SET-34).
+
+**To revert.**
+1. Render the handle in `SortableTree` outside `renderItem` and update the
+   specs' handle locators.
+2. The `line` computation for `held` in `SortableTree.renderLevel`.
+3. `onHandleKeyDown` / the handle's `onBlur` in `SortableTree.tsx`.
+4. Remove the Enter presses listed above and give `SettingsSortableList`
+   an immediate-write keyboard path (not recommended: two models again).
+5. `onDragOver` / `onDrop` in `SortableTree.renderLevel`.
+6. The `draggingHere` level check and the container's `onDragOver`.
+7. `INDENT_PX` and the spacer branch of `handle` in `SortableTree.tsx`.
+8. Inline `SortableTree` into the five Settings panels.
+9. Build the depth-1 tree in `SidebarGroupsPanel` (after B52).
+10. Nothing built.
+11. Move `<ChildProgressMeter>` back under the heading and drop `compact`.
+12. Restore `discardedNote` (model.ts), its render in `ProgressReadout`,
+    the sprint-detail span and the three CLI strings; revert the tests
+    listed under Tests and the MSL-3 amendment.
+
+**Tests.** `ui/SortableTree.test.tsx` (19), `relationships/TaskTree.test.tsx`
+(6), `milestones/ProgressReadout.test.tsx` (+3), `sprints/SprintDetail.test.tsx`
+(+1), `milestones/model.test.ts` (note assertions removed),
+`RelationshipsPanel.test.tsx` (unchanged, runs through TaskTree),
+`CardLayoutPanel.test.tsx` (Enter added), `tests/ui/flow-relationships-alignment.spec.ts`
+(4, REL-52/53), `flow-settings-workflow.spec.ts` (+2, SET-57; Enter added
+to SET-6/21/28/34), `flow-sidebar-k125.spec.ts` (Enter added to K125-8),
+`flow-milestones.spec.ts` (MSL-3 asserts the note absent), integration
+`milestone-progress`, `sprint-progress`, `child-progress-parity` (assert
+the note absent). Cases: REL-52, REL-53, SET-57 added; MSL-3 amended (K157).
+
+#### Orchestrator addendum: git reconcile test budget
+
+GIT-12 failed for the B51 agent and then for the orchestrator on a quiet
+machine. Cause: the test takes 26-29 s alone (several real git round
+trips) against Playwright's 30 s per-test default, so it timed out when
+two ran together; the post-Apply result waits also used the 5 s default.
+Fix: `test.describe.configure({ timeout: 90_000 })` in
+`flow-git-reconcile.spec.ts`, and `SYNC_SETTLE_MS` on the six waits for
+`git-reconcile-applied`. No assertion changed. To revert: remove the
+configure line and the six `{ timeout: SYNC_SETTLE_MS }` options.
+
 ### A368 · Smoke tier and lint cache (B50, K155)
 
 #### A368 · Smoke tier, lint cache, Upgrade-screen caret check (B50, K155)

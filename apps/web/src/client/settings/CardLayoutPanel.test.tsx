@@ -71,7 +71,10 @@ describe("CardLayoutPanel", () => {
       return h as HTMLElement;
     });
     const { fireEvent } = await import("@testing-library/react");
+    // K156's pickup model: the arrow moves it on screen only; Enter drops.
     fireEvent.keyDown(handle, { key: "ArrowUp" });
+    expect(PUTS.length).toBe(0);
+    fireEvent.keyDown(handle, { key: "Enter" });
 
     await waitFor(() => { expect(PUTS.length).toBe(1); });
     // Order is the assertion, not mere membership.

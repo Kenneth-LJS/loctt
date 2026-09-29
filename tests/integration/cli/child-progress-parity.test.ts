@@ -48,7 +48,9 @@ describe("child progress is reported the same on CLI show and MCP get_task", () 
       expect(show.exitCode, `${show.stdout}${show.stderr}`).toBe(0);
       // 1 done, 1 active / 3 total (the discarded child excluded).
       expect(show.stdout).toMatch(/Child progress: 1 done, 1 active \/ 3/);
-      expect(show.stdout).toMatch(/1 discarded excluded/);
+      // K157: no note about the excluded child next to the number.
+      const line = show.stdout.split("\n").find(l => l.startsWith("Child progress:")) ?? "";
+      expect(line).toBe("Child progress: 1 done, 1 active / 3");
     });
   });
 

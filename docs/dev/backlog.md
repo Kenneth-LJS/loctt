@@ -9,17 +9,7 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B51 · SortableTree + TaskTree; aligned rows; drop line; child-progress meter (K156) — **in progress**
-
-Replace `settings/ReorderableRows.tsx` and `relationships/Reorder.tsx`
-with `ui/SortableTree` (nesting/maxDepth/startCollapsed, drop line for
-drag and keyboard, within-level reorder only) and build
-`relationships/TaskTree` on it for every relationship group; migrate
-every Settings list (incl. the sidebar Filters group at depth 1);
-delete the two old components; fix the child-progress meter; tests for
-alignment, the drop line and every existing reorder flow.
-
-## B52 · One "Views" sidebar section with counts and a shared count/⋯ slot (K158) — **todo** (after B51)
+## B52 · One "Views" sidebar section with counts and a shared count/⋯ slot (K158) — **in progress**
 
 Merge the Filters and Saved views sections (and the stored sidebar order:
 the `filters` and `saved-filters` groups become one `views` group, with

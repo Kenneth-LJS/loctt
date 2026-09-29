@@ -184,11 +184,12 @@ Opening a task shows everything about it on one page.
   editor open, and unsaved text survives a reload of the same tab.
 - **Related** — the task's relationships (blocks, parent/child, and any you
   configure); add and remove links here. Links keep the order you give
-  them: drag a row by its handle (or focus the handle, move it with the
-  arrow keys, and press Enter to drop or Escape to cancel) to move it
-  within its group. This includes a task's direct children: a child moves
-  with its own subtree; grandchildren are reordered on their parent's
-  page. New links go to the end.
+  them: drag a row by its handle to move it within its group; a line
+  shows where it will land. This includes a task's direct children: a
+  child moves with its own subtree; grandchildren are reordered on their
+  parent's page. New links go to the end. The Child heading shows how
+  many direct children are done (tasks in a discarded status are left
+  out of the count).
 - **Attachments** — files on the task; upload more.
 - **Comments / Activity / All** — a tabbed lane. Comments has a composer
   and the discussion; Activity shows the change history.
@@ -232,6 +233,18 @@ user menu. A bare `/settings` opens Projects. The groups:
   Pinned views, Sidebar groups, Keyboard (single-key shortcut switches).
 - **System** — Users, Sync (git-backed mode), Archived, Backup & restore,
   Diagnostics.
+
+Lists whose order matters (statuses, priorities, task types,
+relationships, card layout, pinned views, sidebar groups) reorder the
+same way as links on a task: drag a row by its handle, and a line shows
+where it will land.
+
+### Moving a row with the keyboard
+
+Every reorderable list, on a task and in Settings, works the same way
+from its handle: Space (or an arrow key) picks the row up, the arrow keys
+move it, and Enter or Space drops it, which saves once. Escape puts it
+back without saving. Each step is announced to screen readers.
 
 Most concepts are also reachable from where you use them: a sidebar row's
 kebab, a board column's menu, or an error banner will deep-link to the exact

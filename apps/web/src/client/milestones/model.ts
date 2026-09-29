@@ -23,7 +23,7 @@ export interface Progress {
   readonly active?: number;
   /** Tasks counted toward the goal: everything except discarded. */
   readonly total: number;
-  /** Excluded from `total`, reported so the UI can explain the number. */
+  /** Excluded from `total`. Carried as data; no surface narrates it (K157). */
   readonly discarded: number;
   /** `done / total` as 0–1, or 0 when `total` is 0. */
   readonly fraction: number;
@@ -180,26 +180,6 @@ export function sortMilestones<T extends MilestoneDef>(
   items: readonly T[],
 ): readonly T[] {
   return [...items].sort(compareMilestones);
-}
-
-/**
- * The sentence stated wherever a milestone number is shown (MSL-3).
- *
- * MSL-3's first bullet is that the readout must not be *ambiguous*:
- * whichever rule applies, the UI says so next to the number. Returning
- * one string from one function is what makes the list, the detail and
- * any sidebar count state it identically — three hand-written captions
- * would eventually disagree, which is the case's last bullet.
- *
- * `undefined` when there is nothing to explain: with no discarded
- * tasks the denominator is simply the task count, and a caption
- * explaining an exclusion that did not happen is noise.
- */
-export function discardedNote(readout: Readout): string | undefined {
-  if (readout.kind === "unavailable") return undefined;
-  if (readout.discarded <= 0) return undefined;
-  const n = readout.discarded;
-  return `${String(n)} discarded ${n === 1 ? "task is" : "tasks are"} excluded from the total.`;
 }
 
 /**

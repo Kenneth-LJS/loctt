@@ -18,11 +18,8 @@ import { Icon } from "../ui/Icon.tsx";
 import type { RelationshipGroup, RelationshipRow } from "./group.ts";
 import { groupRelationships, treeChildSideKey } from "./group.ts";
 import { LinkPicker } from "./LinkPicker.tsx";
-import { RelationshipRowView } from "./RelationshipRow.tsx";
-import { useReorder } from "./Reorder.tsx";
+import { TaskTree } from "./TaskTree.tsx";
 import type { TaskIndex } from "./tree.ts";
-import { buildTree, hasCycle } from "./tree.ts";
-import { TreeRows } from "./TreeRows.tsx";
 
 /**
  * The task detail page's Relationships section (M2.5a).
@@ -46,9 +43,10 @@ import { TreeRows } from "./TreeRows.tsx";
  * ## Reordering is per-group and drag-or-keyboard
  *
  * REL-13..15. Every configured kind is ordered (K143), so every group
- * gets the same handle (`Reorder.tsx`), the tree-rendered Children
- * group's direct children included (B40); only a type workflow.yaml does
- * not declare has none. A drop sends
+ * renders through `TaskTree` on the shared `ui/SortableTree` (K156): the
+ * same handle, drop line and keyboard model in every group, the
+ * tree-rendered Children group's direct children included (B40); only a
+ * type workflow.yaml does not declare has no handles. A drop sends
  * one `before` / `after` against the neighbour it landed next to; core
  * computes the lexorank, rewrites **only** the moved edge, and
  * rebalances the window itself when the string would get too long
@@ -232,57 +230,61 @@ export function RelationshipsPanel({
               data-group={group.key}
               data-ranked={group.ranked ? "true" : "false"}
             >
-              <h3 className="mb-1 flex items-center gap-2">
-                <button
-                  type="button"
-                  data-testid="relationship-group-toggle"
-                  aria-expanded={!isCollapsed}
-                  onClick={() => {
-                    setCollapsed(prev => {
-                      const next = new Set(prev);
-                      if (next.has(group.key)) next.delete(group.key);
-                      else next.add(group.key);
-                      return next;
-                    });
-                  }}
-                  className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary hover:bg-bg-muted"
-                >
-                  <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} />
-                  {/* REL-1: the configured label, never the raw key —
-                      except for an unknown type, where the raw key is
-                      the only honest thing to show (REL-25, XS-25). */}
-                  <span data-testid="relationship-group-label">{group.label}</span>
-                  {/* REL-4: each group's own count, not the task's
-                      total. Derived from the group's rows, so it moves
-                      with an add or a remove without a reload. */}
-                  <span data-testid="relationship-group-count">
-                    · {group.rows.length}
-                  </span>
-                </button>
-                {group.unknown && (
-                  <span
-                    data-testid="relationship-unknown"
-                    className="rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[0.7857rem] font-normal normal-case text-warn-fg"
+              <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h3 className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="relationship-group-toggle"
+                    aria-expanded={!isCollapsed}
+                    onClick={() => {
+                      setCollapsed(prev => {
+                        const next = new Set(prev);
+                        if (next.has(group.key)) next.delete(group.key);
+                        else next.add(group.key);
+                        return next;
+                      });
+                    }}
+                    className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary hover:bg-bg-muted"
                   >
-                    Unknown relationship type
-                  </span>
-                )}
-              </h3>
+                    <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} />
+                    {/* REL-1: the configured label, never the raw key —
+                        except for an unknown type, where the raw key is
+                        the only honest thing to show (REL-25, XS-25). */}
+                    <span data-testid="relationship-group-label">{group.label}</span>
+                    {/* REL-4: each group's own count, not the task's
+                        total. Derived from the group's rows, so it moves
+                        with an add or a remove without a reload. */}
+                    <span data-testid="relationship-group-count">
+                      · {group.rows.length}
+                    </span>
+                  </button>
+                  {group.unknown && (
+                    <span
+                      data-testid="relationship-unknown"
+                      className="rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[0.7857rem] font-normal normal-case text-warn-fg"
+                    >
+                      Unknown relationship type
+                    </span>
+                  )}
+                </h3>
 
-              {/* L4: a done/active/todo meter over this task's direct
-                  children, on the child side of the tree axis only.
-                  Computed from the depth-0 rows' resolvedStatus — the
-                  data the panel already holds, so no new request — with
-                  the same discarded-exclusion milestones apply. Shown
-                  even when collapsed: a glance at "3 / 5" is the reason
-                  to keep a big subtree folded. */}
-              {group.tree && group.key === childSideKey && (
-                <ChildProgressMeter
-                  rows={group.rows}
-                  statusOf={statusOf}
-                  workflow={workflow}
-                />
-              )}
+                {/* L4: a done/active/todo meter over this task's direct
+                    children, on the child side of the tree axis only.
+                    Computed from the depth-0 rows' resolvedStatus (the
+                    data the panel already holds, so no new request) with
+                    the same discarded exclusion milestones apply. Beside
+                    the heading, so it is shown even when the group is
+                    collapsed, and its numbers sit next to its bar (K156:
+                    a full-width bar pushed them to the far edge, where
+                    they read as a bare grey bar). */}
+                {group.tree && group.key === childSideKey && (
+                  <ChildProgressMeter
+                    rows={group.rows}
+                    statusOf={statusOf}
+                    workflow={workflow}
+                  />
+                )}
+              </div>
 
               {group.unknown && !isCollapsed && (
                 <p className="mb-1 px-1 text-[0.8571rem] text-text-tertiary">
@@ -295,27 +297,15 @@ export function RelationshipsPanel({
               )}
 
               {!isCollapsed && (
-                group.tree
-                  ? (
-                      <TreeGroup
-                        group={group}
-                        taskId={taskId}
-                        taskIndex={taskIndex}
-                        statusOf={statusOf}
-                        removing={unlink.isPending}
-                        onRemove={row => { onRemove(group, row); }}
-                        onMove={(from, to) => { move(group, from, to); }}
-                      />
-                    )
-                  : (
-                      <FlatGroup
-                        group={group}
-                        statusOf={statusOf}
-                        removing={unlink.isPending}
-                        onRemove={row => { onRemove(group, row); }}
-                        onMove={(from, to) => { move(group, from, to); }}
-                      />
-                    )
+                <TaskTree
+                  group={group}
+                  taskId={taskId}
+                  taskIndex={taskIndex}
+                  statusOf={statusOf}
+                  removing={unlink.isPending}
+                  onRemove={row => { onRemove(group, row); }}
+                  onMove={(from, to) => { move(group, from, to); }}
+                />
               )}
 
               {err !== undefined && (
@@ -500,137 +490,14 @@ function ChildProgressMeter({
   if (workflow === undefined) return null;
 
   return (
-    <div className="mb-1.5 px-1" data-testid="child-progress">
+    <div className="min-w-0" data-testid="child-progress">
       <ProgressReadout
         readout={readout}
         idPrefix="child-progress"
         milestoneName="child tasks"
         label="Child progress"
         segmented
-      />
-    </div>
-  );
-}
-
-/**
- * A non-structural group: flat rows, each with the shared reorder handle
- * (`Reorder.tsx`) when the kind is declared.
- */
-function FlatGroup({
-  group,
-  statusOf,
-  removing,
-  onRemove,
-  onMove,
-}: {
-  readonly group: RelationshipGroup;
-  readonly statusOf: (key: string | undefined) => StatusDef | undefined;
-  readonly removing: boolean;
-  readonly onRemove: (row: RelationshipRow) => void;
-  readonly onMove: (from: number, to: number) => void;
-}): React.JSX.Element {
-  const reorder = useReorder({
-    count: group.rows.length,
-    nameAt: i => rowName(group.rows[i]),
-    onMove,
-    enabled: orderable(group),
-  });
-
-  return (
-    <div>
-      {/* REL-15's second bullet: the move is announced rather than
-          being a silent visual change. */}
-      {reorder.announcer}
-      <div className="space-y-0.5">
-        {reorder.order(group.rows).map((row, i) => (
-          <div key={`${row.type}:${row.target}`} {...reorder.rowProps(i)}>
-            <RelationshipRowView
-              row={row}
-              statusOf={statusOf}
-              removing={removing}
-              onRemove={() => { onRemove(row); }}
-            >
-              {reorder.handle(i, rowName(row))}
-            </RelationshipRowView>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Whether a group's rows can be reordered: every declared kind is ordered
- * (K143), so only a type workflow.yaml does not declare is left without
- * handles (core refuses to rerank it). `group.ranked` says the same thing
- * since B41 and is kept only as the `data-ranked` attribute.
- */
-function orderable(group: RelationshipGroup): boolean {
-  return !group.unknown;
-}
-
-/** How a row is named in the handle and the announcements. */
-function rowName(row: RelationshipRow | undefined): string {
-  return row?.resolvedKey ?? row?.target ?? "Row";
-}
-
-/** A `graph: tree` group: nested rows with visible depth (REL-5). */
-function TreeGroup({
-  group,
-  taskId,
-  taskIndex,
-  statusOf,
-  removing,
-  onRemove,
-  onMove,
-}: {
-  readonly group: RelationshipGroup;
-  readonly taskId: string;
-  readonly taskIndex: TaskIndex;
-  readonly statusOf: (key: string | undefined) => StatusDef | undefined;
-  readonly removing: boolean;
-  readonly onRemove: (row: RelationshipRow) => void;
-  readonly onMove: (from: number, to: number) => void;
-}): React.JSX.Element {
-  const nodes = useMemo(
-    () => buildTree(group.rows, group.key, taskIndex, taskId),
-    [group.rows, group.key, taskIndex, taskId],
-  );
-  const cyclic = hasCycle(nodes);
-  // B40: the direct (depth-0) children reorder like any flat group; their
-  // subtrees move with them. `nodes[i]` is built from `group.rows[i]`, so
-  // the stored indices line up.
-  const reorder = useReorder({
-    count: group.rows.length,
-    nameAt: i => rowName(group.rows[i]),
-    onMove,
-    enabled: orderable(group),
-  });
-
-  return (
-    <div>
-      {cyclic && (
-        /* REL-21's fourth bullet: which edges form the cycle, and
-           where to fix them. The per-node marker below names the
-           ancestor; this says what to do about it. */
-        <p
-          role="alert"
-          data-testid="relationship-cycle"
-          className="mb-1 px-1 text-[0.8571rem] text-danger-fg"
-        >
-          This “{group.label}” hierarchy contains a cycle. The rows marked
-          below repeat a task that already appears above them. Remove one of
-          the two links to break it.
-        </p>
-      )}
-      {reorder.announcer}
-      <TreeRows
-        nodes={reorder.order(nodes)}
-        rows={group.rows}
-        statusOf={statusOf}
-        removing={removing}
-        onRemove={onRemove}
-        reorder={reorder}
+        compact
       />
     </div>
   );

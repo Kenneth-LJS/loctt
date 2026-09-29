@@ -7,7 +7,7 @@ import { DEFAULT_CARD_LAYOUT, resolveCardLayout } from "../board/cardLayout.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { ReorderableRows } from "./ReorderableRows.tsx";
+import { SettingsSortableList } from "./SettingsSortableList.tsx";
 
 /**
  * Settings → Personal → Card layout (SET-12, SET-26, CW-17).
@@ -123,15 +123,15 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
 
       <div className="flex flex-wrap gap-8">
         <div className="min-w-[18rem] flex-1">
-          <ReorderableRows
+          <SettingsSortableList
             items={rows}
             rowKey={f => f}
             rowLabel={f => FIELD_LABELS[f]}
             onMove={onMove}
             testIdPrefix="card-field"
           >
-            {(field, i) => {
-              const isVisible = i < visible.length;
+            {field => {
+              const isVisible = visible.includes(field);
               return (
                 <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1">
                   <span className="flex-1 text-[0.9286rem] text-text-primary">
@@ -154,7 +154,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
                 </div>
               );
             }}
-          </ReorderableRows>
+          </SettingsSortableList>
 
           <Button
             variant="ghost"

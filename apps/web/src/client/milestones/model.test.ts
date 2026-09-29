@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import type { Progress } from "./model.ts";
 import {
   compareMilestones,
-  discardedNote,
   progressState,
   sortMilestones,
 } from "./model.ts";
@@ -19,11 +18,10 @@ function m(over: Partial<MilestoneDef> & { id: string }): MilestoneDef {
 
 describe("progressState", () => {
   // @verifies MSL-3
-  it("reports the discarded exclusion and keeps it out of the denominator", () => {
+  it("keeps discarded tasks out of the denominator", () => {
     // MSL-3's worked example verbatim: 10 tasks, 4 completed, 2
     // discarded, 4 active. Core answers `4 / 8` with `discarded: 2`
-    // (measured against a live server), and the readout must carry
-    // both the number and the reason.
+    // (measured against a live server).
     const r = progressState(p(4, 8, 2));
 
     expect(r.kind).toBe("counted");
@@ -31,19 +29,6 @@ describe("progressState", () => {
     // The denominator excludes the 2 discarded tasks — 8, not 10.
     expect(r.total).toBe(8);
     expect(r.discarded).toBe(2);
-    // The rule is stated where the number is shown, and it names the
-    // count. A readout that showed `4 / 8` with no explanation fails
-    // MSL-3's first bullet just as an ambiguous number would.
-    expect(discardedNote(r)).toBe("2 discarded tasks are excluded from the total.");
-  });
-
-  // @verifies MSL-3
-  it("says nothing about discards when there are none", () => {
-    // The discriminating half: with zero discarded tasks there is no
-    // exclusion to explain, so a caption would be a false statement
-    // about the denominator. A test that only seeded the 2-discarded
-    // case could not tell a real rule from a hardcoded sentence.
-    expect(discardedNote(progressState(p(4, 8, 0)))).toBeUndefined();
   });
 
   // @verifies MSL-15
@@ -85,7 +70,6 @@ describe("progressState", () => {
     const r = progressState(p(4, 4, 6));
     expect(r.complete).toBe(true);
     expect(r.percent).toBe(100);
-    expect(discardedNote(r)).toBe("6 discarded tasks are excluded from the total.");
   });
 
   // @verifies MSL-1

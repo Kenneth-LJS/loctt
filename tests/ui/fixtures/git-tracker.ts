@@ -392,8 +392,10 @@ export const test = base.extend<{
  * result renders. Measured click → reconcile panel on GIT-13 at 4230,
  * 4752 and 5222 ms (A365), which sits on Playwright's 5 s `expect`
  * default and flaked under a loaded full-suite run. Used only on the wait
- * right after that round trip (and on a reload that re-reads a pending
- * reconcile session); every other wait keeps the default.
+ * right after that round trip, on a reload that re-reads a pending
+ * reconcile session, and on the result after Apply (which completes the
+ * sync: the same git round trip; GIT-12 missed 5 s at load ~18,
+ * 2026-09-29); every other wait keeps the default.
  */
 export const SYNC_SETTLE_MS = 15_000;
 

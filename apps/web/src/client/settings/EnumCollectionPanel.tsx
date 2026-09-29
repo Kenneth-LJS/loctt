@@ -11,8 +11,8 @@ import { WORKFLOW_SAVE_KEY } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { type EntryDialogResult,EntryEditDialog } from "./EntryEditDialog.tsx";
 import { type RemapChoice,RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
-import { ReorderableRows } from "./ReorderableRows.tsx";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsSortableList } from "./SettingsSortableList.tsx";
 import { renumberPriorities, reorder, setDefaultStatus } from "./workflowEdits.ts";
 import {
   buildPriority,
@@ -300,7 +300,7 @@ function CollectionEditor({
         data-row-count={String(rows.length)}
         className="max-h-[60vh] overflow-y-auto pr-1"
       >
-        <ReorderableRows
+        <SettingsSortableList
           items={rows}
           rowKey={r => r.key}
           rowLabel={r => r.label}
@@ -319,7 +319,7 @@ function CollectionEditor({
               onDelete={() => { save.reset(); setDeleting(row); }}
             />
           )}
-        </ReorderableRows>
+        </SettingsSortableList>
       </div>
 
       {dialog !== null && (

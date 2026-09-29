@@ -108,3 +108,40 @@ describe("ProgressReadout segmented fill", () => {
     expect(screen.queryByTestId("m-bar-active")).toBeNull();
   });
 });
+
+describe("ProgressReadout discarded tasks (K157)", () => {
+  // @verifies MSL-3
+  it("shows the count without a sentence about discarded tasks", () => {
+    const { container } = render(
+      <ProgressReadout
+        readout={progressState(counted({ done: 4, total: 8, discarded: 2 }))}
+        idPrefix="m"
+        milestoneName="Alpha"
+      />,
+    );
+    expect(screen.getByTestId("m-readout").textContent).toContain("4 / 8");
+    expect(container.textContent).not.toMatch(/discarded|excluded/);
+    expect(screen.queryByTestId("m-discarded-note")).toBeNull();
+  });
+});
+
+describe("ProgressReadout compact (K156)", () => {
+  it("gives the bar a fixed width so the numbers sit beside it", () => {
+    render(
+      <ProgressReadout
+        readout={progressState(counted())}
+        idPrefix="c"
+        milestoneName="child tasks"
+        compact
+      />,
+    );
+    const bar = screen.getByTestId("c-bar");
+    expect(bar.className).toContain("w-24");
+    expect(bar.className).not.toContain("flex-1");
+  });
+
+  it("stretches the bar by default", () => {
+    render(<ProgressReadout readout={progressState(counted())} idPrefix="d" milestoneName="Alpha" />);
+    expect(screen.getByTestId("d-bar").className).toContain("flex-1");
+  });
+});

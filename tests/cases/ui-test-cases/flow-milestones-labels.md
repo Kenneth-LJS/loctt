@@ -63,6 +63,18 @@ is testing the wrong thing.
 > the number. Silently shrinking the denominator fails the first bullet
 > just as ambiguity does. **The UI half is still unbuilt** — the
 > Milestones view is a stub — so the bar itself does not exist yet.
+>
+> **Amended (K157, Ken 2026-09-29).** On the web readout's "1 discarded
+> task is excluded from the total.", Ken: *"we shouldnt be showing
+> this"*, then for the CLI and MCP: *"yes remove for consistency"*. The
+> exclusion rule is unchanged (discarded tasks stay out of the
+> denominator, and `Progress` still carries the `discarded` count as
+> data), but no surface narrates it: the web milestone list, milestone
+> detail, sprint detail and task child-progress readouts, and the CLI's
+> `milestone list --progress`, `sprint list --progress` and `show`, show
+> the number only. The first and second bullets' "states it" / "explains
+> that 2 discarded tasks are excluded" are superseded; the worked example
+> reads `4 / 8` with no note, and a test asserts the note is absent.
 
 ### MSL-4 · M4 · major · P2
 **Clicking a milestone opens its task list.**

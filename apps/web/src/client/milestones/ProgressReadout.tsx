@@ -1,16 +1,14 @@
 import type { Readout } from "./model.ts";
-import { discardedNote } from "./model.ts";
 
 /**
- * The bar + `done / total` readout, and the sentence explaining the
- * denominator.
+ * The bar + `done / total` readout.
  *
  * **One component, used by both the list row and the detail header.**
  * MSL-3's last bullet is that the same milestone never shows two
- * different denominators on two surfaces, and its first is that the
- * rule is stated *where the number is shown*. Two hand-written
- * readouts satisfy both on the day they are written and drift after;
- * this makes them the same rendering by construction.
+ * different denominators on two surfaces. Two hand-written readouts
+ * satisfy that on the day they are written and drift after; this makes
+ * them the same rendering by construction. Discarded tasks are left out
+ * of the total without a sentence saying so (K157).
  *
  * Nothing here computes progress. The numbers arrive from core via
  * `?progress=true` and are shaped by `progressState`, so the exclusion
@@ -24,6 +22,7 @@ export function ProgressReadout({
   milestoneName,
   label = "Milestone progress",
   segmented = false,
+  compact = false,
 }: {
   readonly readout: Readout;
   /** Test-id namespace, so list rows and the detail don't collide. */
@@ -48,6 +47,12 @@ export function ProgressReadout({
    * the single fill.
    */
   readonly segmented?: boolean;
+  /**
+   * A fixed-width bar with the numbers right beside it, for a readout
+   * that sits inline (the task page's child-progress meter, K156). The
+   * default bar stretches to fill its row.
+   */
+  readonly compact?: boolean;
 }) {
   // MSL-35: a failed computation is not zero progress. This renders in
   // *place of* the numbers — never `0 / 0`, which MSL-15 uses for a
@@ -77,8 +82,6 @@ export function ProgressReadout({
     );
   }
 
-  const note = discardedNote(readout);
-
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
@@ -96,7 +99,10 @@ export function ProgressReadout({
           {...(readout.activeFill !== undefined
             ? { "data-active-fill": readout.activeFill.toFixed(4) }
             : {})}
-          className="relative flex h-1.5 min-w-[80px] flex-1 overflow-hidden rounded-full bg-bg-muted"
+          className={[
+            "relative flex h-1.5 overflow-hidden rounded-full bg-bg-muted",
+            compact ? "w-24 flex-none" : "min-w-[80px] flex-1",
+          ].join(" ")}
         >
           {segmented && readout.activeFill !== undefined ? (
             // Three segments laid side by side: done (success), then
@@ -152,18 +158,6 @@ export function ProgressReadout({
           </span>
         )}
       </div>
-
-      {/* MSL-3: the rule, stated where the number is shown. Rendered
-          from `discardedNote` so the list and the detail say the same
-          sentence rather than two similar ones. */}
-      {note !== undefined && (
-        <p
-          data-testid={`${idPrefix}-discarded-note`}
-          className="text-[0.7857rem] text-text-tertiary"
-        >
-          {note}
-        </p>
-      )}
     </div>
   );
 }

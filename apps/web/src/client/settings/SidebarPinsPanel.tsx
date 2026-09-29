@@ -9,7 +9,7 @@ import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { DeleteViewDialog } from "./DeleteViewDialog.tsx";
-import { ReorderableRows } from "./ReorderableRows.tsx";
+import { SettingsSortableList } from "./SettingsSortableList.tsx";
 import { readSidebarPins, sweepSidebarPins } from "./sidebarPins.ts";
 
 /**
@@ -147,7 +147,7 @@ function PinsEditor({
         </p>
       ) : (
         <div className="mb-6">
-          <ReorderableRows
+          <SettingsSortableList
             items={pinned}
             rowKey={id => id}
             rowLabel={id => byId.get(id)?.name ?? id}
@@ -180,7 +180,7 @@ function PinsEditor({
                 </Button>
               </div>
             )}
-          </ReorderableRows>
+          </SettingsSortableList>
         </div>
       )}
 

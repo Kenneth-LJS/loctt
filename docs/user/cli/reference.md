@@ -170,8 +170,9 @@ lists. An empty result prints `No tasks found.`
 
 ### `loctt show <task>`
 
-Show one task in full: its fields, relationships (with child progress),
-attachments, any health warnings, and its body.
+Show one task in full: its fields, relationships (with child progress:
+`Child progress: N done, N active / total`, discarded children left out
+of the total), attachments, any health warnings, and its body.
 
 Relationships are listed in the same order as the web task page: kinds
 in `workflow.yaml` order, and within each kind by rank. Every link gets a
@@ -727,7 +728,7 @@ Created label "urgent" (id 01J…)
 
 | Subcommand | Synopsis | Notes |
 |---|---|---|
-| `list` | `loctt milestone list [--archived <active\|archived\|all>] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). `--progress` scans tasks for a done/total count. |
+| `list` | `loctt milestone list [--archived <active\|archived\|all>] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). `--progress` scans tasks for a done/total count; tasks in a `discarded`-category status are left out of the total, without a note. |
 | `create` | `loctt milestone create <name> [--target-date <YYYY-MM-DD>]` | |
 | `edit` | `loctt milestone edit <name\|id> [--name] [--target-date <date\|->] [--archived <true\|false>]` | `--target-date -` clears the date. |
 | `archive` / `unarchive` | `loctt milestone archive <name\|id>` | |
@@ -746,7 +747,7 @@ Created milestone "v1.0 Launch" (id 01J…)
 
 | Subcommand | Synopsis | Notes |
 |---|---|---|
-| `list` | `loctt sprint list [--archived <active\|archived\|all>] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). |
+| `list` | `loctt sprint list [--archived <active\|archived\|all>] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). `--progress` prints done/total, discarded tasks left out of the total. |
 | `create` | `loctt sprint create <name> --start <date> --end <date> [--state <active\|completed\|future>] [--goal <text>]` | `--state` defaults to `future`. Dates are `YYYY-MM-DD`. An end before the start is refused: `End date is before the start date.` (on `edit` too). |
 | `edit` | `loctt sprint edit <name\|id> [--name] [--start] [--end] [--state] [--goal <text\|->]` | `--goal -` clears the goal. `--state` moves a sprint from any state to any state, including reopening a completed one. |
 | `archive` / `unarchive` | `loctt sprint archive <name\|id>` | |

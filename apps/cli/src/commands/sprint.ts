@@ -86,15 +86,13 @@ export async function run(args: string[], root: string): Promise<void> {
         const idCol = showIds ? `\t${s.id}` : "";
         const p = progress[s.id];
         // MSL-35: a per-sprint failure reads "progress unavailable" for
-        // THIS row only; the other rows still print real done/total. Name
-        // the excluded discarded tasks where the number is shown: silently
-        // shrinking a denominator is as confusing as leaving dead work in
-        // it.
+        // THIS row only; the other rows still print real done/total.
+        // Discarded tasks are out of the total without a note (K157).
         const prog = p === undefined
           ? ""
           : isProgressUnavailable(p)
             ? "  (progress unavailable)"
-            : `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`;
+            : `  ${p.done}/${p.total}`;
         console.log(`${s.name}${idCol}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${prog}${arch}`);
       }
       // DEG-C3: a hand-broken sprint entry is preserved by the tolerant

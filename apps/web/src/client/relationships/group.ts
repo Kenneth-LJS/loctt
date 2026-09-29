@@ -86,7 +86,7 @@ export interface RelationshipRow {
    *   - `missing:true` + `targetCorrupt:true` — the target is on disk but
    *     object-fatally unreadable: corrupt, not deleted.
    * A missing row with `targetCorrupt` falsy is a genuine dangling link.
-   * Optional so the many test fixtures and the TreeRows synthetic-parent
+   * Optional so the many test fixtures and the TaskTree descendant
    * row (never corrupt by construction) need not spell out `false`.
    */
   readonly targetCorrupt?: boolean;

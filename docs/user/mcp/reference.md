@@ -406,7 +406,7 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 | Family | List | Create key params | Notable |
 |---|---|---|---|
 | Labels | `list_labels` | `name`, `color` | `list_labels` takes `q`, `limit`, `offset`, `archived`. `delete_label` remaps or drops the label from every task. `color` takes any of the three shapes — see [Colors](#colors). |
-| Milestones | `list_milestones` | `name`, `target_date` | `list_milestones` takes `q`, `limit`, `offset`, `archived`, `progress`; `{progress:true}` adds done/total per milestone. |
+| Milestones | `list_milestones` | `name`, `target_date` | `list_milestones` takes `q`, `limit`, `offset`, `archived`, `progress`; `{progress:true}` adds done/total per milestone, plus a `discarded` count (discarded tasks are left out of `total`). |
 | Sprints | `list_sprints` | `name`, `start_date`, `end_date`, `state`, `goal` | `list_sprints` takes `q`, `limit`, `offset`, `archived`, `progress`. `get_sprint_burndown` returns the burndown series. `edit_sprint` moves `state` from any state to any state (there is no `force`). An `end_date` before `start_date` is rejected: `End date is before the start date.` |
 
 ### Projects

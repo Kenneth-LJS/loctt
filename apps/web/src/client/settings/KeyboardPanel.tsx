@@ -66,10 +66,25 @@ const SHORTCUTS: readonly { group: string; items: readonly Shortcut[] }[] = [
       { keys: ["Ctrl", "Enter"], action: "Save the description", scope: "Editing a description" },
       { keys: ["Ctrl", "S"], action: "Save the description", scope: "Editing a description" },
       { keys: ["Esc"], action: "Cancel editing the description", scope: "Editing a description" },
-      // apps/web/src/client/settings/ReorderableRows.tsx:108-109
+      // apps/web/src/client/ui/SortableTree.tsx onHandleKeyDown (K156)
+      {
+        keys: ["Space"],
+        action: "Pick up the row, or drop it",
+        scope: "A drag handle in a reorderable list",
+      },
       {
         keys: ["↑", "/", "↓"],
-        action: "Move the focused row up or down",
+        action: "Move the picked-up row up or down",
+        scope: "A drag handle in a reorderable list",
+      },
+      {
+        keys: ["Enter"],
+        action: "Drop the picked-up row",
+        scope: "A drag handle in a reorderable list",
+      },
+      {
+        keys: ["Esc"],
+        action: "Put the row back without moving it",
         scope: "A drag handle in a reorderable list",
       },
     ],

@@ -11,8 +11,8 @@ import { WORKFLOW_SAVE_KEY } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { type RelationshipDialogResult,RelationshipEditDialog } from "./RelationshipEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
-import { ReorderableRows } from "./ReorderableRows.tsx";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsSortableList } from "./SettingsSortableList.tsx";
 import { isSymmetric, reorder } from "./workflowEdits.ts";
 import { buildRelationship, collectionKeys, entryChangedOnDisk } from "./workflowForms.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
@@ -183,7 +183,7 @@ function RelationshipsEditor({
       )}
 
       <div data-testid="relationships-list" data-row-count={String(rows.length)}>
-        <ReorderableRows
+        <SettingsSortableList
           items={rows}
           rowKey={r => r.key}
           rowLabel={r => r.label}
@@ -200,7 +200,7 @@ function RelationshipsEditor({
               onDelete={() => { save.reset(); setDeleting(rel); }}
             />
           )}
-        </ReorderableRows>
+        </SettingsSortableList>
       </div>
 
       {dialog !== null && (
