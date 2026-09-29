@@ -22685,6 +22685,22 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K160 · Old sidebar settings are converted by an upgrade step, not read forever
+
+**Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
+
+B52/B53 kept read-time compatibility: a pre-K158 `sidebar_groups` was
+migrated on every read, and a legacy `sidebar_pins` was kept until the
+first layout write. Ken: *"actually can we just do a migration step:
+migrate old pins into the sidebar? i dont want to support this backward
+compatibility forever."* `loctt` 0.3.0 is already published, so under
+K142 this is a new format version, **0.4.0**, with an upgrade step
+0.3.0 → 0.4.0 that rewrites every user's settings file in the tracker to
+the K158 Views layout (old pins seed the order) and deletes the old keys.
+All read-time compatibility is removed; after the step, an old-shaped
+value is treated as corrupt (default layout, doctor finding). The upgrade
+is intentional like every other (K154). The package becomes 0.4.0.
+
 ### K159 · Pinned views are retired
 
 **Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
