@@ -6,7 +6,7 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
-### 0.4.0: run `loctt migrate` once
+## [0.4.0] — 2026-09-29
 
 `loctt` 0.4.0 changes the tracker format to `0.4.0`. **Run `loctt migrate`
 (or press **Upgrade** in the web UI) once on each tracker**; until then
@@ -39,8 +39,38 @@ See [Upgrading](docs/user/common/upgrading.md).
   from loading. The web UI, CLI and MCP use the default settings, and
   saving a setting is refused, naming the file, instead of replacing it.
   `loctt doctor` names the file. Fix it by hand.
+- A backup written by `loctt` 0.2.x or earlier records its format as `1`,
+  which this release doesn't read. Change `"schema_version":1` in the
+  backup's first line to `"schema_version":"0.1.0"`, then restore it: it
+  is upgraded as part of the restore.
 
-### Format 0.3.0 (ordered links)
+### Breaking
+
+- Pinned views are gone. Settings → Pinned views, the `sidebar_pins`
+  setting, `loctt user settings --sweep-pins` and the MCP tool
+  `sweep_sidebar_pins` are removed. The order of views in the sidebar is
+  set in Settings → Customize sidebar (or `loctt user sidebar-groups`,
+  MCP `set_sidebar_groups`). Existing pins become that order when you run
+  `loctt migrate`.
+
+### Changed
+
+- The sidebar has one **Views** section in place of Filters and Saved
+  views. Every view shows its task count (99+ above 99), and a screen
+  reader hears the count with the view's name. On hover or focus the
+  count gives way to a ⋯ menu: **Hide** for a built-in view, and **Edit**,
+  **Rename**, **Delete** and **Hide** for a saved one. Customize sidebar
+  is one list where views reorder within Views.
+- One reorder control everywhere a list can be reordered: task
+  relationships, Settings lists and Customize sidebar. Dragging shows a
+  line where the row will land, and a row can be moved from the keyboard
+  (Space or Enter to pick up, arrows to move, Enter to drop, Escape to
+  cancel). Relationship rows line up across every group.
+- Progress readouts (web, `loctt milestone`, `loctt sprint`, `loctt show`)
+  no longer print a note about discarded tasks being left out of the
+  total. MCP still returns the `discarded` count.
+
+## [0.3.0] — 2026-09-28
 
 This release changes the tracker format (to `0.3.0`). **Before you use it
 on a tracker made by `loctt` 0.2.x or earlier, change
@@ -62,10 +92,9 @@ See [Upgrading](docs/user/common/upgrading.md).
   `edit_workflow_entity` ignores `fields.ranked`, and the setting is gone
   from Settings → Relationships. A `ranked:` line left in
   `workflow.yaml` is ignored and reported by `loctt doctor`.
-- A backup written by `loctt` 0.2.x or earlier records its format as `1`,
-  which this release doesn't read. Change `"schema_version":1` in the
-  backup's first line to `"schema_version":"0.1.0"`, then restore it: it
-  is upgraded as part of the restore.
+- A backup written by `loctt` 0.2.x or earlier can't be restored by this
+  release; restore it with the release that wrote it, then open the
+  tracker with this one.
 
 ### Fixed
 
