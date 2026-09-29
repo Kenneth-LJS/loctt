@@ -22685,6 +22685,34 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K158 · One "Views" section: built-in and saved views together, with counts
+
+**Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
+
+On a screenshot of the sidebar with separate "Saved views" and "Filters"
+sections, Ken: *"why are you splitting filters vs saved views?!?! when did
+you decide this? this is bad. it should be 1. then we can re-order them,
+and we can hide. then all of them should show numbers, and custom views can
+also have the '...' but it should align"*. The split came from the
+orchestrator's reading of K125 ("Nest under 'Filters'"), turned into two
+sections in A339; Ken never asked for two. Decided:
+- One sidebar section named **Views** (built-in and saved views together);
+  Customize sidebar's List/Board/Timeline row is labelled so it is not
+  confused with it.
+- Order and unhide happen in Settings → Customize sidebar (*"we have the
+  settings, right? where you can reorder things, no?"*); no drag in the
+  sidebar itself.
+- Every row: `[icon] [name] … [slot]`. The slot shows the task count,
+  right-aligned, capped at "99+", the same width as the ⋯ button; on hover
+  or keyboard focus the ⋯ replaces the count in that slot (*"when you
+  hover, replace task count with the '...'. but task count must have same
+  width as the ... button, so maybe we make task count go to a max of 99
+  task, e.g. '99+' for 100 onwards"*). Built-in views' ⋯ offers Hide;
+  saved views' ⋯ offers Edit, Rename, Delete, Hide. Saved views show
+  counts too; a broken view shows a warning mark instead.
+- Orchestrator's call for touch screens (no hover): the count stays;
+  actions are in Settings (Customize sidebar, Saved views).
+
 ### K157 · No "discarded tasks are excluded" note on progress
 
 **Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**

@@ -19,4 +19,15 @@ every Settings list (incl. the sidebar Filters group at depth 1);
 delete the two old components; fix the child-progress meter; tests for
 alignment, the drop line and every existing reorder flow.
 
+## B52 · One "Views" sidebar section with counts and a shared count/⋯ slot (K158) — **todo** (after B51)
+
+Merge the Filters and Saved views sections (and the stored sidebar order:
+the `filters` and `saved-filters` groups become one `views` group, with
+built-in and saved view ids in one ordered, hideable list; migrate
+existing per-user settings); counts for saved views (broken → warning
+mark); the count/⋯ slot (99+ cap, hover/focus swap, same width);
+built-in ⋯ = Hide, saved ⋯ = Edit/Rename/Delete/Hide; Customize sidebar
+lists the merged section on SortableTree; CLI/MCP sidebar-group tools
+and docs follow the new ids; amend K125/A339-era cases.
+
 Empty otherwise. B39–B50 shipped on `fix/parent-and-child-order`; records K140–K155, A357–A368.
