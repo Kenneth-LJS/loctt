@@ -22685,6 +22685,15 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K157 · No "discarded tasks are excluded" note on progress
+
+**Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
+
+Ken: *"`1 discarded task is excluded from the total.` we shouldnt be
+showing this"*. The web progress readout (milestones, sprints, child
+progress) no longer shows the note; discarded tasks are still excluded
+from the total. The case that required the sentence is amended.
+
 ### K156 · One reorder primitive (SortableTree) with nesting options; aligned relationship rows; drop line
 
 **Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
