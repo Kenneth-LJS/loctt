@@ -1980,10 +1980,18 @@ test.describe("SPR — sprint-scoped task list (M4.7)", () => {
     await expect(page.getByTestId(`sprint-task-${String(seeded[2])}`)).toHaveCount(0);
 
     // The bar is the shared one: it offers the list's facets.
-    await expect(page.getByRole("button", { name: "Status" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Priority" })).toBeVisible();
+    // Exact names: the sidebar's saved-view rows carry "Actions for view …"
+    // buttons that a substring match would also find.
+    await expect(page.getByRole("button", { name: "Filter Status", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Filter Priority", exact: true })).toBeVisible();
     // ...minus `sprint`, which this route *is*.
-    await expect(page.getByRole("button", { name: "Sprint", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Filter Sprint", exact: true })).toHaveCount(0);
+    // Sprint is not a default facet, so its absence from the bar alone
+    // proves nothing: it must not be addable either.
+    await page.getByRole("button", { name: "Add filter", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Milestone", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Sprint", exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
 
     // Applying a status filter narrows WITHIN the sprint.
     await page.goto(`${tracker.baseURL}/sprints/${scoped}?status=done`);

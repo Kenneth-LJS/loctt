@@ -354,12 +354,10 @@ test.describe("BRD — board view", () => {
     // The state is on disk, in the user's settings — not localStorage.
     // Read the file rather than the screen: that is the difference the
     // case is actually about.
+    // Two clicks are two writes: wait for the second, not just the first.
     await expect
       .poll(async () => await readUserSettings(tracker.root))
-      .toContain("board_hidden_columns");
-    const settings = await readUserSettings(tracker.root);
-    expect(settings).toContain("backlog");
-    expect(settings).toContain("done");
+      .toMatch(/board_hidden_columns:[\s\S]*backlog[\s\S]*done|board_hidden_columns:[\s\S]*done[\s\S]*backlog/);
 
     // And it survives a hard reload.
     await page.reload();
@@ -1417,7 +1415,8 @@ test.describe("BRD — board view", () => {
     // Bottom card to the top of its own column.
     await dragCard(page, third, await pointAboveCard(page, first));
 
-    expect(writes).toHaveLength(1);
+    // The request leaves after the drop settles, not inside mouse.up().
+    await expect.poll(() => writes.length).toBe(1);
     // `status` is ABSENT from the payload — not resent at its current
     // value. That is the bullet, and the reason this hits the rerank
     // endpoint rather than the move one.
@@ -1854,7 +1853,8 @@ test.describe("BRD — board view", () => {
     await dragCard(page, stuck, await pointAboveCard(page, working));
 
     // Only board_rank is written; status is not in the payload.
-    expect(writes).toHaveLength(1);
+    // The request leaves after the drop settles, not inside mouse.up().
+    await expect.poll(() => writes.length).toBe(1);
     expect(writes[0]).not.toHaveProperty("status");
 
     // The card's status stays `blocked` on disk.
@@ -2210,7 +2210,8 @@ test.describe("BRD — board view", () => {
 
     // The drop was computed against what was on screen at release:
     // dropped above the first card, so it has no `after` anchor.
-    expect(writes).toHaveLength(1);
+    // The request leaves after the drop settles, not inside mouse.up().
+    await expect.poll(() => writes.length).toBe(1);
     expect(writes[0]).not.toHaveProperty("after");
     expect(writes[0]?.["before"]).toBe(one);
 
