@@ -22685,6 +22685,33 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K156 · One reorder primitive (SortableTree) with nesting options; aligned relationship rows; drop line
+
+**Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
+
+On a screenshot of a task's Related panel (Parent/Child rows ~22px right
+of Blocks rows; no drop line while dragging), Ken: *"the alignments dont
+look good? why are they different alignments? this also smells of bad UI
+- shouldnt they be reusable components?"* and *"when drag-drop, there's
+no preview 'line' of where it goes"*. Cause: tree rows reserve an 18px
+toggle slot even with no children, and three reorder implementations
+exist (settings `ReorderableRows` with a drop indicator, the board's own,
+and B40's `relationships/Reorder.tsx` without one). Ken approved the fix
+(*"proceed"*) and shaped the primitive: *"1 reorder primitive, and please
+dont just name it ReorderableList -> its for tasks, no? and then, we also
+want to have a boolean where we allow nesting, and if so, up to what
+level? and start collapsed or no?"*. The orchestrator noted the primitive
+also serves Settings lists, so it is split in two:
+- `ui/SortableTree`: the shared primitive (drag with a 2px accent drop
+  line, keyboard pick-up/move/drop/cancel with the same line and
+  announcements, handle); options `nesting` (off/on), `maxDepth`,
+  `startCollapsed`; items reorder within their own level only.
+- `relationships/TaskTree`: task rows (handle, key, title, status,
+  remove) on top of it, used by every relationship group so all rows
+  align; the expand toggle takes space only when a row has children.
+The board keeps its own card drag. The child-progress meter shows its
+numbers and fits the list width.
+
 ### K155 · A smoke tier before every commit; the full set before every merge
 
 **Date:** 2026-09-28 · **Ken's ruling — not revertible by an agent.**

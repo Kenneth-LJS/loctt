@@ -9,4 +9,14 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-Empty. B39–B50 shipped on `fix/parent-and-child-order`; records K140–K155, A357–A368.
+## B51 · SortableTree + TaskTree; aligned rows; drop line; child-progress meter (K156) — **in progress**
+
+Replace `settings/ReorderableRows.tsx` and `relationships/Reorder.tsx`
+with `ui/SortableTree` (nesting/maxDepth/startCollapsed, drop line for
+drag and keyboard, within-level reorder only) and build
+`relationships/TaskTree` on it for every relationship group; migrate
+every Settings list (incl. the sidebar Filters group at depth 1);
+delete the two old components; fix the child-progress meter; tests for
+alignment, the drop line and every existing reorder flow.
+
+Empty otherwise. B39–B50 shipped on `fix/parent-and-child-order`; records K140–K155, A357–A368.
