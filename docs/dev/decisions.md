@@ -22685,6 +22685,18 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K161 · Restoring an older backup upgrades it
+
+**Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
+
+G11: under 0.4.0, restoring a 0.3.0 backup was refused, although backups
+hold no user settings files (the only thing the 0.3.0 → 0.4.0 step
+changes). Asked whether restore may accept it, Ken: *"we can allow and do
+an auto-migrate"*. Restoring an older-format backup restores it and then
+runs the upgrade steps on the restored data, as part of the restore. The
+restore is the user's intentional action, so this does not reopen K154's
+"no silent upgrades".
+
 ### K160 · Old sidebar settings are converted by an upgrade step, not read forever
 
 **Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
