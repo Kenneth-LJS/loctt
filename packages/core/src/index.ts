@@ -547,7 +547,7 @@ export { planRelationshipRepair, planRelationshipRepairOnDisk, repairActionCount
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
 export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
-export type { ResolvedSidebarItem, SalvagedSidebarGroups, SidebarGroupsDrop, SidebarGroupsDropReport } from "./users/index.js";
+export type { ResolvedSidebarItem, SalvagedSidebarGroups, SidebarGroupsDrop, SidebarGroupsDropReport, SidebarLayoutRow, SidebarOrderInput, SidebarSavedView, SidebarViewChild } from "./users/index.js";
 export type { KeyboardShortcutsDrop, KeyboardShortcutsDropReport, ResolvedKeyboardShortcuts, ResolvedShortcut, SalvagedKeyboardShortcuts, ShortcutChanges } from "./users/index.js";
 export {
   applyShortcutChanges,
@@ -564,6 +564,7 @@ export {
   getCurrentUser,
   isShortcutActive,
   loadAllUsers,
+  loadSidebarSavedViews,
   loadUserProfile,
   loadUserSettings,
   MAX_AVATAR_BYTES,
@@ -578,6 +579,7 @@ export {
   removeRecent,
   resolveKeyboardShortcuts,
   resolveRenderedSidebarItems,
+  resolveSidebarLayout,
   resolveSidebarOrder,
   resolveUserRef,
   salvageKeyboardShortcuts,
@@ -587,6 +589,8 @@ export {
   serializeUserProfile,
   SHORTCUT_VALID_IDS,
   SIDEBAR_VALID_IDS,
+  sidebarSavedViews,
+  sidebarValidIdsList,
   singleKeyShortcutsOn,
   sweepSidebarPins,
   switchCurrentUser,

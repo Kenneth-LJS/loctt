@@ -562,7 +562,7 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 
 - The UI does not show the view as present-in-UI-only; a view that is not in the file is not shown as saved.
 - The error names `queries.yaml` and the parse or schema failure.
-- The sidebar's Saved views section (K125, amended Ken 2026-09-24 — was
-  "Views", then "Saved filters" before that) degrades to an explicit
+- The sidebar's Views section (K158, Ken 2026-09-29 — "Saved views"
+  under K125, "Saved filters" before that) degrades to an explicit
   error affordance, not to silence — a user must not conclude their
   saved views were deleted.

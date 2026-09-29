@@ -45,6 +45,11 @@ config changing underneath a live session is
 - Loading `/board` directly by URL highlights Board — the highlight derives from the route, not from click history.
 - The highlight is not conveyed by colour alone (see [flow-accessibility.md](flow-accessibility.md) A11Y-30).
 
+> **Amended (K158, Ken 2026-09-29).** "Views" now names the section of
+> built-in and saved views (SHL-50). The List / Board / Timeline group
+> this case covers is stored as `layouts` and labelled "Layouts (List /
+> Board / Timeline)" in Customize sidebar, so the two are not confused.
+
 ### SHL-5 · M1 · major · P3 P2
 **The Projects group lists projects with the default highlighted.** On a tracker with three projects, one marked default in `projects.yaml`.
 
@@ -67,13 +72,17 @@ config changing underneath a live session is
 - The badge for a filter matching zero tasks shows `0`, not a blank.
 - Creating a task that matches a filter updates that badge without a full page reload (on refetch at the latest).
 
+> **Amended (K158, Ken 2026-09-29).** The badge is now the count in the
+> row's trailing slot, capped at "99+" with the true total in the row's
+> tooltip (SHL-51, VUE-16), and saved views show counts too (SHL-53).
+
 ### SHL-8 · M1 · blocker · P4 P6
 **"Mentions me" is an active built-in filter when a current user is set, and inert only when there is none.** It resolves to `comment_mentions = currentUser()` (CMT-10 / A183), so it behaves exactly like the other user-scoped filters ("Assigned to me", "Reported by me").
 
-- It renders in the Filters section (K125, amended Ken 2026-09-24 — was
-  "Saved filters", then "Views"; the built-ins now have their own
-  section, separate from saved views) in its final position, so the
-  section order is stable.
+- It renders in the Views section (K158, Ken 2026-09-29 — K125 had put
+  the built-ins in a "Filters" section of their own; they are back in
+  one "Views" section with the saved views) in its stored position, so
+  the section order is stable.
 - **With a current user set** (the default — `init` bootstraps one): it is a real link that navigates to the filter state, and it carries a count badge like the other live filters (the count may be `0` when no comment mentions the user, which is an honest count, not a blank).
 - **With no current user** (the same precondition that makes "Assigned to me" inert): it renders inert — not clickable, no count. The disabled state is conveyed by more than colour and is exposed to assistive tech (see A11Y-31), and hovering or focusing it explains it is unavailable, rather than being silently dead. The explanation is the generic user-filter one, not a "comments land" promise (that feature has shipped).
 
@@ -260,8 +269,8 @@ view, or on a different machine.
 
 - The stale entry does not render as a broken item and does not crash the group.
 - The user is told the pinned view was removed — inline in the group, naming the view, and dismissible. Dismissing removes the pin.
-- The rest of the Saved views section (K125, amended Ken 2026-09-24 —
-  was "Saved filters", then "Views") renders normally.
+- The rest of the Views section (K158, Ken 2026-09-29 — was "Saved
+  views" under K125, "Saved filters" before that) renders normally.
 - **No error toast fires** — this is an explanation, not an error. A config the user edited themselves is not an error condition, but it is not invisible either.
 
 ### SHL-33 · M1 · minor · P3
@@ -441,6 +450,20 @@ a violation of P4.
 > customiser row to a sidebar section" problem) — it now matches the
 > Settings "Saved views" page and the "Save as view" button.
 
+> **Amended (K158, Ken 2026-09-29).** Ken: *"why are you splitting
+> filters vs saved views?!?! when did you decide this? this is bad. it
+> should be 1. then we can re-order them, and we can hide. then all of
+> them should show numbers, and custom views can also have the '...' but
+> it should align"*. The two groups above (`filters` and `saved-filters`)
+> are one `views` group again, whose ordered, hideable children are the
+> built-in views and the saved views (`view:<id>`); the List / Board /
+> Timeline switcher is `layouts`, labelled "Layouts (List / Board /
+> Timeline)" in Customize sidebar. The first bullet's "built-in filters"
+> now reads "built-in and saved views, inside the Views group". The
+> K125 nesting and disabled-children rules carry over to the Views group
+> unchanged. Older stored settings migrate on read (SHL-54); the layout
+> is SHL-50.
+
 ### SHL-46 · M1 · blocker · P2 P8
 **The global header search works.**
 
@@ -491,3 +514,82 @@ orbit instead of rotating on the spot.
 > Added (2026-09-23) to cover behaviour two tests already asserted under
 > an invented `UI-16` tag (`Sidebar.test.tsx`, describe blocks tagged
 > `UI-16b`/`UI-16c`) — see `docs/dev/backlog.md` B9.
+
+> **Amended (K158, Ken 2026-09-29).** Ken: *"why are you splitting
+> filters vs saved views?!?! ... it should be 1. then we can re-order
+> them, and we can hide. then all of them should show numbers, and custom
+> views can also have the '...' but it should align"*. The Views section
+> is one list of built-in and saved views again (SHL-50). Every row now
+> ends in one trailing slot the width of the ⋯ button, holding the count
+> at rest and the ⋯ on hover or keyboard focus (SHL-51), so the third
+> bullet's "kebab vs badge" alignment is now one shared slot at the same
+> right inset (`right-2.5`, `ItemShell`'s `px-2.5`) as a project row's
+> kebab.
+
+### SHL-50 · M4 · major · P2 P8
+**The sidebar has one "Views" section: the built-in views and the saved views in one ordered, hideable list.** A tracker with at least one saved view, and a user who reordered and hid some views in Customize sidebar.
+
+- One section headed "Views" holds the six built-in views (Assigned to me, Reported by me, Mentions me, Due this week, Overdue, High priority) and every non-archived saved view. There is no separate "Filters" or "Saved views" section.
+- The rows render in the user's stored order, built-in and saved views interleaved as the user placed them. A view the user never placed follows the placed ones: built-ins in their default order, then saved views (a new saved view appends at the end).
+- A view the user hid is not rendered. Hiding the Views group hides the whole section, heading included.
+- "+ New view" is the last row of the section.
+- In Customize sidebar the Views group is one row with the built-in and saved views as its children, one level deep, each with its own switch and reorder handle; they reorder within the group only. While the Views group's switch is off, every child's switch and handle is disabled but still visible (K125's rule).
+- The List / Board / Timeline switcher's row in Customize sidebar is labelled so it is not confused with Views: "Layouts (List / Board / Timeline)".
+- The active-row highlight still marks exactly one row (K118).
+
+> Added (K158, Ken 2026-09-29). Ken: *"it should be 1. then we can
+> re-order them, and we can hide"*; order and unhide live in Settings →
+> Customize sidebar (*"we have the settings, right? where you can reorder
+> things, no?"*), not by dragging in the sidebar.
+
+### SHL-51 · M4 · major · P2 P6
+**Every Views row ends in one slot that shows the task count at rest and the ⋯ on hover or keyboard focus, without shifting anything.** The sidebar's Views section on a desktop browser with a mouse.
+
+- Each row reads `[icon] [name] … [slot]`. The slot is exactly the ⋯ button's width, and the count is right-aligned in it.
+- A count above 99 reads "99+"; 0 reads "0" (a real zero, not a blank).
+- Hovering the row, or giving anything in it keyboard focus, replaces the count with the ⋯ in the same box: the ⋯'s left and right edges equal the count slot's, and the row's icon and name do not move. Leaving the row brings the count back.
+- The slot ends at the same x as every other sidebar row's trailing control (a project row's ⋯).
+- While a count is loading the slot is already reserved; a count that fails or times out shows an unavailable mark, never a permanent spinner (SHL-23).
+- On a touch screen (no hover) the count stays and no ⋯ is offered in the sidebar; the same actions are in Settings (Customize sidebar, Saved views).
+
+> Added (K158, Ken 2026-09-29): *"when you hover, replace task count
+> with the '...'. but task count must have same width as the ... button,
+> so maybe we make task count go to a max of 99 task, e.g. '99+' for 100
+> onwards"*. The touch-screen bullet is the orchestrator's call recorded
+> in K158.
+
+### SHL-52 · M4 · major · P2 P5
+**A Views row's ⋯ acts on that view: Hide for a built-in; Edit, Rename, Delete and Hide for a saved view.** The ⋯ opened on a built-in row, then on a saved-view row.
+
+- A built-in's ⋯ offers only Hide.
+- A saved view's ⋯ offers Edit, Rename, Delete and Hide. Edit and Rename open the existing view dialog (Rename with the name ready to type over); Delete opens the existing delete confirmation.
+- Hide writes the per-user hidden flag and the row leaves the sidebar at once, and stays hidden after a reload. Nothing else in the stored order changes.
+- A hidden view comes back from Settings → Customize sidebar by switching it on; it returns to its stored position.
+- Deleting a saved view from the sidebar also drops it from the user's stored sidebar order and pins in the same settings write, once the delete has landed.
+
+> Added (K158, Ken 2026-09-29): *"custom views can also have the '...'
+> but it should align"*; built-ins' ⋯ = Hide, saved views' ⋯ = Edit,
+> Rename, Delete, Hide.
+
+### SHL-53 · M4 · major · P2 P6 P7
+**Saved views show task counts too, and a broken saved view shows a warning mark instead.** A tracker with a saved view matching several tasks and a saved view whose filters no longer load (a hand edit to `queries.yaml`).
+
+- A healthy saved view's count is the same number clicking it lists (the count is the list's own request for that view).
+- The count updates after a task is created or edited that the view matches, without a full reload.
+- A broken saved view shows a warning mark in the slot instead of a number. The mark has an accessible name ("Broken view") and its tooltip gives the parse error. The row is still a link (VUE-22), and its ⋯ offers Edit (the confirmed-replacement repair, VUE-42), Delete and Hide.
+
+> Added (K158, Ken 2026-09-29): *"then all of them should show numbers"*;
+> K158: *"Saved views show counts too; a broken view shows a warning mark
+> instead."*
+
+### SHL-54 · M4 · major · P1 P7 P8
+**The one Views group is stored per user as one `views` group, a setting from before it is migrated without losing the user's order or hidden choices, and CLI and MCP read and write the same ids.** Per-user `sidebar_groups` in `settings.yaml`.
+
+- The stored setting carries `version: 2`. Its groups are `layouts` (List / Board / Timeline), `projects`, `views`, `milestones`, `sprints`, `labels`, `recents`. The Views group's children are the built-in ids and `view:<id>` for each saved view, ordered by their relative position in `order` and hidden by `hidden`.
+- A setting written before K158 (no `version`; `views` was the switcher; built-ins under `filters`, saved views under `saved-filters`) still loads and renders the way it did: the switcher's entry becomes `layouts` with its hidden flag; the one Views group sits where the earlier of Filters and Saved views sat; the children are the old sections' rows in the order they rendered (the built-ins' stored order, the saved views' pin-then-file order); a hidden Filters or Saved views group hides each of its views; only when both were hidden is the Views group hidden. The first change after that writes the K158 shape.
+- A deleted saved view drops out of the order; a new saved view appends.
+- A malformed id (not a group, not a built-in, not `view:<id>`), a duplicate, a stray key or an unknown `version` is dropped field-locally on load: the rest of the setting still applies and `loctt doctor` names what was dropped. A `view:<id>` whose view no longer exists is not corruption: it is skipped when the sidebar resolves. A pre-K158 value is not reported.
+- `loctt user sidebar-groups` and MCP `get_sidebar_groups`/`set_sidebar_groups` use these ids and report the resolved list the web sidebar renders: every group, the Views children straight after `views` (a saved view with its name, and `broken` when it no longer loads), and every child hidden while the Views group is hidden. A write naming an unknown id, including `view:<id>` for a view that does not exist, is refused, naming it.
+
+> Added (K158, Ken 2026-09-29). Storage and migration rule recorded as
+> A370.

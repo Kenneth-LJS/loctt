@@ -116,41 +116,88 @@ describe("CLI user sidebar-groups (spawned binary)", () => {
     });
   });
 
-  // @verifies SHL-45 — A346: the read-back resolves through the same
-  // grouped resolver the web sidebar uses (K125 migration), not the
-  // flat per-id order.
-  it("migrates a pre-K125 stored order the way the sidebar renders it", async () => {
+  // @verifies SHL-54 — K158 (was A346's pre-K125 case): a setting written
+  // before K158 is migrated on read the way the sidebar renders it. The
+  // switcher's old id `views` reads back as `layouts`; the old Filters and
+  // Saved views groups are one `views` group where the earlier sat.
+  it("K158: migrates a pre-K158 stored order the way the sidebar renders it", async () => {
     await withTmpLoctt(async ({ root }) => {
+      const created = await runCli(["views", "create", "Open bugs"], { cwd: root });
+      const viewId = /id (\S+)\)/.exec(created.stdout)?.[1];
+      expect(viewId).toBeDefined();
       await writeFile(
         await settingsPath(root),
-        "sidebar_groups:\n  order: [overdue, projects]\n",
+        "sidebar_groups:\n  order: [overdue, projects, views, saved-filters]\n  hidden: [views]\n",
         "utf8",
       );
       const result = await runCli(["user", "sidebar-groups"], { cwd: root });
       expect(result.exitCode).toBe(0);
-      const ids = result.stdout.trim().split("\n").map(l => l.split("\t")[0]);
-      // The Filters group lands where the first filter id sat, its
-      // children follow it (overdue first, its stored inner order), and
-      // projects comes after the whole block.
-      expect(ids.slice(0, 3)).toEqual(["filters", "overdue", "assigned-to-me"]);
-      expect(ids.indexOf("projects")).toBe(7);
-      expect(ids.slice(8, 9)).toEqual(["views"]);
+      const lines = result.stdout.trim().split("\n");
+      const ids = lines.map(l => l.split("\t")[0]);
+      // One Views group where the first built-in sat (A339's rule), the
+      // built-ins first (Filters rendered above Saved views), then the
+      // saved views (init's seed view, then the one created here).
+      expect(ids.slice(0, 3)).toEqual(["views", "overdue", "assigned-to-me"]);
+      expect(ids[7]?.startsWith("view:")).toBe(true);
+      expect(lines[8]).toBe(`view:${String(viewId)}\tvisible\tOpen bugs`);
+      expect(ids.slice(9, 11)).toEqual(["projects", "layouts"]);
+      expect(result.stdout).toContain("layouts\thidden");
+      expect(ids).not.toContain("filters");
+      expect(ids).not.toContain("saved-filters");
     });
   });
 
-  // @verifies SHL-45 — A346: hiding the Filters group hides every
-  // built-in in the sidebar, so the read-back must say so.
-  it("reports every built-in filter hidden when the Filters group is hidden", async () => {
+  // @verifies SHL-54 — K158: hiding the Views group hides every child in
+  // the sidebar, so the read-back must say so.
+  it("K158: reports every Views child hidden when the Views group is hidden", async () => {
     await withTmpLoctt(async ({ root }) => {
+      const created = await runCli(["views", "create", "Open bugs"], { cwd: root });
+      const viewId = /id (\S+)\)/.exec(created.stdout)?.[1];
       const result = await runCli(
-        ["user", "sidebar-groups", "--hidden", "filters"],
+        ["user", "sidebar-groups", "--hidden", "views"],
         { cwd: root },
       );
       expect(result.exitCode).toBe(0);
-      for (const id of ["filters", "assigned-to-me", "reported-by-me", "mentions-me", "due-this-week", "overdue", "high-priority"]) {
+      for (const id of ["views", "assigned-to-me", "reported-by-me", "mentions-me", "due-this-week", "overdue", "high-priority"]) {
         expect(result.stdout).toContain(`${id}\thidden`);
       }
+      expect(result.stdout).toContain(`view:${String(viewId)}\thidden\tOpen bugs`);
       expect(result.stdout).toContain("projects\tvisible");
+    });
+  });
+
+  // @verifies SHL-54 — K158: a saved view is placed and hidden by
+  // `view:<id>` among the built-ins; the file is written in the K158 shape.
+  it("K158: orders a saved view among the built-ins and hides it by view:<id>", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const created = await runCli(["views", "create", "Open bugs"], { cwd: root });
+      const viewId = String(/id (\S+)\)/.exec(created.stdout)?.[1]);
+      const result = await runCli(
+        ["user", "sidebar-groups", "--order", `view:${viewId},overdue`, "--hidden", `view:${viewId}`],
+        { cwd: root },
+      );
+      expect(result.exitCode).toBe(0);
+      const ids = result.stdout.trim().split("\n").map(l => l.split("\t")[0]);
+      const at = ids.indexOf("views");
+      expect(ids.slice(at + 1, at + 3)).toEqual([`view:${viewId}`, "overdue"]);
+      expect(result.stdout).toContain(`view:${viewId}\thidden`);
+      const file = await readFile(await settingsPath(root), "utf8");
+      expect(file).toContain("version: 2");
+      expect(file).toContain(`view:${viewId}`);
+    });
+  });
+
+  // @verifies SHL-54 — K158: `view:<id>` naming no view is a typo, refused.
+  it("K158: refuses view:<id> for a view that does not exist, naming it", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const result = await runCli(
+        ["user", "sidebar-groups", "--hidden", "view:nope"],
+        { cwd: root },
+      );
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("view:nope");
+      const file = await readFile(await settingsPath(root), "utf8").catch(() => "");
+      expect(file).not.toContain("sidebar_groups");
     });
   });
 });

@@ -4,9 +4,9 @@ import type { ListSearch } from "../router/listSearch.ts";
 import type { IconName } from "../ui/Icon.tsx";
 
 /**
- * Built-in saved filters shown in the sidebar's "Filters" section
- * (K125, amended Ken 2026-09-24 — previously rendered together with
- * saved views under one "Views" heading).
+ * Built-in views shown in the sidebar's "Views" section, together with
+ * the saved views in one ordered, hideable list (K158, Ken 2026-09-29;
+ * K125 had given them a "Filters" section of their own).
  *
  * Each built-in resolves to a `Partial<ListSearch>` — the URL search
  * state the list view applies when you click it. The list view (M1.2+)

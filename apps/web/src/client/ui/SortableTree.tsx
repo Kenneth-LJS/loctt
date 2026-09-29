@@ -334,7 +334,7 @@ export function SortableTree<T>({
                   return next;
                 });
               }}
-              className="inline-flex min-h-[24px] min-w-[20px] shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-bg-muted"
+              className="inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-bg-muted"
             >
               <Icon name={expanded ? "chevronDown" : "chevronRight"} size={14} />
             </button>

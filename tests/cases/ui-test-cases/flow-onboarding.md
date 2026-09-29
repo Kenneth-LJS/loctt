@@ -83,10 +83,10 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-9 · M1 · blocker · P6 P7
 **On an empty tracker the sidebar groups render with zero counts, not absent.** Same state as ONB-8.
 
-- Views (List / Board / Timeline), Projects, Filters, Saved views,
-  Milestones, Sprints, Labels, and Recently viewed all render as groups
-  (K125, amended Ken 2026-09-24: Filters and Saved views were one
-  combined "Saved filters"/"Views" section before this split).
+- The List / Board / Timeline switcher, Projects, Views, Milestones,
+  Sprints, Labels, and Recently viewed all render as groups
+  (K158, Ken 2026-09-29: *"it should be 1"*. K125 had split Views into
+  "Filters" and "Saved views"; they are one "Views" section again).
 - Groups whose underlying config is empty show an explicit empty affordance inside the group (e.g. "No labels yet") rather than the group vanishing.
 - The five live built-in saved filters render with a count badge of `0` — a real zero, not a blank, not a dash, not the badge omitted.
 - A user cannot mistake "this tracker has nothing in it" for "this feature is missing".

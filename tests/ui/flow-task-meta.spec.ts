@@ -1572,7 +1572,9 @@ test.describe("TSK — meta panel pickers", () => {
 
     await page.goto(`${tracker.baseURL}/tasks/${first}`);
 
-    const badge = page.locator("aside").getByRole("link", { name: /Assigned to me/ });
+    // K158: the count sits in the row's trailing slot, beside the link
+    // (the ⋯ shares that box), so the badge is read from the whole row.
+    const badge = page.locator("aside [data-builtin-row='assigned-to-me']");
     await expect(badge).toBeVisible();
     const before = countIn(await badge.innerText());
 

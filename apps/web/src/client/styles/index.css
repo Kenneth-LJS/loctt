@@ -383,6 +383,53 @@
 }
 
 /**
+ * The sidebar Views row's trailing slot (K158, `shell/Sidebar.tsx`).
+ *
+ * Ken: *"when you hover, replace task count with the '...'. but task
+ * count must have same width as the ... button"*. The count and the ⋯
+ * share one fixed box (the ⋯ button's own width), stacked in one grid
+ * cell, so swapping them moves nothing. The ⋯ shows while the row is
+ * hovered, while anything in it has keyboard focus (`:focus-visible`,
+ * so a mouse click on the link does not leave the ⋯ showing), and while
+ * its menu is open (the menu is portalled, so focus leaves the row).
+ *
+ * Touch screens have no hover (K158's recorded call): the count stays and
+ * the ⋯ is not offered; the same actions are in Settings. Global CSS
+ * rather than utilities because `:has()` and the media query read far
+ * more plainly here than as stacked arbitrary variants.
+ */
+.sidebar-slot {
+  display: grid;
+  align-items: center;
+  justify-items: end;
+}
+.sidebar-slot > * {
+  grid-area: 1 / 1;
+}
+.sidebar-slot-count {
+  pointer-events: none;
+}
+.sidebar-slot-actions {
+  opacity: 0;
+}
+@media (hover: hover) {
+  .sidebar-views-row:hover .sidebar-slot-actions { opacity: 1; }
+  .sidebar-views-row:hover .sidebar-slot-count { visibility: hidden; }
+}
+.sidebar-views-row:has(:focus-visible) .sidebar-slot-actions,
+.sidebar-views-row:has([aria-expanded="true"]) .sidebar-slot-actions {
+  opacity: 1;
+}
+.sidebar-views-row:has(:focus-visible) .sidebar-slot-count,
+.sidebar-views-row:has([aria-expanded="true"]) .sidebar-slot-count {
+  visibility: hidden;
+}
+@media (hover: none) {
+  .sidebar-slot-actions { display: none; }
+  .sidebar-slot-count { visibility: visible !important; }
+}
+
+/**
  * Reduced motion (SHL-28).
  *
  * A global rule rather than per-component `motion-reduce:` variants:

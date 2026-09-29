@@ -173,16 +173,16 @@ test.describe("SBG — sidebar geometry (real browser)", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // The default tracker's queries.yaml ships one user view,
-    // `recent-open`, rendered as a saved-filter row with a kebab
-    // labelled `Actions for saved filter "<name>"`.
+    // `recent-open`, rendered as a saved-view row with a kebab labelled
+    // `Actions for view "<name>"` (K158: was "saved filter").
     const kebab = page.getByRole("button", {
-      name: 'Actions for saved filter "recent-open"',
+      name: 'Actions for view "recent-open"',
     });
     await expect(kebab).toBeVisible();
     await kebab.click();
 
     const menu = page.getByRole("menu", {
-      name: 'Actions for saved filter "recent-open"',
+      name: 'Actions for view "recent-open"',
     });
     await expect(menu).toBeVisible();
 

@@ -23307,6 +23307,202 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A370 · One "Views" sidebar section with counts and a count/⋯ slot (B52, K158)
+
+#### A370 · One Views section: `views` group storage, migration, count/⋯ slot, saved-view counts (B52)
+
+**Ticket:** B52 · **Date:** 2026-09-29 · **Commit:** (uncommitted, ui/sortable-tree) · **Agent-made** (under K158; K125, K118, K156/A369, K31, A339, A346, VUE-16, VUE-22).
+
+**The situation.** K158 (Ken) merges the sidebar's "Filters" (built-in
+views) and "Saved views" sections into one "Views" section, ordered and
+hideable in Settings → Customize sidebar, every row ending in a slot that
+shows the task count (capped "99+") and the ⋯ on hover or keyboard focus
+in the same box; built-ins' ⋯ = Hide, saved views' ⋯ = Edit, Rename,
+Delete, Hide; saved views show counts and a broken view a warning mark;
+touch screens keep the count. The stored `sidebar_groups` had the ids
+`views` (the List/Board/Timeline switcher), `filters`, `saved-filters`
+and the six built-in ids; saved views were ordered only by
+`sidebar_pins` (pinned first, then `queries.yaml` order). K158 does not
+say how the merged list is stored, how old settings migrate, what the
+switcher is called, how saved views are counted, or what Rename is.
+
+**What had to be decided.**
+1. The stored ids, and how a pre-K158 value is told apart from a K158 one.
+2. The migration rule.
+3. How a saved view is identified inside `sidebar_groups`.
+4. Where the migration runs, given it needs the saved views.
+5. The switcher's label in Customize sidebar.
+6. The saved-view icon.
+7. How saved-view counts are fetched (batched or not).
+8. What Rename opens.
+9. Broken saved views' ⋯ and slot.
+10. The slot's look, and where the ⋯ swap lives.
+11. What "keyboard focus of the row" means for the swap.
+12. Where focus goes after Hide.
+13. Keeping a capped count's true total (VUE-16).
+14. What a deleted or archived saved view does to the stored order.
+15. Writes while the saved views have not loaded.
+16. The CLI/MCP read-back shape for saved views.
+
+**Options considered / decided** (chosen first).
+
+1. *Ids and format marker.* (a) New groups `layouts` (the switcher),
+   `projects`, `views` (the merged group), `milestones`, `sprints`,
+   `labels`, `recents`; the Views group's children are the six built-in
+   ids and `view:<id>`; the stored value carries `version: 2`, and a
+   value without it is read with the pre-K158 id set. (b) Keep `views`
+   for the switcher and give the merged group a new id: no marker needed,
+   but the CLI/MCP id `views` would keep naming the thing that is not
+   Views, the confusion K158 names. (c) Rename without a marker: a
+   pre-K158 `order: [projects, views]` (switcher after projects) would
+   silently mean the Views section. (a) chosen; the marker is the only
+   unambiguous way to reuse `views`.
+2. *Migration rule* (`migrateLegacySidebarGroups`). The old value is
+   resolved exactly as the old sidebar rendered it (A339's rule for a
+   value older still included). Then: `views` becomes `layouts`, same
+   place, same hidden flag; the new `views` group sits where the EARLIER
+   of `filters` and `saved-filters` sat; its children are the two old
+   sections' rows in the order they rendered (whichever section came
+   first leads: the built-ins in their stored order, the saved views in
+   pin-then-`queries.yaml` order, broken last); a hidden old group hides
+   each of its views one by one, and only when both were hidden is
+   `views` hidden (the built-ins then keep only their own flags). Not
+   interleaved: the old storage had no relative order between a built-in
+   and a saved view beyond which section came first. A saved view created
+   after the migration is not covered by an old "Saved views hidden": it
+   appends, visible. Alternative: always built-ins first (the brief's
+   example); rejected because the default pre-K158 order had Saved views
+   ABOVE Filters, so every user who never customized would see the list
+   flip.
+3. *Saved-view ids.* (a) `view:<id>`: a view id is free text, so a view
+   with id `overdue` or `projects` cannot collide with a built-in or a
+   group. (b) Bare ids: collisions possible. (a) chosen.
+4. *Where migration runs.* (a) On read at each surface, through core
+   (`readSidebarGroups(settings, savedViews)`), with the saved views the
+   surface loaded; the file keeps the old value until the next write,
+   which writes version 2. The settings loader accepts both shapes
+   (`StoredSidebarGroupsSchema`). (b) In the settings loader: pure, but
+   it cannot know the saved view ids, so "Saved views hidden" and
+   "Saved views above Filters" could not be kept. (a) chosen. Core gained
+   `loadSidebarSavedViews` (CLI/MCP) and the web's `useSidebarLayout`.
+   MCP's `stored` now shows the migrated value (A346's test asserted the
+   raw value; the raw pre-K158 ids mean something else now).
+5. *Switcher label.* "Layouts (List / Board / Timeline)" in Customize
+   sidebar (was "Views (List / Board / Timeline)"). Alternatives: "View
+   switcher", "List / Board / Timeline". "Layouts" names what they are
+   and matches the stored id; the parenthesis keeps it recognizable.
+6. *Saved-view icon.* Views already support an icon and colour (K104),
+   and a view with none already shows the grey dot (Ken, 2026-09-23:
+   "fallback icon = circle, and grey"). Kept as is; no new default "view"
+   icon, since Ken ruled the fallback. A broken view (no icon field on
+   `BrokenSavedQuery`) shows the grey dot.
+7. *Counts.* (a) One request per saved view, the same
+   `/api/tasks?view=<id>&limit=0` the list makes when the view is clicked
+   (`useSavedViewCounts`), keyed under `["builtin-count"]` so every
+   existing invalidation refreshes them. (b) A batch endpoint: one
+   request, but a second implementation of how a view is run (archived
+   scope, `currentUser()`, name references, mention scans,
+   deleted-field warnings), which can drift from what the list shows,
+   and a core capability CLI/MCP would then need. (a) chosen: the count
+   is guaranteed to equal the click-through, as the built-ins' are. Cost:
+   N requests for N views.
+8. *Rename.* Opens the existing `ViewFormDialog` (a rename is an edit,
+   VUE-41) with the name text selected (`selectName`). No second dialog.
+9. *Broken views.* Slot: a warning mark (`alert` icon, `role="img"`,
+   "Broken view", tooltip with the parse error), no count request. ⋯:
+   Edit (VUE-42's confirmed replacement), Delete, Hide. Rename is not
+   offered: renaming a broken entry is the same confirmed replacement as
+   Edit. The "(broken)" text after the name is gone (the mark says it).
+10. *Slot.* A fixed box the ⋯ button's width (`w-7`, `IconButton` `sm`,
+    24.5px, K31), positioned over the link's right end at `right-2.5`
+    (the UI-16c inset every row's trailing control uses); the link keeps
+    a spacer of that width so a long name truncates before it. Count and
+    ⋯ stacked in one grid cell; the count is plain muted tabular text,
+    right-aligned (the old pill would not fit "99+" in 24.5px), and
+    ignores the pointer so a tap on it reaches the link. The swap is
+    global CSS (`styles/index.css`, `.sidebar-slot`): `:hover` inside
+    `@media (hover: hover)`, `:has(:focus-visible)`, `:has([aria-expanded=true])`
+    (the menu is portalled, so focus leaves the row while it is open);
+    `@media (hover: none)` hides the ⋯ and keeps the count.
+11. *Keyboard focus.* `:focus-visible`, not `:focus-within`: a mouse
+    click on a row's link focuses it, and `:focus-within` would leave the
+    ⋯ showing in place of the count on the row just clicked.
+12. *Focus after Hide.* The row (and its ⋯) is gone, so focus moves to
+    "+ New view", the section's stable anchor (the same one Delete uses).
+13. *VUE-16.* Above 99 the visible text is "99+", a visually hidden span
+    carries the true total, and the row's tooltip reads "{name}, {n}
+    tasks". VUE-16's "999+" amended to "99+" with Ken's quote.
+14. *Deleted / archived views.* A `view:<id>` naming no listed view is
+    skipped when resolving (not a doctor finding: a stale reference, not
+    corruption). The web's Delete drops the id from order and hidden in
+    the same write that drops the pin; CLI/MCP deletes leave it (harmless,
+    skipped). A Customize-sidebar write keeps `view:<id>` entries it
+    cannot show (an archived view) at the end of the order and in hidden,
+    so restoring the view restores its flag.
+15. *Writes before the saved views load.* Customize sidebar waits for
+    them (loading state; an error state with Retry if they fail), and the
+    sidebar's Hide is disabled while the stored value is pre-K158 and the
+    views have not loaded, so a write can never drop the old value's
+    saved-view choices.
+16. *Read-back.* Saved views appear as `view:<id>` after `views`; CLI
+    prints `id<TAB>visible|hidden<TAB>name[<TAB>broken]` (a third and
+    fourth column only for saved views); MCP adds `name` and `broken`.
+    A write naming `view:<id>` for a missing view is refused as a typo.
+
+**Why.** K158's "it should be 1 ... re-order ... hide ... all of them
+should show numbers" on every surface (SHL-45's layer rule); nothing a
+user set before K158 changes on screen (P7, the A339 precedent); counts
+equal the click-through (VUE-1); field-local degrade per the corruption
+guide.
+
+**To revert.**
+1. `packages/contracts/src/users.ts` (`SIDEBAR_GROUP_IDS`,
+   `SIDEBAR_BUILTIN_VIEW_IDS`, `SidebarGroupsSchema` `version`,
+   `LegacySidebarGroupsSchema`, `StoredSidebarGroupsSchema`).
+2. `migrateLegacySidebarGroups` / `resolveLegacyRows` in
+   `packages/core/src/users/sidebarGroups.ts`.
+3. `savedViewSidebarId` / `parseSavedViewSidebarId` (contracts).
+4. `readSidebarGroups(settings, savedViews)`, `loadSidebarSavedViews`
+   (`core/users/sidebarViews.ts`), `sidebar/useSidebarLayout.ts`.
+5. `GROUP_LABELS.layouts` in `settings/SidebarGroupsPanel.tsx`.
+6. `ViewIcon` use in `ViewsGroup` (`shell/Sidebar.tsx`).
+7. `useSavedViewCounts` (`api/hooks/useBuiltinCounts.ts`).
+8. `selectName` in `settings/ViewFormDialog.tsx`; the `view-rename` action.
+9. The broken branch of `ViewsGroup`; `SlotCount`'s `broken` case.
+10. `ViewsRow`, `SLOT_WIDTH`, and the `.sidebar-slot*` rules in `styles/index.css`.
+11. The `:has(:focus-visible)` rules (swap to `:focus-within`).
+12. `hide()` in `ViewsGroup`.
+13. `rowTitle` and the `sr-only` span in `SlotCount`; the VUE-16 amendment.
+14. `forgetSavedViewInSidebar` in `confirmDelete`; `previous` in `sidebarGroupsFromLayout`.
+15. `canWrite` in `useSidebarLayout`; the loading/error branch of `SidebarGroupsPanel`.
+16. The `cols` loop in `apps/cli/src/commands/user.ts`; `ResolvedSidebarItem.name/broken`.
+
+**Tests.** `core/users/sidebarGroups.test.ts` (44), `core/diagnostics/integrity.test.ts`
+(K158 case), `web/shell/Sidebar.test.tsx`, `web/settings/SidebarGroupsPanel.test.tsx`,
+`tests/integration/cli/user-sidebar-groups.test.ts`, `tests/integration/mcp/sidebar-groups.test.ts`,
+`tests/ui/flow-sidebar-views.spec.ts` (new), `tests/ui/flow-sidebar-k125.spec.ts`
+(K125-4/5/6/8 rewritten for the Views group). All new tests red-proven.
+Cases: SHL-50–54 added; SHL-4, SHL-7, SHL-8, SHL-32, SHL-45, SHL-49,
+ONB-9, XS-66, VUE-16 amended with Ken's K158 quote.
+
+**Open (not decided here, needs Ken).** Pins (SET-13): the Views order is
+now `sidebar_groups`; `sidebar_pins` only sets a saved view's default
+place (pinned first) until the user places it, and seeds the migration.
+Once Customize sidebar or Hide writes the full layout, reordering pins in
+Settings → Pinned views no longer moves the sidebar (SET-13's second
+bullet), and K158 removed Pin from the ⋯. Retire pins (panel, `loctt
+user settings --sweep-pins`, MCP `sweep_sidebar_pins`, the setting), or
+keep them with a new meaning? Recorded in known-gaps.md.
+
+#### Orchestrator addendum
+
+The full touched-spec run found two issues after the agent's report:
+A11Y-55 flagged SortableTree's expand toggle at 20x24 (now
+`min-w-[24px]`), and VUE-22 still expected the word "broken" in the
+link text; K158 replaced it with a warning icon named "Broken view", so
+the spec now asserts that icon in the row. To revert: `min-w-[20px]` and
+the old `toContainText(/broken/i)`.
+
 ### A369 · SortableTree and TaskTree; aligned relationship rows; drop line; compact progress; K157 note removed (B51)
 
 #### A369 · SortableTree, TaskTree, drop line, child-progress meter, and K157's note removal (B51)

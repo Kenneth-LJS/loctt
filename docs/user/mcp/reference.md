@@ -436,9 +436,23 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 Per-user settings, sidebar layout and keyboard shortcuts have their own
 read/write tools: `get_user_settings`, `get_sidebar_groups`,
 `set_sidebar_groups`, `sweep_sidebar_pins`, `get_keyboard_shortcuts`,
-`set_keyboard_shortcuts`. The `resolved` list the sidebar-groups tools return is
-in the order the sidebar shows it: the built-in filters follow `filters`,
-and read `hidden: true` while `filters` is hidden.
+`set_keyboard_shortcuts`.
+
+The sidebar-groups tools use these ids. Groups: `layouts` (List / Board /
+Timeline), `projects`, `views`, `milestones`, `sprints`, `labels`,
+`recents`. Inside the Views group: the built-in views (`assigned-to-me`,
+`reported-by-me`, `mentions-me`, `due-this-week`, `overdue`,
+`high-priority`) and each saved view as `view:<id>`. `set_sidebar_groups`
+takes `order` and `hidden` id lists (or `reset: true` alone); a Views
+child's place is its position among the other children in `order`, and
+anything not listed keeps its default place (a saved view not listed goes
+last). An unknown id, including `view:<id>` for a view that does not
+exist, is rejected and nothing is written. Both tools return `stored`
+(the setting, `version: 2`; one saved by an older version is shown
+migrated) and `resolved`, in the order the sidebar shows it: each group,
+with the Views children straight after `views`. A saved view's entry
+carries its `name`, and `broken: true` when its filters no longer load.
+Every child reads `hidden: true` while `views` is hidden.
 
 The keyboard-shortcut tools read and set the single-key shortcut switches
 (the web Settings → Keyboard). `set_keyboard_shortcuts` takes

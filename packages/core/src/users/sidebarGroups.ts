@@ -1,42 +1,125 @@
-import type { SidebarFilterId, SidebarGroupId, SidebarGroups, SidebarItemId, UserSettings } from "@loctt/contracts";
-import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS, SIDEBAR_ITEM_IDS, SidebarGroupsSchema } from "@loctt/contracts";
+import type {
+  LegacySidebarGroups,
+  LegacySidebarItemId,
+  SavedViewSidebarId,
+  SidebarBuiltinViewId,
+  SidebarGroupId,
+  SidebarGroups,
+  SidebarItemId,
+  StoredSidebarGroups,
+  UserSettings,
+} from "@loctt/contracts";
+import {
+  isSidebarItemId,
+  LEGACY_SIDEBAR_GROUP_IDS,
+  LEGACY_SIDEBAR_ITEM_IDS,
+  LegacySidebarGroupsSchema,
+  parseSavedViewSidebarId,
+  savedViewSidebarId,
+  SIDEBAR_BUILTIN_VIEW_IDS,
+  SIDEBAR_GROUP_IDS,
+  SIDEBAR_GROUPS_VERSION,
+  SIDEBAR_ITEM_IDS,
+  SidebarGroupsSchema,
+} from "@loctt/contracts";
 
 /**
- * Sidebar-groups customization (SHL-45): reading and resolving the
- * per-user `sidebar_groups` setting that controls which built-in
- * sidebar groups/filters show and in what order.
+ * Sidebar-groups customization (SHL-45, K125, K158): reading, migrating
+ * and resolving the per-user `sidebar_groups` setting that orders and
+ * hides the sidebar's groups and the views inside its Views group.
  *
  * This is the twin of `pins.ts`: pure logic over ids, imports nothing
  * from node, so the web client can import it directly (its barrel pulls
  * in the filesystem paths module, which has no browser build).
+ *
+ * ## The K158 model
+ *
+ * One `views` group holds the built-in views and the saved views in one
+ * ordered, hideable list (Ken: *"it should be 1. then we can re-order
+ * them, and we can hide"*). Its children are the six built-in ids and
+ * `view:<id>` for each saved view. The List / Board / Timeline switcher
+ * is `layouts`.
+ *
+ * Saved views are data, not a closed catalog, so every resolver here
+ * takes the saved views the caller loaded (`SidebarSavedView[]`, built by
+ * `sidebarSavedViews`) in their default order. A `view:<id>` naming a view
+ * that is not in that list (deleted, or archived) is skipped: a deleted
+ * view drops out of the order.
  */
 
-const KNOWN_IDS: ReadonlySet<string> = new Set(SIDEBAR_ITEM_IDS);
+const BUILTIN_IDS: ReadonlySet<string> = new Set(SIDEBAR_BUILTIN_VIEW_IDS);
+const GROUP_IDS: ReadonlySet<string> = new Set(SIDEBAR_GROUP_IDS);
+
+/** A saved view as the sidebar lists it. */
+export interface SidebarSavedView {
+  /** The view's `queries.yaml` id (not the `view:` sidebar id). */
+  readonly id: string;
+  readonly name: string;
+  /** Its filters no longer load (VUE-22): shown with a warning, never counted. */
+  readonly broken: boolean;
+}
+
+/**
+ * The saved views the sidebar can list, in their DEFAULT order: the one a
+ * view takes when the user has not placed it.
+ *
+ * That order is the one the sidebar used before K158, so nothing moves on
+ * the first load after it: pinned views first in pin order (SET-13), then
+ * the rest in `queries.yaml` order, then broken views (VUE-22). Archived
+ * views are not listed (VUE-25); they stay runnable by id.
+ */
+export function sidebarSavedViews(
+  queries: readonly { readonly id: string; readonly name: string; readonly archived?: boolean | undefined }[],
+  broken: readonly { readonly id: string; readonly name: string }[],
+  pins: readonly string[],
+): readonly SidebarSavedView[] {
+  const active = queries.filter(q => q.archived !== true);
+  const byId = new Map(active.map(q => [q.id, q]));
+  const pinned = pins.flatMap(id => {
+    const q = byId.get(id);
+    return q === undefined ? [] : [q];
+  });
+  const pinnedIds = new Set(pinned.map(q => q.id));
+  const healthy = [...pinned, ...active.filter(q => !pinnedIds.has(q.id))];
+  const seen = new Set(healthy.map(q => q.id));
+  return [
+    ...healthy.map(q => ({ id: q.id, name: q.name, broken: false })),
+    ...broken.filter(b => !seen.has(b.id)).map(b => ({ id: b.id, name: b.name, broken: true })),
+  ];
+}
 
 /**
  * Splits a caller-supplied id list into the known ids (de-duplicated,
  * first occurrence winning) and the unknown ones, for a WRITE path that
  * must reject a typo rather than swallow it (SHL-45, B2 bug 4).
  *
+ * Known: a group id, a built-in view id, or `view:<id>` for a saved view
+ * in `savedViews`. A `view:` id for a view that does not exist is a typo
+ * here (the command named it deliberately), even though the reader
+ * tolerates one in a stored file.
+ *
  * The *reader* degrades a hand-edited file silently (a stray id in
  * settings.yaml must never make the sidebar unrenderable); a *write* is
  * a deliberate command, so an unknown id there is a typo the surface
- * should refuse and name — "you thought you hid a group, nothing
- * happened". CLI and MCP both call this so their validation is identical.
- *
- * Duplicates are not errors — they carry no typo signal and the schema
- * de-dups anyway — so they are folded silently into `known`.
+ * should refuse and name. CLI and MCP both call this so their validation
+ * is identical. Duplicates are folded silently into `known`.
  */
-export function validateSidebarIds(raw: readonly string[]): {
+export function validateSidebarIds(
+  raw: readonly string[],
+  savedViews: readonly SidebarSavedView[],
+): {
   readonly known: SidebarItemId[];
   readonly unknown: string[];
 } {
+  const viewIds = new Set(savedViews.map(v => v.id));
   const seen = new Set<string>();
   const known: SidebarItemId[] = [];
   const unknown: string[] = [];
   for (const id of raw) {
     if (typeof id !== "string") continue;
-    if (!KNOWN_IDS.has(id)) { unknown.push(id); continue; }
+    const viewId = parseSavedViewSidebarId(id);
+    const ok = viewId !== undefined ? viewIds.has(viewId) : isSidebarItemId(id);
+    if (!ok) { unknown.push(id); continue; }
     if (seen.has(id)) continue;
     seen.add(id);
     known.push(id as SidebarItemId);
@@ -44,42 +127,36 @@ export function validateSidebarIds(raw: readonly string[]): {
   return { known, unknown };
 }
 
-/** The full set of valid ids, for building a "valid ids are: …" message. */
+/** The fixed valid ids, for building a "valid ids are: …" message. */
 export const SIDEBAR_VALID_IDS: readonly string[] = SIDEBAR_ITEM_IDS;
 
 /**
- * Reads `sidebar_groups` out of settings, tolerating a hand-edited file
- * (per the corruption-handling guide).
- *
- * `UserSettings` round-trips through `.passthrough()`, so this key can
- * hold anything at all. A value that is not a clean `SidebarGroups` is
- * treated as "no customization" (default order, all visible) rather
- * than throwing — a broken preference must never make the sidebar
- * unrenderable (P7). Within a value that IS shaped right, unknown and
- * duplicate ids are dropped rather than rejecting the whole setting, so
- * a single stray id degrades one entry, not the entire customization.
+ * "Valid ids: …" for a refused write: the fixed ids, then each saved view
+ * as `view:<id>`.
  */
-export function readSidebarGroups(settings: UserSettings | undefined): SidebarGroups {
-  const raw = (settings as { sidebar_groups?: unknown } | undefined)?.sidebar_groups;
-  return salvageSidebarGroups(raw).groups;
+export function sidebarValidIdsList(savedViews: readonly SidebarSavedView[]): string {
+  return [...SIDEBAR_ITEM_IDS, ...savedViews.map(v => savedViewSidebarId(v.id))].join(", ");
 }
 
 /**
  * The outcome of salvaging a raw `sidebar_groups` value: the usable
- * `SidebarGroups`, plus the entries that had to be dropped so a caller
- * (doctor) can report them.
+ * stored value (the K158 shape, or a pre-K158 one still to migrate), plus
+ * the entries that had to be dropped so a caller (doctor) can report
+ * them.
  *
- * `dropped` names each thing that was lifted out and why — `"unknown"`
- * (not a built-in id), `"duplicate"` (a second occurrence of an id already
+ * `dropped` names each thing that was lifted out and why: `"unknown"`
+ * (not a sidebar id), `"duplicate"` (a second occurrence of an id already
  * kept), or `"malformed"` (a non-list value for a field, a non-string
- * element, or a stray/typo'd key whose ids would otherwise vanish) —
- * tagged with the list (`order`/`hidden`) it came from. `wholeValueDropped`
- * is true when the value was not even a shaped object (a scalar, a bare
- * list), so there was nothing to salvage per-field and it degraded to
- * "no customization" entirely.
+ * element, a stray/typo'd key, or a `version` this build does not know),
+ * tagged with the list (`order`/`hidden`) it came from.
+ * `wholeValueDropped` is true when the value was not even a shaped object
+ * (a scalar, a bare list), so it degraded to "no customization" entirely.
+ *
+ * A pre-K158 value is NOT a drop: it is a valid older format, migrated on
+ * read (`readSidebarGroups`), and doctor says nothing about it.
  */
 export interface SalvagedSidebarGroups {
-  readonly groups: SidebarGroups;
+  readonly groups: StoredSidebarGroups;
   readonly dropped: readonly SidebarGroupsDrop[];
   readonly wholeValueDropped: boolean;
 }
@@ -94,75 +171,83 @@ export interface SidebarGroupsDrop {
  * Salvages a raw `sidebar_groups` value **per field** (SHL-45, the
  * field-local principle from the corruption-handling-guide).
  *
- * A clean value passes through untouched. A shaped-but-dirty value
- * (`{ order?, hidden? }` holding a stray/duplicate id) keeps every valid
- * id and lifts out only the bad ones — a single stray id degrades one
- * entry, not the entire customization. A value that is not a shaped
- * object at all (a scalar, a bare list) has no per-field structure to
- * preserve and degrades to "no customization" (`wholeValueDropped`).
+ * A clean value (either format) passes through untouched. A shaped but
+ * dirty value keeps every valid id and lifts out only the bad ones: a
+ * single stray id degrades one entry, not the entire customization. A
+ * value that is not a shaped object at all degrades to "no
+ * customization" (`wholeValueDropped`).
  *
- * This is the single tolerance point for the setting: the settings
- * loader runs a corrupt `sidebar_groups` through it (rather than dropping
- * the whole key), the web client runs a raw API object through it, and
+ * The format is decided by `version`: present means the K158 id set (a
+ * version other than 2 is reported and read as the K158 set, the newest
+ * this build knows); absent means the pre-K158 set.
+ *
+ * This is the single tolerance point for the setting: the settings loader
+ * runs a corrupt `sidebar_groups` through it (rather than dropping the
+ * whole key), the readers below run every raw value through it, and
  * doctor reads `dropped` to report what it lifted out.
  */
 export function salvageSidebarGroups(raw: unknown): SalvagedSidebarGroups {
-  if (raw === undefined) return { groups: {}, dropped: [], wholeValueDropped: false };
-  const parsed = SidebarGroupsSchema.safeParse(raw);
-  if (parsed.success) return { groups: parsed.data, dropped: [], wholeValueDropped: false };
-  // The schema rejected it. If it is not even a shaped object there is
-  // nothing to salvage per-field — degrade to "no customization".
+  if (raw === undefined) return { groups: { version: SIDEBAR_GROUPS_VERSION }, dropped: [], wholeValueDropped: false };
+  const v2 = SidebarGroupsSchema.safeParse(raw);
+  if (v2.success) return { groups: v2.data, dropped: [], wholeValueDropped: false };
+  const legacy = LegacySidebarGroupsSchema.safeParse(raw);
+  if (legacy.success) return { groups: legacy.data, dropped: [], wholeValueDropped: false };
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return { groups: {}, dropped: [], wholeValueDropped: true };
+    return { groups: { version: SIDEBAR_GROUPS_VERSION }, dropped: [], wholeValueDropped: true };
   }
-  // Shaped but dirty: keep only known, de-duplicated ids, and record the
-  // rest so doctor can name them.
   const obj = raw as Record<string, unknown>;
   const dropped: SidebarGroupsDrop[] = [];
-  const order = sanitizeIds(obj["order"], "order", dropped);
-  const hidden = sanitizeIds(obj["hidden"], "hidden", dropped);
-  // A key other than order/hidden is a typo (`hiden: [...]`) whose ids
-  // would otherwise vanish with no trace — the user thinks they hid a
-  // group and nothing happened. Record each so doctor names the stray key.
+  const isV2 = "version" in obj;
+  if (isV2 && obj["version"] !== SIDEBAR_GROUPS_VERSION) {
+    dropped.push({ list: "order", id: `version ${describeValue(obj["version"])}`, reason: "malformed" });
+  }
+  const valid: (id: string) => boolean = isV2
+    ? isSidebarItemId
+    : id => (LEGACY_SIDEBAR_ITEM_IDS as readonly string[]).includes(id);
+  const order = sanitizeIds(obj["order"], "order", valid, dropped);
+  const hidden = sanitizeIds(obj["hidden"], "hidden", valid, dropped);
+  // A key other than version/order/hidden is a typo (`hiden: [...]`) whose
+  // ids would otherwise vanish with no trace. Record each so doctor names it.
   for (const key of Object.keys(obj)) {
-    if (key !== "order" && key !== "hidden") {
+    if (key !== "order" && key !== "hidden" && !(isV2 && key === "version")) {
       dropped.push({ list: "order", id: `unknown key "${key}"`, reason: "malformed" });
     }
   }
-  const result: SidebarGroups = {};
-  if (order.length > 0) result.order = order;
-  if (hidden.length > 0) result.hidden = hidden;
-  return { groups: result, dropped, wholeValueDropped: false };
+  if (isV2) {
+    const groups: SidebarGroups = { version: SIDEBAR_GROUPS_VERSION };
+    if (order.length > 0) groups.order = order as SidebarItemId[];
+    if (hidden.length > 0) groups.hidden = hidden as SidebarItemId[];
+    return { groups, dropped, wholeValueDropped: false };
+  }
+  const groups: LegacySidebarGroups = {};
+  if (order.length > 0) groups.order = order as LegacySidebarItemId[];
+  if (hidden.length > 0) groups.hidden = hidden as LegacySidebarItemId[];
+  return { groups, dropped, wholeValueDropped: false };
 }
 
 /**
- * Keep only known ids, first occurrence wins, others dropped — appending
- * a `SidebarGroupsDrop` for EVERY value lifted out so doctor can name it.
- * A present-but-non-array list (a scalar `hidden: "sprints"`), and a
- * non-string element inside a list (`[42, "labels"]`), are recorded as
- * `malformed` drops rather than skipped silently — a silent salvage doctor
- * cannot see is exactly what the corruption-handling-guide forbids.
+ * Keep only valid ids, first occurrence wins, others dropped, appending a
+ * `SidebarGroupsDrop` for EVERY value lifted out so doctor can name it.
  */
 function sanitizeIds(
   value: unknown,
   list: "order" | "hidden",
+  valid: (id: string) => boolean,
   dropped: SidebarGroupsDrop[],
-): SidebarItemId[] {
+): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
-    // The key is present but not a list — the whole field is unusable.
-    // Record it so doctor reports "hidden was set but is not a list".
     dropped.push({ list, id: describeValue(value), reason: "malformed" });
     return [];
   }
   const seen = new Set<string>();
-  const out: SidebarItemId[] = [];
+  const out: string[] = [];
   for (const v of value) {
     if (typeof v !== "string") { dropped.push({ list, id: describeValue(v), reason: "malformed" }); continue; }
-    if (!KNOWN_IDS.has(v)) { dropped.push({ list, id: v, reason: "unknown" }); continue; }
+    if (!valid(v)) { dropped.push({ list, id: v, reason: "unknown" }); continue; }
     if (seen.has(v)) { dropped.push({ list, id: v, reason: "duplicate" }); continue; }
     seen.add(v);
-    out.push(v as SidebarItemId);
+    out.push(v);
   }
   return out;
 }
@@ -173,176 +258,356 @@ function describeValue(v: unknown): string {
   if (v === null) return "null";
   if (Array.isArray(v)) return "a list";
   if (typeof v === "object") return "an object";
-  // Primitives only past here — never call String() on an object (it would
-  // stringify to "[object Object]"); the guards above have excluded those.
   if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") {
     return `${v}`;
   }
   return `a ${typeof v}`;
 }
 
-/**
- * The resolved render decision for one sidebar item.
- *
- * `hidden` items are still returned (in their resolved order) so a
- * surface can render an editor that lists them; a renderer that only
- * shows the sidebar filters on `visible`.
- */
-export interface ResolvedSidebarItem {
-  readonly id: SidebarItemId;
-  readonly hidden: boolean;
+function isLegacy(groups: StoredSidebarGroups): groups is LegacySidebarGroups {
+  return !("version" in groups);
 }
 
 /**
- * Resolves a stored `sidebar_groups` setting against the full catalog
- * of built-in ids into a single ordered, de-duplicated list with a
- * `hidden` flag per item (SHL-45).
- *
- * Rules, all degrade-safe:
- *  - Items named in `order` come first, in that order.
- *  - Any catalog id NOT in `order` follows, in its natural default
- *    order — so an absent setting yields the default order, all
- *    visible, and a partial `order` need not enumerate everything.
- *  - An id in `hidden` is marked `hidden: true`.
- *  - Unknown ids in the setting were already dropped by the reader;
- *    an id in the setting that is not in `catalog` (e.g. a filter id
- *    passed a group-only catalog) is skipped here too.
- *
- * `catalog` is passed in rather than hardcoded so the same resolver
- * orders the top-level groups (given the group catalog) and, if a
- * caller wants, the built-in filters (given the filter catalog).
+ * Whether the stored `sidebar_groups` is still a pre-K158 value. A writer
+ * that migrates it needs the saved views loaded first: the pre-K158 value
+ * can hide or place them as a block, and the K158 value names each one.
  */
-export function resolveSidebarOrder(
-  groups: SidebarGroups,
-  catalog: readonly SidebarItemId[],
-): readonly ResolvedSidebarItem[] {
+export function isLegacySidebarGroups(settings: UserSettings | undefined): boolean {
+  const raw = (settings as { sidebar_groups?: unknown } | undefined)?.sidebar_groups;
+  return raw !== undefined && isLegacy(salvageSidebarGroups(raw).groups);
+}
+
+/**
+ * Reads `sidebar_groups` out of settings in the K158 shape, tolerating a
+ * hand-edited file and migrating a pre-K158 value (see
+ * `migrateLegacySidebarGroups`).
+ *
+ * `savedViews` is needed for the migration only: a pre-K158 setting could
+ * place or hide the saved views as a block, and the K158 shape names each
+ * one. A K158 value is returned as salvaged, whatever `savedViews` holds.
+ */
+export function readSidebarGroups(
+  settings: UserSettings | undefined,
+  savedViews: readonly SidebarSavedView[],
+): SidebarGroups {
+  const raw = (settings as { sidebar_groups?: unknown } | undefined)?.sidebar_groups;
+  const stored = salvageSidebarGroups(raw).groups;
+  return isLegacy(stored) ? migrateLegacySidebarGroups(stored, savedViews) : stored;
+}
+
+/** The two id lists a resolver reads; ids it does not know are skipped. */
+export interface SidebarOrderInput {
+  readonly order?: readonly string[] | undefined;
+  readonly hidden?: readonly string[] | undefined;
+}
+
+/**
+ * Resolves a stored order against a catalog into one ordered,
+ * de-duplicated list with a `hidden` flag per item.
+ *
+ *  - Items named in `order` come first, in that order.
+ *  - Any catalog id NOT in `order` follows, in catalog order.
+ *  - An id in `hidden` is marked hidden.
+ *  - An id not in `catalog` is skipped.
+ */
+export function resolveSidebarOrder<Id extends string>(
+  groups: SidebarOrderInput,
+  catalog: readonly Id[],
+): readonly { readonly id: Id; readonly hidden: boolean }[] {
   const inCatalog = new Set<string>(catalog);
-  const hidden = new Set(groups.hidden ?? []);
-  const order = (groups.order ?? []).filter(id => inCatalog.has(id));
-  const placed = new Set(order);
+  const hidden = new Set<string>(groups.hidden ?? []);
+  const order = (groups.order ?? []).filter((id): id is Id => inCatalog.has(id));
+  const placed = new Set<string>(order);
   const tail = catalog.filter(id => !placed.has(id));
   return [...order, ...tail].map(id => ({ id, hidden: hidden.has(id) }));
 }
 
-/**
- * One row of the Customize-sidebar panel's NESTED view (K125): either a
- * plain top-level item, or the "Filters" group with its built-ins as
- * children.
- *
- * This is a presentation shape derived from the same flat
- * `order`/`hidden` storage `resolveSidebarOrder` already reads — nesting
- * the six `SIDEBAR_FILTER_IDS` under one group is a panel-rendering
- * concern, not a new stored shape beyond the `filters` group id itself.
- */
-export type GroupedSidebarRow =
-  | { readonly kind: "item"; readonly id: SidebarGroupId; readonly hidden: boolean }
+/** One child of the Views group, as resolved for rendering. */
+export type SidebarViewChild =
+  | { readonly kind: "builtin"; readonly id: SidebarBuiltinViewId; readonly hidden: boolean }
   | {
-      readonly kind: "filters-group";
+      readonly kind: "saved";
+      readonly id: SavedViewSidebarId;
+      readonly viewId: string;
+      readonly name: string;
+      readonly broken: boolean;
       readonly hidden: boolean;
-      readonly children: readonly { readonly id: SidebarFilterId; readonly hidden: boolean }[];
     };
 
 /**
- * Resolves `sidebar_groups` into the nested rows the Customize-sidebar
- * panel renders: the top-level groups (from the `groupCatalog` passed in,
- * normally `SIDEBAR_GROUP_IDS`) with the six built-ins collapsed into
- * one `filters-group` row, in their own resolved order.
- *
- * **Migrating an existing flat stored order (K125).** Before this
- * ticket, a user could only reorder/hide each built-in filter
- * INDIVIDUALLY — there was no `filters` group id. A stored `order` from
- * that era mixes filter ids in among the group ids at the top level
- * (e.g. `["overdue", "projects", "labels"]`), with no `filters` entry
- * to say where the new group row belongs. Rule chosen (recorded as
- * A339): the migrated group's position is the position of the FIRST
- * filter id found in the flat resolved order (falling back to
- * `filters`'s own default catalog slot when no filter id appears in
- * `order` at all — a user who never touched a filter's position gets
- * the group in its natural default place). The six filters' own inner
- * order and hidden flags are preserved exactly — this function reads
- * them through the existing `resolveSidebarOrder(groups,
- * SIDEBAR_FILTER_IDS)` call, unchanged by this migration. A user who HAS
- * already explicitly placed `filters` in `order` (a fresh save made
- * after this ticket) is honored as stored — the fallback only fires
- * when `filters` itself is absent from `order`.
+ * One top-level row of the resolved sidebar: a plain group, or the Views
+ * group with its children. `hidden` on a child is the child's OWN flag;
+ * the sidebar also hides every child while the group is hidden
+ * (`resolveRenderedSidebarItems` folds that in).
  */
-export function resolveGroupedSidebarOrder(
-  groups: SidebarGroups,
-  groupCatalog: readonly SidebarGroupId[],
-): readonly GroupedSidebarRow[] {
-  const filterOrder = resolveSidebarOrder(groups, SIDEBAR_FILTER_IDS);
-  const filterIds: ReadonlySet<string> = new Set(SIDEBAR_FILTER_IDS);
-  const hiddenSet = new Set(groups.hidden ?? []);
-  const filtersGroupHidden = hiddenSet.has("filters");
+export type SidebarLayoutRow =
+  | { readonly kind: "group"; readonly id: Exclude<SidebarGroupId, "views">; readonly hidden: boolean }
+  | { readonly kind: "views"; readonly hidden: boolean; readonly children: readonly SidebarViewChild[] };
 
-  const filtersGroupRow: GroupedSidebarRow = {
-    kind: "filters-group",
-    hidden: filtersGroupHidden,
-    children: filterOrder.map(f => ({ id: f.id as SidebarFilterId, hidden: f.hidden })),
-  };
-
-  // Migration: does the STORED order already say where `filters` goes?
-  const storedOrder = groups.order ?? [];
-  const filtersAlreadyPlaced = storedOrder.includes("filters");
-
-  if (filtersAlreadyPlaced) {
-    // Post-migration shape: resolve the group catalog normally (it
-    // already contains "filters" as one entry) and drop any lingering
-    // individual filter id from the top-level order — those only
-    // control the CHILDREN now, never a top-level slot.
-    const topOrder = storedOrder.filter(id => !filterIds.has(id));
-    const resolved = resolveSidebarOrder({ ...groups, order: topOrder }, groupCatalog);
-    return resolved.map(r =>
-      r.id === "filters" ? filtersGroupRow : { kind: "item", id: r.id as SidebarGroupId, hidden: r.hidden },
-    );
-  }
-
-  // Migration path: no `filters` entry in the stored order. Splice the
-  // group row in at the position of the first individual filter id in
-  // `storedOrder`, if any; otherwise fall through to the group's
-  // default catalog position (resolveSidebarOrder's normal behavior).
-  const firstFilterIndex = storedOrder.findIndex(id => filterIds.has(id));
-  const topOrderWithoutFilters = storedOrder.filter(id => !filterIds.has(id));
-
-  const migratedOrder =
-    firstFilterIndex === -1
-      ? topOrderWithoutFilters
-      : [
-          ...topOrderWithoutFilters.slice(0, firstFilterIndex),
-          "filters" as const,
-          ...topOrderWithoutFilters.slice(firstFilterIndex),
-        ];
-
-  const resolved = resolveSidebarOrder({ ...groups, order: migratedOrder }, groupCatalog);
-  return resolved.map(r =>
-    r.id === "filters" ? filtersGroupRow : { kind: "item", id: r.id as SidebarGroupId, hidden: r.hidden },
+/**
+ * Resolves a K158 `sidebar_groups` value into the rows the web sidebar,
+ * the Customize-sidebar panel, the CLI and MCP all read.
+ *
+ * Groups: the stored order, then unplaced groups at their catalog slots.
+ * Views children: the children placed in `order` (by their relative
+ * position there), then unplaced built-ins in their default order, then
+ * unplaced saved views in `savedViews` order. A new saved view therefore
+ * appends, and a `view:<id>` whose view is gone is skipped.
+ */
+export function resolveSidebarLayout(
+  groups: SidebarOrderInput,
+  savedViews: readonly SidebarSavedView[],
+): readonly SidebarLayoutRow[] {
+  const hidden = new Set<string>(groups.hidden ?? []);
+  const byChildId = new Map(savedViews.map(v => [savedViewSidebarId(v.id) as string, v]));
+  const childCatalog: string[] = [...SIDEBAR_BUILTIN_VIEW_IDS, ...byChildId.keys()];
+  const childRows = resolveSidebarOrder(groups, childCatalog);
+  const children: SidebarViewChild[] = childRows.map(c => {
+    const saved = byChildId.get(c.id);
+    if (saved === undefined) {
+      return { kind: "builtin", id: c.id as SidebarBuiltinViewId, hidden: c.hidden };
+    }
+    return {
+      kind: "saved",
+      id: c.id as SavedViewSidebarId,
+      viewId: saved.id,
+      name: saved.name,
+      broken: saved.broken,
+      hidden: c.hidden,
+    };
+  });
+  return resolveSidebarOrder(groups, SIDEBAR_GROUP_IDS).map(r =>
+    r.id === "views"
+      ? { kind: "views", hidden: hidden.has("views"), children }
+      : { kind: "group", id: r.id, hidden: r.hidden },
   );
 }
 
 /**
- * What the sidebar renders, as one flat `{id, hidden}` list over every
- * `SIDEBAR_ITEM_IDS` entry — the read-back CLI and MCP print (A346).
+ * The K158 value that stores `rows` exactly: the FULL order (each group,
+ * with the Views children listed straight after `views`) and the full
+ * hidden list. The Customize-sidebar panel writes through this, so the
+ * file and what is on screen never drift.
  *
- * Built from `resolveGroupedSidebarOrder`, the resolver the web sidebar
- * and the Customize-sidebar panel use, so all three surfaces agree: a
- * pre-K125 stored order gets the same migration (the `filters` group
- * lands where the first filter id sat), and the six built-ins follow
- * the `filters` row in their own resolved order. A child is reported
- * hidden when its own flag is set OR the `filters` group is hidden —
- * hiding the group hides every built-in (K125), and a read-back that
- * said "visible" for them would not be what the sidebar shows.
+ * `previous` is the value being replaced. A `view:<id>` it holds that
+ * `rows` does not list (an archived view, which the sidebar does not
+ * show) is kept, at the end of the order and in `hidden` as it was, so
+ * restoring the view brings back its place and its flag.
  */
-export function resolveRenderedSidebarItems(groups: SidebarGroups): readonly ResolvedSidebarItem[] {
+export function sidebarGroupsFromLayout(
+  rows: readonly SidebarLayoutRow[],
+  previous?: SidebarOrderInput,
+): SidebarGroups {
+  const order: SidebarItemId[] = [];
+  const hidden: SidebarItemId[] = [];
+  for (const row of rows) {
+    if (row.kind === "group") {
+      order.push(row.id);
+      if (row.hidden) hidden.push(row.id);
+      continue;
+    }
+    order.push("views");
+    if (row.hidden) hidden.push("views");
+    for (const child of row.children) {
+      order.push(child.id);
+      if (child.hidden) hidden.push(child.id);
+    }
+  }
+  const listed = new Set<string>(order);
+  for (const id of previous?.order ?? []) {
+    if (!listed.has(id) && parseSavedViewSidebarId(id) !== undefined) order.push(id as SavedViewSidebarId);
+  }
+  for (const id of previous?.hidden ?? []) {
+    if (!listed.has(id) && parseSavedViewSidebarId(id) !== undefined) hidden.push(id as SavedViewSidebarId);
+  }
+  return {
+    version: SIDEBAR_GROUPS_VERSION,
+    order,
+    ...(hidden.length > 0 ? { hidden } : {}),
+  };
+}
+
+/**
+ * `groups` without any mention of one saved view: the web's delete drops
+ * the deleted view's `view:<id>` from the order and the hidden list in the
+ * same settings write that drops its pin.
+ */
+export function forgetSavedViewInSidebar(groups: SidebarGroups, viewId: string): SidebarGroups {
+  const id = savedViewSidebarId(viewId);
+  const order = (groups.order ?? []).filter(o => o !== id);
+  const hidden = (groups.hidden ?? []).filter(h => h !== id);
+  return {
+    version: SIDEBAR_GROUPS_VERSION,
+    ...(order.length > 0 ? { order } : {}),
+    ...(hidden.length > 0 ? { hidden } : {}),
+  };
+}
+
+/**
+ * `groups` with one item's own hidden flag set or cleared (the sidebar's
+ * ⋯ → Hide, K158). The order is left as stored.
+ */
+export function setSidebarItemHidden(
+  groups: SidebarGroups,
+  id: SidebarItemId,
+  hide: boolean,
+): SidebarGroups {
+  const rest = (groups.hidden ?? []).filter(h => h !== id);
+  const hidden = hide ? [...rest, id] : rest;
+  const { hidden: _drop, ...base } = groups;
+  return hidden.length > 0 ? { ...base, hidden } : base;
+}
+
+/**
+ * One entry of the flat read-back CLI and MCP print (A346, K158): every
+ * group, with the Views group's children straight after it. A child is
+ * `hidden` when its own flag is set OR the Views group is hidden, which
+ * is what the sidebar shows. Saved views carry their name, and `broken`
+ * when their filters no longer load.
+ */
+export interface ResolvedSidebarItem {
+  readonly id: SidebarItemId;
+  readonly hidden: boolean;
+  readonly name?: string;
+  readonly broken?: boolean;
+}
+
+export function resolveRenderedSidebarItems(
+  groups: SidebarOrderInput,
+  savedViews: readonly SidebarSavedView[],
+): readonly ResolvedSidebarItem[] {
   const out: ResolvedSidebarItem[] = [];
-  for (const row of resolveGroupedSidebarOrder(groups, SIDEBAR_GROUP_IDS)) {
-    if (row.kind === "item") {
+  for (const row of resolveSidebarLayout(groups, savedViews)) {
+    if (row.kind === "group") {
       out.push({ id: row.id, hidden: row.hidden });
       continue;
     }
-    out.push({ id: "filters", hidden: row.hidden });
+    out.push({ id: "views", hidden: row.hidden });
     for (const child of row.children) {
-      out.push({ id: child.id, hidden: row.hidden || child.hidden });
+      const hidden = row.hidden || child.hidden;
+      out.push(
+        child.kind === "saved"
+          ? { id: child.id, hidden, name: child.name, ...(child.broken ? { broken: true } : {}) }
+          : { id: child.id, hidden },
+      );
     }
   }
   return out;
+}
+
+// ── Pre-K158 settings ────────────────────────────────────────────────
+
+/**
+ * Migrates a pre-K158 `sidebar_groups` value to the K158 shape so the
+ * sidebar looks the same as it did (A370).
+ *
+ * The old value is first resolved exactly as the old sidebar rendered it
+ * (including K125's A339 rule for a value older still: a `filters` group
+ * absent from `order` sits where the first built-in id did). Then:
+ *
+ *  - `views` (the switcher) becomes `layouts`, same place, same flag.
+ *  - `saved-filters` and `filters` become one `views` group, placed where
+ *    the EARLIER of the two sat.
+ *  - Its children are the two old sections' rows in the order they
+ *    rendered: the built-ins in their stored order and the saved views in
+ *    `savedViews` order, whichever section came first leading.
+ *  - Hidden: `views` is hidden only when both old groups were. Otherwise
+ *    the children of a hidden old group are hidden one by one, so what
+ *    was hidden stays hidden. Every built-in's own flag is kept.
+ *
+ * A saved view created after the migration is not covered by an old
+ * "saved views hidden" choice: it appends, visible, like any new view.
+ */
+export function migrateLegacySidebarGroups(
+  legacy: LegacySidebarGroups,
+  savedViews: readonly SidebarSavedView[],
+): SidebarGroups {
+  const rows = resolveLegacyRows(legacy);
+  const savedHidden = rows.find(r => r.id === "saved-filters")?.hidden ?? false;
+  const filtersRow = rows.find(r => r.id === "filters");
+  const filtersHidden = filtersRow?.hidden ?? false;
+  const bothHidden = savedHidden && filtersHidden;
+
+  const order: SidebarItemId[] = [];
+  const hidden: SidebarItemId[] = [];
+  const children: SidebarItemId[] = [];
+  const childHidden: SidebarItemId[] = [];
+  let viewsPlaced = false;
+
+  for (const row of rows) {
+    if (row.id === "saved-filters" || row.id === "filters") {
+      if (!viewsPlaced) {
+        order.push("views");
+        if (bothHidden) hidden.push("views");
+        viewsPlaced = true;
+      }
+      if (row.id === "filters") {
+        for (const c of row.children ?? []) {
+          children.push(c.id);
+          // When the whole group is hidden the built-ins keep only their
+          // own flags; otherwise a hidden Filters group hides each one.
+          if (c.hidden || (filtersHidden && !bothHidden)) childHidden.push(c.id);
+        }
+      } else {
+        for (const v of savedViews) {
+          const id = savedViewSidebarId(v.id);
+          children.push(id);
+          if (savedHidden && !bothHidden) childHidden.push(id);
+        }
+      }
+      continue;
+    }
+    const id: SidebarGroupId = row.id === "views" ? "layouts" : row.id;
+    order.push(id);
+    if (row.hidden) hidden.push(id);
+  }
+
+  // Children sit straight after `views` (only their relative order
+  // matters; this keeps the file readable).
+  const at = order.indexOf("views");
+  order.splice(at + 1, 0, ...children);
+  const allHidden = [...hidden, ...childHidden];
+  return {
+    version: SIDEBAR_GROUPS_VERSION,
+    order,
+    ...(allHidden.length > 0 ? { hidden: allHidden } : {}),
+  };
+}
+
+interface LegacyRow {
+  readonly id: (typeof LEGACY_SIDEBAR_GROUP_IDS)[number];
+  readonly hidden: boolean;
+  readonly children?: readonly { readonly id: SidebarBuiltinViewId; readonly hidden: boolean }[];
+}
+
+/**
+ * The pre-K158 sidebar's rows, as it rendered them (K125/A339): the
+ * `filters` group at its stored position, or, when a value older still
+ * has no `filters` entry, where the first built-in id sat.
+ */
+function resolveLegacyRows(groups: LegacySidebarGroups): readonly LegacyRow[] {
+  const filterOrder = resolveSidebarOrder(groups, SIDEBAR_BUILTIN_VIEW_IDS);
+  const storedOrder: readonly string[] = groups.order ?? [];
+  const hiddenSet = new Set<string>(groups.hidden ?? []);
+  const withoutBuiltins = storedOrder.filter(id => !BUILTIN_IDS.has(id));
+  let topOrder: string[];
+  if (storedOrder.includes("filters")) {
+    topOrder = withoutBuiltins;
+  } else {
+    const firstBuiltin = storedOrder.findIndex(id => BUILTIN_IDS.has(id));
+    topOrder = firstBuiltin === -1
+      ? withoutBuiltins
+      : [...withoutBuiltins.slice(0, firstBuiltin), "filters", ...withoutBuiltins.slice(firstBuiltin)];
+  }
+  return resolveSidebarOrder({ order: topOrder, hidden: [...hiddenSet] }, LEGACY_SIDEBAR_GROUP_IDS).map(r =>
+    r.id === "filters"
+      ? { id: r.id, hidden: r.hidden, children: filterOrder }
+      : { id: r.id, hidden: r.hidden },
+  );
+}
+
+/** Whether `id` names a top-level group (not a Views child). */
+export function isSidebarGroupId(id: string): id is SidebarGroupId {
+  return GROUP_IDS.has(id);
 }

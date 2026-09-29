@@ -401,6 +401,37 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
     }
   });
 
+  // @verifies SHL-54 — K158: in the K158 format, a malformed saved-view id
+  // is named; a clean pre-K158 value (migrated on read) is not a finding.
+  it("K158: names a malformed id in a version-2 sidebar_groups, and says nothing about a clean pre-K158 value", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-sbgroups-k158-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      const bad = "01HZZZZZZZZZZZZZZZZZZZZZZZ";
+      const old = "01HWWWWWWWWWWWWWWWWWWWWWWW";
+      for (const [userId, settings] of [
+        [bad, "sidebar_groups:\n  version: 2\n  order: [views, \"view:\", projects]\n"],
+        [old, "sidebar_groups:\n  order: [saved-filters, filters]\n  hidden: [views]\n"],
+      ] as const) {
+        await mkDir(join(locttDir, "users", userId), { recursive: true });
+        await writeFile(join(locttDir, "users", userId, "profile.yaml"), `id: ${userId}\nname: Ken\n`, "utf-8");
+        await writeFile(join(locttDir, "users", userId, "settings.yaml"), settings, "utf-8");
+      }
+
+      const findings = await checkDataIntegrity(locttDir);
+      const sg = findings.filter(f => /sidebar_groups/.test(f.message));
+      expect(sg.map(f => f.path.includes(bad))).toEqual([true]);
+      expect(sg[0]?.message).toMatch(/unknown sidebar id "view:"/);
+      expect(sg[0]?.severity).toBe("malformed");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   // @verifies SHL-45 — a MALFORMED-shaped sidebar_groups is reported too
   // (fix-review finding 3: these used to salvage silently, doctor blind).
   it("names a scalar-instead-of-list sidebar_groups value, not silently dropped", async () => {

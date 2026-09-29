@@ -73,13 +73,18 @@ test.describe("K125 — sidebar 'All projects' removed, view links clear scope",
   });
 });
 
-test.describe("K125 — Customize sidebar: nested Filters group", () => {
+// K158 (Ken, 2026-09-29): the K125 "Filters" group these tests were
+// written for is gone. *"why are you splitting filters vs saved
+// views?!?! ... it should be 1"*. The built-in and saved views are the
+// children of one "Views" group; K125's nesting and disabled-children
+// rules carry over to it, so these tests now exercise that group.
+test.describe("K125 (amended K158) — Customize sidebar: nested Views group", () => {
   async function openCustomizeSidebar(page: import("@playwright/test").Page): Promise<void> {
     await page.getByRole("button", { name: "Customize sidebar" }).click();
     await expect(page.getByTestId("sidebar-groups-panel")).toBeVisible();
   }
 
-  test("K125-4: the built-ins render nested under one 'Filters' row, not six flat rows", async ({
+  test("K125-4: the built-in views render nested under one 'Views' row, not six flat rows", async ({
     page,
     tracker,
   }) => {
@@ -87,13 +92,13 @@ test.describe("K125 — Customize sidebar: nested Filters group", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await openCustomizeSidebar(page);
 
-    await expect(page.getByTestId("sidebar-group-row-filters")).toBeVisible();
-    await expect(page.getByTestId("sidebar-filter-row-overdue")).toBeVisible();
-    // The old flat top-level row for an individual filter is gone.
+    await expect(page.getByTestId("sidebar-group-row-views")).toBeVisible();
+    await expect(page.getByTestId("sidebar-view-row-overdue")).toBeVisible();
+    // No flat top-level row for an individual built-in.
     await expect(page.getByTestId("sidebar-group-row-overdue")).toHaveCount(0);
   });
 
-  test("K125-5: switching the Filters group off visibly disables (and a click on) a child's switch and drag handle", async ({
+  test("K125-5: switching the Views group off visibly disables (and a click on) a child's switch and drag handle", async ({
     page,
     tracker,
   }) => {
@@ -101,11 +106,11 @@ test.describe("K125 — Customize sidebar: nested Filters group", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await openCustomizeSidebar(page);
 
-    await page.getByTestId("sidebar-group-toggle-filters").click();
+    await page.getByTestId("sidebar-group-toggle-views").click();
 
-    const childToggle = page.getByTestId("sidebar-filter-toggle-overdue");
+    const childToggle = page.getByTestId("sidebar-view-toggle-overdue");
     await expect(childToggle).toBeDisabled();
-    const childHandle = page.getByTestId("sidebar-filter-handle-overdue");
+    const childHandle = page.getByTestId("sidebar-view-handle-overdue");
     await expect(childHandle).toBeDisabled();
 
     // A real click on a disabled native control is a no-op — the
@@ -115,59 +120,53 @@ test.describe("K125 — Customize sidebar: nested Filters group", () => {
     expect(await childToggle.isChecked()).toBe(before);
   });
 
-  test("K125-6: hiding the Filters group drops every built-in from the live sidebar", async ({
+  test("K125-6: hiding the Views group drops every built-in and saved view from the live sidebar", async ({
     page,
     tracker,
   }) => {
     await tracker.seed([{ title: "Alpha task" }]);
     await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByTestId("sidebar-section-toggle-views")).toBeVisible();
     await openCustomizeSidebar(page);
 
-    await page.getByTestId("sidebar-group-toggle-filters").click();
+    await page.getByTestId("sidebar-group-toggle-views").click();
     await page.keyboard.press("Escape");
 
-    await expect(page.getByText("Overdue")).toHaveCount(0);
-    await expect(page.getByText("Assigned to me")).toHaveCount(0);
-    // The whole "Filters" section (heading included) is gone.
-    await expect(page.getByText("Filters", { exact: true })).toHaveCount(0);
-    // The Saved views section still renders.
-    await expect(page.getByText("Saved views")).toBeVisible();
+    const aside = page.locator("aside");
+    await expect(aside.getByText("Overdue")).toHaveCount(0);
+    await expect(aside.getByText("Assigned to me")).toHaveCount(0);
+    // init's seed view goes too: it is a child of the same group.
+    await expect(aside.getByText("recent-open")).toHaveCount(0);
+    // The whole section (heading included) is gone; the rest renders.
+    await expect(page.getByTestId("sidebar-section-toggle-views")).toHaveCount(0);
+    await expect(page.getByTestId("sidebar-section-toggle-projects")).toBeVisible();
   });
 
-  test("K125-8: moving the Filters section in Customize sidebar actually moves it in the rendered sidebar", async ({
+  test("K125-8: moving the Views section in Customize sidebar actually moves it in the rendered sidebar", async ({
     page,
     tracker,
   }) => {
-    // The fix this spec exists to prove: Ken's complaint about the
-    // FIRST cut of K125 was that the customiser let the built-ins move
-    // around "so its not connected" to the sidebar — moving the
-    // "Filters" row in the panel changed nothing visible. This is the
-    // literal round-trip: describe the sidebar's section order, move
-    // Filters via the panel, reload, describe it again, and confirm the
-    // order actually changed.
+    // Ken's complaint about the first cut of K125 was that moving a row
+    // in the customiser changed nothing visible ("so its not connected").
+    // The literal round-trip: describe the sidebar's section order, move
+    // Views via the panel, reload, describe it again.
     await tracker.seed([{ title: "Alpha task" }]);
     await page.goto(`${tracker.baseURL}/list`);
-    // The section headings render from the (async) user-settings query;
-    // reading them before it settles raced the fetch and returned an
-    // empty list intermittently. Waiting for a known section anchors the
-    // read to "the sidebar has actually finished its first render".
     await expect(page.getByTestId("sidebar-section-toggle-projects")).toBeVisible();
 
     const sectionOrder = async (): Promise<string[]> => {
       const headings = page.locator("aside button[data-testid^='sidebar-section-toggle-']");
-      return headings.evaluateAll(els => els.map(el => el.textContent?.trim() ?? ""));
+      return headings.evaluateAll(els => els.map(el => el.getAttribute("data-testid") ?? ""));
     };
 
     const before = await sectionOrder();
-    expect(before).toContain("Filters");
-    const beforeIndex = before.indexOf("Filters");
+    const beforeIndex = before.indexOf("sidebar-section-toggle-views");
+    expect(beforeIndex).toBeGreaterThan(0);
 
     await openCustomizeSidebar(page);
-    // Drag the Filters row (currently after Projects/Saved views) up to
-    // the very top via the keyboard-reorder handle, the alternative to
-    // drag-and-drop: arrows pick it up and move it, Enter drops it (K156).
-    const filtersHandle = page.getByTestId("sidebar-group-handle-filters");
-    await filtersHandle.focus();
+    // Keyboard reorder: arrows pick it up and move it, Enter drops it (K156).
+    const viewsHandle = page.getByTestId("sidebar-group-handle-views");
+    await viewsHandle.focus();
     for (let i = 0; i < 4; i++) {
       await page.keyboard.press("ArrowUp");
     }
@@ -176,10 +175,7 @@ test.describe("K125 — Customize sidebar: nested Filters group", () => {
 
     await page.reload();
     await expect(page.getByTestId("sidebar-section-toggle-projects")).toBeVisible();
-    const after = await sectionOrder();
-    expect(after).toContain("Filters");
-    const afterIndex = after.indexOf("Filters");
-    expect(afterIndex).toBeLessThan(beforeIndex);
+    await expect.poll(async () => (await sectionOrder()).indexOf("sidebar-section-toggle-views")).toBeLessThan(beforeIndex);
   });
 });
 

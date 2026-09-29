@@ -406,7 +406,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           severity: "malformed",
           path: report.path,
           message:
-            `setting "sidebar_groups" is not a valid { order?, hidden? } object, `
+            `setting "sidebar_groups" is not a valid { version, order?, hidden? } object, `
             + `so it was ignored (the sidebar falls back to the default order, all `
             + `groups visible). Repair or remove it to customize the sidebar again.`,
         });

@@ -7,7 +7,7 @@ import {
   VIEW_NAME_TAKEN_MESSAGE,
   viewNameKey,
 } from "@loctt/contracts";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   useLabels,
@@ -190,9 +190,16 @@ export interface BrokenViewContext {
 export function ViewFormDialog({
   existing,
   broken,
+  selectName = false,
   onClose,
 }: {
   readonly existing?: ViewFormTarget;
+  /**
+   * Opens with the name's text selected, for the sidebar's ⋯ → Rename
+   * (K158): the same dialog as Edit (a rename is an edit, VUE-41), ready
+   * to type over the name.
+   */
+  readonly selectName?: boolean;
   /**
    * Present only when `existing` names an entry the loader could not
    * read. Turns Save into an explicit, confirmed replacement of
@@ -210,6 +217,10 @@ export function ViewFormDialog({
    */
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [name, setName] = useState(existing?.name ?? "");
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (selectName) nameRef.current?.select();
+  }, [selectName]);
   // K104: the icon is now editable here — this is the surface Ken named.
   // Seeded from the stored value so an edit never silently drops it.
   const [icon, setIcon] = useState<string | undefined>(existing?.icon);
@@ -417,6 +428,7 @@ export function ViewFormDialog({
         <label className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
           Name
           <TextField
+            ref={nameRef}
             data-testid="view-form-name"
             autoFocus
             value={name}

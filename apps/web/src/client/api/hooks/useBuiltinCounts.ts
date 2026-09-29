@@ -96,3 +96,47 @@ export function useBuiltinCounts(
   });
   return out;
 }
+
+/**
+ * Live counts for the sidebar's saved views (K158: *"all of them should
+ * show numbers"*).
+ *
+ * Each count is the same request clicking the view makes
+ * (`/api/tasks?view=<id>&limit=0`), so the number always matches what the
+ * list shows: the server resolves the view exactly as it does for the
+ * list (its filters, archived scope, `currentUser()`, name references).
+ * One request per view, like the built-ins; see A370 for why these are
+ * not batched into one server call.
+ *
+ * `revision` is anything that changes when the view's definition does
+ * (its filters, serialised), so an edit refetches. The key lives under
+ * `["builtin-count"]` so every task write that refreshes the built-in
+ * counts (`useTaskMutations`, `useSetField`, git sync, user switch)
+ * refreshes these too. A broken view is never passed here: it has no
+ * runnable filters, and shows a warning mark instead.
+ */
+export function useSavedViewCounts(
+  views: readonly { readonly id: string; readonly revision: string }[],
+  timeoutMs: number = COUNT_TIMEOUT_MS,
+): Record<string, BuiltinCount> {
+  const results = useQueries({
+    queries: views.map(v => ({
+      queryKey: ["builtin-count", `view:${v.id}`, v.revision],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        apiClient.get<TasksPage>(
+          `/api/tasks?limit=0&view=${encodeURIComponent(v.id)}`,
+          { signal, timeoutMs },
+        ),
+    })),
+  });
+  const out: Record<string, BuiltinCount> = {};
+  views.forEach((v, i) => {
+    const r = results[i];
+    out[v.id] = {
+      count: r?.isSuccess === true ? r.data.total : undefined,
+      isLoading: r?.isLoading === true,
+      unavailable: r?.isError === true,
+    };
+  });
+  return out;
+}

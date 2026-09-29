@@ -1,5 +1,5 @@
-import type { EntityColor, LabelDef, MilestoneDef, ProjectDef, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
-import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
+import type { EntityColor, LabelDef, MilestoneDef, ProjectDef, SidebarGroupId, SidebarItemId, SprintDef, UserSettings } from "@loctt/contracts";
+import { savedViewSidebarId } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { createContext, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
@@ -10,28 +10,28 @@ import {
   useProjects,
   useRecents,
   useSprints,
-  useViews,
 } from "../api/hooks/sidebarData.ts";
-import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
+import { type BuiltinCount, useBuiltinCounts, useSavedViewCounts } from "../api/hooks/useBuiltinCounts.ts";
 import { useArchiveLabel, useArchiveMilestone } from "../api/hooks/useDataMutations.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { useArchiveProject, useSetDefaultProject } from "../api/hooks/useProjectMutations.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
-import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
 import { CreateProjectDialog } from "../settings/CreateProjectDialog.tsx";
 import { DeleteViewDialog } from "../settings/DeleteViewDialog.tsx";
 import { LabelEditDialog } from "../settings/LabelEditDialog.tsx";
 import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
 import { ProjectEditDialog } from "../settings/ProjectEditDialog.tsx";
-import { RowActions } from "../settings/RowActions.tsx";
+import { type RowAction, RowActions } from "../settings/RowActions.tsx";
 import { DEFAULT_SECTION } from "../settings/sections.ts";
-import { readSidebarGroups, resolveGroupedSidebarOrder, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
+import { forgetSavedViewInSidebar, isLegacySidebarGroups, setSidebarItemHidden } from "../settings/sidebarGroups.ts";
 import { SidebarGroupsPanel } from "../settings/SidebarGroupsPanel.tsx";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
 import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
+import { useSidebarLayout } from "../sidebar/useSidebarLayout.ts";
 import { Chip } from "../ui/Chip.tsx";
 import { useResolvedColor } from "../ui/entityColor.ts";
 import { Icon, type IconName } from "../ui/Icon.tsx";
@@ -53,9 +53,10 @@ import { useVanishedViews } from "./useVanishedViews.ts";
 
 /**
  * The app's left sidebar. Renders, top to bottom: the view switcher
- * (List / Board / Timeline), then data-driven groups — Projects, Saved
- * filters (built-ins + user views + New filter), Milestones, Sprints,
- * Labels, Recently viewed — and a footer with a "Customize sidebar"
+ * (List / Board / Timeline), then data-driven groups — Projects, Views
+ * (built-in and saved views in one list + New view, K158), Milestones,
+ * Sprints, Labels, Recently viewed — in the user's order (SHL-45) — and a
+ * footer with a "Customize sidebar"
  * affordance and a Settings link.
  *
  * The footer USED to show the tracker's working directory; `cc534a0d`
@@ -416,34 +417,26 @@ function MobileSidebarDrawer({
 }
 
 /**
- * The ordered, visibility-filtered set of sidebar groups (SHL-45).
+ * The ordered, visibility-filtered set of sidebar groups (SHL-45, K158).
  *
- * Reads the per-user `sidebar_groups` setting, resolves it against the
- * built-in group catalog, and renders each visible group in order, each
- * wrapped in its own error boundary (ERR-34). A hidden group is not
+ * Reads the per-user `sidebar_groups` setting through `useSidebarLayout`
+ * (core's `resolveSidebarLayout`, the same resolver the Customize-sidebar
+ * panel, the CLI and MCP use) and renders each visible group in order,
+ * each wrapped in its own error boundary (ERR-34). A hidden group is not
  * rendered — a deliberate choice, distinct from the SHL-9 "empty
  * affordance" a group with no *entries* shows.
  *
- * While the setting is still loading (or if it failed), we fall back to
- * the default order with everything visible rather than blanking the
- * sidebar: the customization is a preference, and its absence must never
- * make navigation disappear (P7).
+ * While the setting is still loading (or if it failed), the default order
+ * with everything visible is used rather than blanking the sidebar: the
+ * customization is a preference, and its absence must never make
+ * navigation disappear (P7).
  */
 const GROUP_REGION: Record<SidebarGroupId, string> = {
-  views: "the view switcher",
+  layouts: "the view switcher",
   projects: "the projects list",
-  "saved-filters": "the saved views",
-  // K125 (amended, Ken 2026-09-24): "Nest under 'Filters' — One 'Filters'
-  // section you can move as a unit ... They stay together in the
-  // sidebar." The first cut of this ticket made `filters` a real,
-  // independently orderable/hideable stored group id but gave it no
-  // live-sidebar row of its own — moving it in the Customize-sidebar
-  // panel changed nothing visible, exactly the "not connected to the
-  // sidebar" disconnect Ken's original complaint named. Fixed: `filters`
-  // now renders its own section (`FiltersGroup` below), headed
-  // "Filters", at this id's own position in the stored order — moving
-  // or hiding the group in the panel now moves or hides a real section.
-  filters: "the built-in filters",
+  // K158 (Ken, 2026-09-29): one Views section holding the built-in views
+  // and the saved views (it was two, Filters and Saved views, under K125).
+  views: "the views list",
   milestones: "the milestones list",
   sprints: "the sprints list",
   labels: "the labels list",
@@ -459,45 +452,17 @@ function SidebarGroups({
   currentUserId: string | null;
   today: string;
 }) {
-  const settings = useUserSettings();
   const sectionCollapse = useSectionCollapse();
-  // A failed / in-flight settings read is not a customization — fall
-  // back to the default (every group, default order, all visible).
-  const groups = readSidebarGroups(settings.data?.settings);
-  // K125 gap fix (Ken 2026-09-24): this MUST go through the same
-  // migration-aware resolver the Customize-sidebar panel uses
-  // (`resolveGroupedSidebarOrder`), not the plain `resolveSidebarOrder`.
-  // A pre-K125 stored `order` can only ever have placed an individual
-  // filter id at the top level (there was no `filters` id yet); reading
-  // it with the plain resolver put `filters` at its bare default
-  // catalog slot regardless of where the user's own filters actually
-  // sat, so an existing user's Filters section jumped to an unrelated
-  // position on first load after this ticket. Mapping the grouped rows
-  // back to `{id, hidden}` here keeps the render loop below unchanged.
-  const resolved = resolveGroupedSidebarOrder(groups, [...SIDEBAR_GROUP_IDS]).map(r => (
-    r.kind === "filters-group"
-      ? { id: "filters" as const, hidden: r.hidden }
-      : { id: r.id, hidden: r.hidden }
-  ));
-  // Resolved against the group-only catalog, so every id is a group id;
-  // the guard narrows `SidebarItemId` to `SidebarGroupId` for TS.
-  const isGroupId = (id: string): id is SidebarGroupId =>
-    (SIDEBAR_GROUP_IDS as readonly string[]).includes(id);
+  const { rows } = useSidebarLayout();
 
   const render = (id: SidebarGroupId): ReactNode => {
     switch (id) {
-      case "views":
+      case "layouts":
         return <ViewSwitcher collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "projects":
         return <ProjectsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
-      case "saved-filters":
-        return (
-          <SavedViewsGroup
-            collapsed={collapsed}
-            currentUserId={currentUserId}
-            today={today}
-          />
-        );
+      case "views":
+        return <ViewsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "milestones":
         return <MilestonesGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "sprints":
@@ -506,20 +471,19 @@ function SidebarGroups({
         return <LabelsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "recents":
         return <RecentsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
-      case "filters":
-        return <FiltersGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
     }
   };
 
   return (
     <SectionCollapseContext.Provider value={sectionCollapse}>
-      {resolved.map(item =>
-        item.hidden || !isGroupId(item.id) ? null : (
-          <RegionErrorBoundary key={item.id} region={GROUP_REGION[item.id]}>
-            {render(item.id)}
+      {rows.map(row => {
+        const id: SidebarGroupId = row.kind === "views" ? "views" : row.id;
+        return row.hidden ? null : (
+          <RegionErrorBoundary key={id} region={GROUP_REGION[id]}>
+            {render(id)}
           </RegionErrorBoundary>
-        ),
-      )}
+        );
+      })}
     </SectionCollapseContext.Provider>
   );
 }
@@ -707,43 +671,6 @@ function ItemShell({
   );
 }
 
-/**
- * A built-in's count badge.
- *
- * The slot is reserved before the number arrives (ONB-14, SHL-23):
- * rendering nothing while a count is in flight and then inserting a
- * pill shifts every row below it, so a click aimed mid-load lands on
- * the wrong item. `min-w` holds the width of a three-digit count,
- * which covers the overwhelming majority; a wider number grows the
- * pill rather than being clipped.
- *
- * `pending` and "no badge at all" are different: an inert built-in (a
- * user filter with no current user) has no count to wait for (VUE-2) and
- * gets no slot, while a slow query (SHL-23) shows a pending affordance in
- * a slot that is already the right size.
- */
-function Badge({
-  value,
-  pending = false,
-  unavailable = false,
-}: {
-  value: number | undefined;
-  pending?: boolean;
-  unavailable?: boolean;
-}) {
-  if (value === undefined && !pending && !unavailable) return null;
-  return (
-    <span
-      data-pending={pending ? "true" : undefined}
-      data-unavailable={unavailable ? "true" : undefined}
-      title={unavailable ? "Count unavailable" : undefined}
-      className="ml-auto min-w-[1.75rem] rounded-full bg-bg-muted px-1.5 text-center text-[0.7857rem] tabular-nums text-text-tertiary"
-    >
-      {value !== undefined ? value : unavailable ? "—" : "\u00b7\u00b7\u00b7"}
-    </span>
-  );
-}
-
 function ColorDot({ color }: { color?: string | undefined }) {
   return (
     <span
@@ -913,7 +840,7 @@ function sameRow(a: ActiveRow | null, b: ActiveRow | null): boolean {
  * `resolvedBuiltins` is the set of built-ins whose `resolve()` did not
  * return `null` (an inert built-in has nothing to match against), each
  * paired with the exact `q` it resolves to for THIS `ctx` — the same
- * comparison `FiltersGroup` (formerly part of `SavedFiltersGroup`)
+ * comparison `ViewsGroup` (K158; formerly `FiltersGroup`)
  * used to do locally.
  */
 /**
@@ -996,7 +923,7 @@ function deriveActiveRow(
  *
  * Reads the route itself (pathname + search) and resolves the
  * built-ins against the live workflow config + current user, exactly
- * as `FiltersGroup` (formerly part of `SavedFiltersGroup`) already did
+ * as `ViewsGroup` (K158; formerly `FiltersGroup`) already did
  * locally — moved here so
  * `deriveActiveRow` (route-only, easily unit-tested) stays separate
  * from the query data needed only to resolve a `q` back to a builtin
@@ -1562,16 +1489,189 @@ function ProjectRowActions({
 }
 
 /**
- * K125 (amended, Ken 2026-09-24). Was `SavedFiltersGroup` and rendered
- * BOTH the six built-in filters and saved views under one heading
- * ("Views") — the built-ins' rendering moved out to `FiltersGroup`
- * below, in its own section, when the Customize-sidebar panel's
- * "Filters" row was made to actually move/hide a real section (see the
- * `GROUP_REGION` comment above). What is left here is saved views only,
- * so the heading is renamed "Saved views" to match — see the rename
- * note on `SectionShell`'s call below.
+ * The trailing slot's width: the ⋯ button's own (`IconButton` size `sm`),
+ * so the count and the ⋯ occupy the same box (K158).
  */
-function SavedViewsGroup({
+const SLOT_WIDTH = "w-7";
+
+/**
+ * A count as the slot shows it: capped at "99+" so it always fits the
+ * ⋯ button's width (K158: *"make task count go to a max of 99 task, e.g.
+ * '99+' for 100 onwards"*).
+ */
+export function formatSlotCount(n: number): string {
+  return n > 99 ? "99+" : String(n);
+}
+
+/**
+ * What a Views row's slot shows at rest.
+ *
+ * The slot is reserved before the number arrives (ONB-14, SHL-23), so a
+ * count landing never shifts the row: `pending` shows a placeholder, a
+ * failed or timed-out count shows a dash (SHL-23), a broken saved view
+ * shows a warning mark instead of a number (K158), and an inert built-in
+ * (VUE-2) shows nothing.
+ */
+type SlotContent =
+  | { readonly kind: "count"; readonly value: number }
+  | { readonly kind: "pending" }
+  | { readonly kind: "unavailable" }
+  | { readonly kind: "broken"; readonly error: string }
+  | { readonly kind: "none" };
+
+/**
+ * A Views row's tooltip: its name, plus the true total when the slot
+ * shows "99+" (VUE-16: a capped count keeps the real one available on
+ * hover). Hover shows the ⋯ in the slot, so the tooltip is where it goes.
+ */
+function rowTitle(name: string, slot: SlotContent): string {
+  return slot.kind === "count" && slot.value > 99 ? `${name}, ${slot.value} tasks` : name;
+}
+
+function slotContentOf(count: BuiltinCount | undefined): SlotContent {
+  if (count === undefined) return { kind: "none" };
+  if (count.count !== undefined) return { kind: "count", value: count.count };
+  if (count.unavailable) return { kind: "unavailable" };
+  if (count.isLoading) return { kind: "pending" };
+  return { kind: "none" };
+}
+
+function SlotCount({ content }: { readonly content: SlotContent }) {
+  const base = "sidebar-slot-count text-[0.7857rem] tabular-nums text-text-tertiary";
+  switch (content.kind) {
+    case "count":
+      // Above the cap the true total is still there for assistive tech
+      // (and in the row's tooltip, `rowTitle`): VUE-16, a capped count
+      // must not hide the real one.
+      return content.value > 99 ? (
+        <span data-testid="sidebar-row-count" className={base}>
+          <span aria-hidden="true">{formatSlotCount(content.value)}</span>
+          <span className="sr-only">{content.value}</span>
+        </span>
+      ) : (
+        <span data-testid="sidebar-row-count" className={base}>
+          {formatSlotCount(content.value)}
+        </span>
+      );
+    case "pending":
+      return (
+        <span data-testid="sidebar-row-count" data-pending="true" className={base}>
+          {"···"}
+        </span>
+      );
+    case "unavailable":
+      return (
+        <span data-testid="sidebar-row-count" data-unavailable="true" title="Count unavailable" className={base}>
+          —
+        </span>
+      );
+    case "broken":
+      return (
+        <span
+          data-testid="sidebar-row-broken"
+          role="img"
+          aria-label="Broken view"
+          title={`Broken view: ${content.error}`}
+          className="sidebar-slot-count flex text-danger-fg"
+        >
+          <Icon name="alert" size={14} />
+        </span>
+      );
+    case "none":
+      return null;
+  }
+}
+
+/**
+ * One row of the Views section (K158): `[icon] [name] … [slot]`.
+ *
+ * The row's link (or, for an inert built-in, its inert shell) spans the
+ * full width. The slot sits over the link's right end, in a box exactly
+ * the ⋯ button's width, holding the count and the ⋯ stacked in one cell:
+ * the count at rest, the ⋯ on hover or keyboard focus (the CSS in
+ * `styles/index.css`, `.sidebar-slot`). The link reserves that width with
+ * a spacer so a long name truncates before it. The ⋯ is a sibling of the
+ * link, never inside it (a button in an anchor is invalid HTML), and the
+ * count ignores the pointer, so a tap on it on a touch screen reaches the
+ * link.
+ *
+ * The slot ends where every other row's trailing control does (`right`
+ * matches `ItemShell`'s `px-2.5`, the UI-16c inset).
+ */
+function ViewsRow({
+  collapsed,
+  active,
+  title,
+  icon,
+  label,
+  renderLink,
+  slot,
+  actionsLabel,
+  actions,
+  rowAttributes,
+}: {
+  readonly collapsed: boolean;
+  readonly active: boolean;
+  readonly title: string;
+  readonly icon: ReactNode;
+  readonly label: ReactNode;
+  readonly renderLink: (content: ReactNode) => ReactNode;
+  readonly slot: SlotContent;
+  readonly actionsLabel: string;
+  readonly actions: readonly RowAction[];
+  readonly rowAttributes: Record<string, string>;
+}) {
+  const content = (
+    <ItemShell active={active} collapsed={collapsed} title={title}>
+      <span className="flex w-4 shrink-0 items-center justify-center">{icon}</span>
+      {!collapsed ? (
+        <>
+          <span className="min-w-0 truncate">{label}</span>
+          <span aria-hidden="true" className={`ml-auto ${SLOT_WIDTH} shrink-0`} />
+        </>
+      ) : null}
+    </ItemShell>
+  );
+  // Collapsed rail: icon only, no slot (no room for a count or a ⋯).
+  if (collapsed) return <div {...rowAttributes}>{renderLink(content)}</div>;
+  return (
+    <div {...rowAttributes} className="sidebar-views-row relative rounded-md hover:bg-bg-muted">
+      {renderLink(content)}
+      <div
+        data-testid="sidebar-row-slot"
+        className={`sidebar-slot absolute inset-y-0 right-2.5 ${SLOT_WIDTH}`}
+      >
+        <SlotCount content={slot} />
+        <span className="sidebar-slot-actions flex">
+          <RowActions size="sm" label={actionsLabel} actions={actions} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Views section (K158, Ken 2026-09-29): the built-in views (Assigned
+ * to me, Reported by me, Mentions me, Due this week, Overdue, High
+ * priority) and the saved views, in one ordered, hideable list, with
+ * "+ New view" at the bottom.
+ *
+ * Ken: *"why are you splitting filters vs saved views?!?! ... it should
+ * be 1. then we can re-order them, and we can hide. then all of them
+ * should show numbers, and custom views can also have the '...' but it
+ * should align"*. Under K125 these were two sections, Filters and Saved
+ * views (A339); Ken never asked for two.
+ *
+ * Order and hidden flags come from the per-user `sidebar_groups` setting
+ * (`useSidebarLayout`); unhiding and reordering happen in Customize
+ * sidebar, not here (*"we have the settings, right? where you can
+ * reorder things, no?"*). Every row ends in the count/⋯ slot
+ * (`ViewsRow`). A built-in's ⋯ offers Hide; a saved view's offers Edit,
+ * Rename, Delete and Hide, reusing the existing dialogs. A broken saved
+ * view (VUE-22) shows a warning mark in the slot instead of a count and
+ * keeps its Edit (repair) and Delete.
+ */
+function ViewsGroup({
   collapsed,
   currentUserId,
   today,
@@ -1580,131 +1680,91 @@ function SavedViewsGroup({
   currentUserId: string | null;
   today: string;
 }) {
-  const views = useViews();
-  // K118: the one derivation every group compares against. Previously
-  // this group computed its own active state from `search.q`/
-  // `search.view` directly (UI-16b) — which is exactly the "each group
-  // decides for itself" shape K118 forbids: a saved-view LINK
-  // (`:1543`/`:1610` below) never cleared `q`, so a built-in stayed lit
-  // underneath the saved view you had just clicked. `deriveActiveRow`
-  // gives `view` priority over `q`, so that carry-over no longer
-  // produces two lit rows even though the URL still carries the stale
-  // `q` until the next full filter-clearing navigation.
+  const layout = useSidebarLayout();
+  const { views, groups, rows, canWrite } = layout;
+  const viewsRow = rows.find(r => r.kind === "views");
+  const children = (viewsRow?.kind === "views" ? viewsRow.children : []).filter(c => !c.hidden);
+
+  const workflow = useWorkflow();
+  const ctx = { currentUserId, today, priorities: workflow.data?.priorities };
+  const builtinCounts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
+  const builtinById = new Map(BUILTIN_FILTERS.map(f => [f.id, f]));
+  const queriesById = new Map((views.data?.queries ?? []).map(q => [q.id, q]));
+  const brokenById = new Map((views.data?.broken ?? []).map(b => [b.id, b]));
+  const viewCounts = useSavedViewCounts(
+    children.flatMap(c =>
+      c.kind === "saved" && !c.broken
+        ? [{ id: c.viewId, revision: JSON.stringify(queriesById.get(c.viewId)?.filters ?? []) }]
+        : [],
+    ),
+  );
+  // K118: the one derivation every row compares against.
   const activeRow = useActiveRow(currentUserId, today);
-  // SET-13: pinned views lead the group, in the user's stored pin
-  // order; everything else follows in config order. A pin whose view
-  // is gone contributes nothing here — it has no row to render — and
-  // the pins panel is what tells the user it went.
-  const settings = useUserSettings();
-  const pins = readSidebarPins(settings.data?.settings);
+
+  // SET-13: a deleted view's pin is dropped in the same write that
+  // confirms the delete (see `confirmDelete`).
+  const pins = readSidebarPins(layout.settings.data?.settings);
   const saveSettings = useUserSettingsMutation();
   const del = useDeleteView();
-  // The saved-filter dialog state, mirroring `SavedViewsPanel`'s
-  // discriminated union: `null` closed, or one of create / edit / delete.
-  // A single state (rather than a bare `creating` boolean) lets the same
-  // group host Edit and Delete launched from a row's kebab as well as
-  // the "+ New filter…" create.
-  //
-  // Edit accepts a `SavedQuery` or an entry picked from a
-  // `BrokenSavedQuery` (VUE-22's fix path) — the two are not assignable to
-  // one another, so the edit target is stored as the minimal shape
-  // `ViewFormDialog` actually reads (K102: id + name + the ordered
-  // `filters`, plus the view's archived scope and icon so an edit never
-  // drops them).
-  //
-  // A BROKEN view's stored filters did not validate, so there is nothing
-  // faithful to seed: the picker opens EMPTY. That much is a deliberate
-  // K102 consequence — the dialog has no raw-DSL mode, and showing
-  // filters we could not load would be inventing them.
-  //
-  // What does NOT follow is that Save may then write that empty list
-  // over the entry. The broken entry's full original YAML survives on
-  // disk in `rawText` and is re-emitted verbatim by every unrelated
-  // write (P-11 / K28 / Phase-Z-C2); a plain `editView` from here
-  // replaced it with `filters: []`, so the single control offered to
-  // repair the entry was the only thing that could destroy it. The edit
-  // dialog therefore carries the broken context (`brokenContext` below):
-  // it shows the parse error and the on-disk text, and holds Save inert
-  // until the user explicitly confirms the replacement. Discarding
-  // recoverable text stays possible — it is just never accidental.
+
+  // The dialog state, as `SavedViewsPanel` has it: `null` closed, or one
+  // of create / edit / delete. Rename is an edit that opens with the name
+  // selected. Edit accepts a healthy view or an entry picked from a broken
+  // one (VUE-22's fix path), stored as the minimal shape `ViewFormDialog`
+  // reads (K102). A broken view's stored filters did not validate, so the
+  // picker opens empty, and the dialog carries the broken context so Save
+  // cannot silently overwrite the text still on disk (P-11 / K28).
   type EditTarget = ViewFormTarget;
   const [dialog, setDialog] = useState<
     | { mode: "create" }
-    | { mode: "edit"; view: EditTarget; broken?: BrokenViewContext }
-    // `broken: true` marks a delete aimed at an entry whose stored
-    // filters did not load. Core refuses such a delete without an
-    // explicit opt-in (K102-broken-repair), because it discards the
-    // original text queries.yaml still preserves.
+    | { mode: "edit"; view: EditTarget; broken?: BrokenViewContext; selectName?: boolean }
+    // `broken: true` marks a delete aimed at an entry whose stored filters
+    // did not load; core refuses that delete without an explicit opt-in
+    // (K102-broken-repair).
     | { mode: "delete"; view: EditTarget; broken?: boolean }
     | null
   >(null);
-  // VUE-25: archived views are hidden from the sidebar (they stay runnable
-  // by id, and are managed from Settings → Saved views). Every other group
-  // filters `archived !== true`; this one did not, so an archived view
-  // still appeared here — the confirmed defect the spec calls out.
-  const allViews = (views.data?.queries ?? []).filter(v => v.archived !== true);
-  const userViews = orderByPins(allViews, pins);
-  // VUE-22: views present in queries.yaml whose query no longer parses.
-  // Listed, marked broken, still clickable — the list route answers a
-  // broken view with the parse error and its position, not an empty
-  // table. One bad row never blanks the group (north-star principle 5).
-  const brokenViews = views.data?.broken ?? [];
+
   const failed = hasFailed(views);
-  // SHL-32: a pin that vanished from `queries.yaml` is explained
-  // rather than silently dropped. Only once the list has actually
-  // loaded — a failed or in-flight read is not a deletion.
-  // A broken view is still in queries.yaml — it has just moved from
-  // `queries` to `broken`. Feed both to the vanished-view tracker so a
-  // view that broke is not also reported as *removed* (SHL-32): it
-  // already has its own "(broken)" row above, and the two signals would
-  // contradict each other.
+  // SHL-32: a view that vanished from `queries.yaml` is explained rather
+  // than silently dropped, once the list has actually loaded. A broken
+  // view is still in the file, so both lists feed the tracker.
   const { vanished, dismiss } = useVanishedViews(
     views.isSuccess ? [...views.data.queries, ...(views.data.broken ?? [])] : undefined,
   );
 
-  // Where focus returns after a kebab-launched dialog closes: the kebab
-  // itself unmounts while the dialog is open (Menu closes on select), so
-  // it cannot be the restore target. The "New filter…" button is the
-  // stable anchor at the foot of the group.
-  const newFilterRef = useRef<HTMLButtonElement>(null);
+  // Where focus goes after a row disappears (Hide) or a kebab-launched
+  // dialog closes: the row's own ⋯ is gone, so the stable "+ New view"
+  // button at the foot of the section is the anchor.
+  const newViewRef = useRef<HTMLButtonElement>(null);
 
   /**
-   * Deleting a user's own saved view, hard.
-   *
-   * A328 (B6): before this fix, `dismiss(view.id)`, the pin-removal write
-   * and `setDialog(null)` all ran EAGERLY, before the DELETE request had
-   * even settled — a FAILED delete still closed the dialog and told
-   * `useVanishedViews` the view was gone, so the app believed an
-   * unconfirmed delete and showed the user nothing. All three now run
-   * only from the mutation's `onSuccess`, once the delete has actually
-   * landed:
-   *  - `dismiss(view.id)` so `useVanishedViews` does not, on the refetch,
-   *    announce "«name» was removed from queries.yaml" for this deliberate
-   *    deletion (SHL-32 is for a view that vanished *without* the user's
-   *    action here);
-   *  - if the view is pinned, drop the pin in the same settings write, the
-   *    same pattern `SidebarPinsPanel` uses — leaving it to the pins sweep
-   *    would surface a "removed because it no longer exists" notice for a
-   *    deletion already confirmed;
-   *  - closing the dialog, so a FAILED delete leaves it open with the
-   *    inline notice (`DeleteViewDialog`'s `dataState`/`onRetry`) rather
-   *    than vanishing as if nothing happened.
+   * Deleting a saved view, hard (A328/B6): the vanished-view dismissal,
+   * the settings clean-up and closing the dialog run only once the DELETE
+   * has landed, so a failed delete keeps the dialog open with its notice.
    */
   const confirmDelete = (view: EditTarget, broken = false): void => {
-    // The DeleteViewDialog the user just confirmed IS the explicit
-    // opt-in a broken entry's delete requires (K102-broken-repair); the
-    // flag carries that consent to the server. Never sent for a healthy
-    // view, whose request is unchanged.
     del.mutate(
       { id: view.id, ...(broken ? { replaceBroken: true } : {}) },
       {
         onSuccess: () => {
           dismiss(view.id);
-          if (pins.includes(view.id) && settings.data !== undefined) {
-            saveSettings.mutate({
-              ...settings.data.settings,
-              sidebar_pins: pins.filter(p => p !== view.id),
-            } as UserSettings);
+          // One settings write drops the view's pin and its place and
+          // flag in the sidebar order (a pre-K158 value never names a
+          // view, so it is left as it is).
+          const stored = layout.settings.data?.settings;
+          if (stored !== undefined) {
+            const pinned = pins.includes(view.id);
+            const sidebarId = savedViewSidebarId(view.id);
+            const placed = !isLegacySidebarGroups(stored)
+              && [...(groups.order ?? []), ...(groups.hidden ?? [])].includes(sidebarId);
+            if (pinned || placed) {
+              saveSettings.mutate({
+                ...stored,
+                ...(pinned ? { sidebar_pins: pins.filter(p => p !== view.id) } : {}),
+                ...(placed ? { sidebar_groups: forgetSavedViewInSidebar(groups, view.id) } : {}),
+              } as UserSettings);
+            }
           }
           setDialog(null);
         },
@@ -1712,199 +1772,193 @@ function SavedViewsGroup({
     );
   };
 
-  /** Pin the view to the top, or unpin it, via a merged settings write. */
-  const togglePin = (view: EditTarget): void => {
-    if (settings.data === undefined) return;
-    const next = pins.includes(view.id)
-      ? pins.filter(p => p !== view.id)
-      : [...pins, view.id];
-    saveSettings.mutate({
-      ...settings.data.settings,
-      sidebar_pins: next,
-    } as UserSettings);
+  /**
+   * ⋯ → Hide (K158): writes the per-user hidden flag. The row leaves the
+   * sidebar; Settings → Customize sidebar brings it back.
+   */
+  const hide = (id: SidebarItemId): void => {
+    if (!canWrite) return;
+    layout.write(setSidebarItemHidden(groups, id, true));
+    requestAnimationFrame(() => { newViewRef.current?.focus(); });
   };
+  const hideAction = (id: SidebarItemId): RowAction => ({
+    label: "Hide",
+    testId: "view-hide",
+    disabled: !canWrite,
+    onSelect: () => { hide(id); },
+  });
 
   return (
-    // K125 (amended, Ken 2026-09-24): renamed "Views" → "Saved views" so
-    // the sidebar heading matches the Customize-sidebar panel's own row
-    // label for this section (both now say "Saved views"), and matches
-    // the Settings page "Saved views" heading and the "Save as view"
-    // button's own wording — a user can map a customiser row to a
-    // sidebar section by name. The stored group id (`saved-filters`,
-    // SHL-45's original identity) is UNCHANGED — only the human label
-    // moved, so no migration is needed for existing `sidebar_groups`
-    // order/hidden entries.
-    <SectionShell id="saved-filters" label="Saved views" collapsed={collapsed}>
-      {failed && (
-        <GroupError collapsed={collapsed} error={views.error} onRetry={() => { void views.refetch(); }} />
-      )}
-
-      {userViews.map(v => {
-        const active = sameRow(activeRow, { kind: "saved-view", id: v.id });
-        const row = (
-          <Link
-            to="/list"
-            // K118: a saved-view click is a full replace, like every
-            // other sidebar row — `clearFilters` here (added by this
-            // fix) drops a lingering `q`/`project`/`sprint`/`labels`
-            // from whatever was active before. Without it, clicking a
-            // saved view over an active built-in left the built-in's
-            // `q` in the URL, and `deriveActiveRow`'s own view-over-q
-            // priority only hides the resulting double-selection for
-            // reads coming through this file — a fresh page load or a
-            // bookmark of that stale URL would have re-resolved to the
-            // builtin instead of the view. Clearing at the source is
-            // the actual fix; the derivation's priority order is a
-            // second line of defence, not a substitute for it.
-            search={prev => ({ ...clearSort(clearFilters(prev)), view: v.id })}
-            title={v.name}
-            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
-          >
-            <ItemShell active={active} collapsed={collapsed} title={v.name}>
-              {/* UI-19: the view's own icon when set (K104), falling
-                  back to the star. `IconGlyph` is the shared read-side
-                  renderer (A279) and handles the Lucide-vs-emoji shape
-                  sniff, so this must not re-implement it.
-
-                  Views GAINED a colour field (K104-view-colour,
-                  2026-09-23) — the comment here previously said they had
-                  none. `ViewIcon` resolves it per mode; an emoji is
-                  never tinted, which `IconGlyph` already enforces. */}
-              <span className="w-4 shrink-0 text-center text-text-tertiary">
-                <ViewIcon icon={v.icon} color={v.color} />
-              </span>
-              {!collapsed ? <span className="truncate">{v.name}</span> : null}
-            </ItemShell>
-          </Link>
-        );
-        // Collapsed rail: icon-only, no room for a kebab (matches the
-        // built-ins, which also shed their trailing affordance when
-        // collapsed).
-        if (collapsed) return <div key={v.id}>{row}</div>;
-        // The kebab is a SIBLING of the <Link>, not a child: a <button>
-        // inside an <a> is invalid HTML. The wrapper carries the row's
-        // hover so the whole row (link + kebab) lights up together.
-        return (
-          <div
-            key={v.id}
-            // UI-16c: a badge-ending row (built-in filters) insets its
-            // trailing content by `ItemShell`'s own `px-2.5`, but the
-            // kebab here is a SIBLING of `ItemShell`, outside that
-            // padding — so it sat flush against the sidebar edge, 8.75px
-            // further right than a badge's edge, and the column's right
-            // side zig-zagged row to row. `pr-2.5` matches that inset so
-            // every row kind ends at the same x.
-            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
-            data-view-row={v.id}
-          >
-            {row}
-            <RowActions
-              size="sm"
-              label={`Actions for saved filter "${v.name}"`}
-              actions={[
-                { label: "Edit", testId: "view-edit", onSelect: () => { setDialog({ mode: "edit", view: v }); } },
-                {
-                  label: pins.includes(v.id) ? "Unpin" : "Pin to top",
-                  testId: "view-pin",
-                  onSelect: () => { togglePin(v); },
-                },
-                { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: v }); } },
-              ]}
+    <SectionShell id="views" label="Views" collapsed={collapsed}>
+      {children.map(child => {
+        if (child.kind === "builtin") {
+          const f = builtinById.get(child.id);
+          if (f === undefined) return null;
+          const search = f.resolve(ctx);
+          const icon = <Icon name={f.icon} size={14} />;
+          const actions = [hideAction(child.id)];
+          const actionsLabel = `Actions for view "${f.label}"`;
+          // A built-in that cannot resolve (no current user, or "High
+          // priority" on a scale that cannot express it) is inert text,
+          // not a link. SHL-8: it says why, and `aria-disabled` carries
+          // the state to assistive tech (A11Y-31). No count (VUE-2).
+          if (search === null) {
+            return (
+              <ViewsRow
+                key={child.id}
+                collapsed={collapsed}
+                active={false}
+                title={f.label}
+                icon={icon}
+                label={f.label}
+                renderLink={content => (
+                  <div aria-disabled="true" title={inertReason(f.id, f.label)} className="opacity-50">
+                    {content}
+                  </div>
+                )}
+                slot={{ kind: "none" }}
+                actionsLabel={actionsLabel}
+                actions={actions}
+                rowAttributes={{ "data-builtin-row": f.id }}
+              />
+            );
+          }
+          const slot = slotContentOf(builtinCounts[f.id]);
+          return (
+            <ViewsRow
+              key={child.id}
+              collapsed={collapsed}
+              active={sameRow(activeRow, { kind: "builtin", id: f.id })}
+              title={rowTitle(f.label, slot)}
+              icon={icon}
+              label={f.label}
+              renderLink={content => (
+                <Link
+                  to="/list"
+                  search={prev => ({ ...clearSort(clearFilters(prev)), ...search })}
+                  title={rowTitle(f.label, slot)}
+                  className="block no-underline"
+                >
+                  {content}
+                </Link>
+              )}
+              slot={slot}
+              actionsLabel={actionsLabel}
+              actions={actions}
+              rowAttributes={{ "data-builtin-row": f.id }}
             />
-          </div>
-        );
-      })}
+          );
+        }
 
-      {brokenViews.map(v => {
-        // VUE-22: still a link — clicking shows the parse error with its
-        // position and opens the editor pre-populated, "rather than an
-        // empty list". Marked broken so it is not mistaken for a healthy
-        // view, and titled with the parser's message for a quick read.
-        // K118: a broken view is stored under the same `view` param a
-        // healthy one uses, so `deriveActiveRow`'s `saved-view` case
-        // matches it too — it gets the same active mark, and the same
-        // `clearFilters` on its link (see the healthy-view comment
-        // above for why).
-        const active = sameRow(activeRow, { kind: "saved-view", id: v.id });
-        const row = (
-          <Link
-            to="/list"
-            search={prev => ({ ...clearSort(clearFilters(prev)), view: v.id })}
-            title={`${v.name}, broken: ${v.error}`}
-            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
-            data-broken-view={v.id}
-          >
-            <ItemShell active={active} collapsed={collapsed} title={v.name}>
-              <span
-                aria-hidden="true"
-                className="w-4 shrink-0 text-center text-danger-fg"
-              >
-                ⚠
-              </span>
-              {!collapsed ? (
-                <span className="flex min-w-0 flex-1 items-center gap-1">
-                  <span className="truncate text-text-secondary">{v.name}</span>
-                  <span className="shrink-0 text-[0.7857rem] text-text-tertiary">(broken)</span>
-                </span>
-              ) : null}
-            </ItemShell>
-          </Link>
-        );
-        if (collapsed) return <div key={v.id}>{row}</div>;
-        return (
-          <div
-            key={v.id}
-            // UI-16c: a badge-ending row (built-in filters) insets its
-            // trailing content by `ItemShell`'s own `px-2.5`, but the
-            // kebab here is a SIBLING of `ItemShell`, outside that
-            // padding — so it sat flush against the sidebar edge, 8.75px
-            // further right than a badge's edge, and the column's right
-            // side zig-zagged row to row. `pr-2.5` matches that inset so
-            // every row kind ends at the same x.
-            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
-            data-broken-view-row={v.id}
-          >
-            {row}
-            <RowActions
-              size="sm"
-              label={`Actions for saved filter "${v.name}"`}
+        // A saved view. K118: a click is a full replace of the sidebar
+        // scope (`clearFilters`), and a broken view is addressed by the
+        // same `view` param, so it lights the same way.
+        const active = sameRow(activeRow, { kind: "saved-view", id: child.viewId });
+        const actionsLabel = `Actions for view "${child.name}"`;
+        if (child.broken) {
+          const b = brokenById.get(child.viewId);
+          const error = b?.error ?? "";
+          return (
+            <ViewsRow
+              key={child.id}
+              collapsed={collapsed}
+              active={active}
+              title={child.name}
+              icon={<ViewIcon icon={undefined} />}
+              label={<span className="text-text-secondary">{child.name}</span>}
+              renderLink={content => (
+                // VUE-22: still a link. The list answers a broken view with
+                // its parse error and position, not an empty table.
+                <Link
+                  to="/list"
+                  search={prev => ({ ...clearSort(clearFilters(prev)), view: child.viewId })}
+                  title={`${child.name}, broken: ${error}`}
+                  className="block no-underline"
+                  data-broken-view={child.viewId}
+                >
+                  {content}
+                </Link>
+              )}
+              slot={{ kind: "broken", error }}
+              actionsLabel={actionsLabel}
               actions={[
                 // VUE-22's fix path: Edit opens the dialog on the broken
-                // entry's id + name with NO filters (K102 — its stored
-                // filters did not load, so there is nothing faithful to
-                // seed), AND with the broken context so the dialog can
-                // show the parse error plus the YAML still on disk and
-                // require an explicit confirmation before it replaces it.
-                // Passing `broken` is what stops Edit → Save from
-                // silently overwriting `rawText` with an empty list.
+                // entry with NO filters (K102) and the broken context, so
+                // Save needs an explicit confirmation before it replaces
+                // the text on disk. Rename is not offered: renaming a
+                // broken entry is that same replacement.
                 {
                   label: "Edit",
                   testId: "broken-view-edit",
                   onSelect: () => {
                     setDialog({
                       mode: "edit",
-                      view: { id: v.id, name: v.name, filters: [] },
+                      view: { id: child.viewId, name: child.name, filters: [] },
                       broken: {
-                        error: v.error,
-                        rawText: v.rawText,
-                        ...(v.position !== undefined ? { position: v.position } : {}),
+                        error,
+                        rawText: b?.rawText ?? "",
+                        ...(b?.position !== undefined ? { position: b.position } : {}),
                       },
                     });
                   },
                 },
-                // No Pin: a broken view is being fixed, not promoted. Delete
-                // removes it from queries.yaml like any other.
-                { label: "Delete", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, filters: [] }, broken: true }); } },
+                {
+                  label: "Delete",
+                  testId: "broken-view-delete",
+                  danger: true,
+                  onSelect: () => {
+                    setDialog({ mode: "delete", view: { id: child.viewId, name: child.name, filters: [] }, broken: true });
+                  },
+                },
+                hideAction(child.id),
               ]}
+              rowAttributes={{ "data-broken-view-row": child.viewId }}
             />
-          </div>
+          );
+        }
+        const v = queriesById.get(child.viewId);
+        if (v === undefined) return null;
+        const slot = slotContentOf(viewCounts[v.id]);
+        return (
+          <ViewsRow
+            key={child.id}
+            collapsed={collapsed}
+            active={active}
+            title={rowTitle(v.name, slot)}
+            // UI-19 / K104: the view's own icon, tinted by its colour; a
+            // view with none shows the grey dot (Ken, 2026-09-23).
+            icon={<ViewIcon icon={v.icon} color={v.color} />}
+            label={v.name}
+            renderLink={content => (
+              <Link
+                to="/list"
+                search={prev => ({ ...clearSort(clearFilters(prev)), view: v.id })}
+                title={rowTitle(v.name, slot)}
+                className="block no-underline"
+              >
+                {content}
+              </Link>
+            )}
+            slot={slot}
+            actionsLabel={actionsLabel}
+            actions={[
+              { label: "Edit", testId: "view-edit", onSelect: () => { setDialog({ mode: "edit", view: v }); } },
+              { label: "Rename", testId: "view-rename", onSelect: () => { setDialog({ mode: "edit", view: v, selectName: true }); } },
+              { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: v }); } },
+              hideAction(child.id),
+            ]}
+            rowAttributes={{ "data-view-row": v.id }}
+          />
         );
       })}
 
+      {failed && (
+        <GroupError collapsed={collapsed} error={views.error} onRetry={() => { void views.refetch(); }} />
+      )}
+
       {!collapsed && vanished.map(v => (
         // Not `role="alert"`: this is an explanation, not an error
-        // (SHL-32's last bullet), and a config the user edited
-        // themselves must not fire a toast.
+        // (SHL-32's last bullet).
         <div
           key={v.id}
           role="status"
@@ -1927,7 +1981,7 @@ function SavedViewsGroup({
 
       {!collapsed ? (
         <button
-          ref={newFilterRef}
+          ref={newViewRef}
           type="button"
           data-testid="sidebar-new-filter"
           onClick={() => { setDialog({ mode: "create" }); }}
@@ -1939,22 +1993,16 @@ function SavedViewsGroup({
         </button>
       ) : null}
 
-      {/* The create / edit / delete dialogs live INSIDE the group (not
-          hoisted to a provider): Modal renders inline, so for the mobile
-          drawer's focus trap and DOM containment to hold, the dialog must
-          stay within the drawer's subtree. Create + edit share
-          ViewFormDialog (existing ⇒ edit, VUE-40/VUE-41); delete routes
-          through DeleteViewDialog. */}
+      {/* The dialogs live INSIDE the section: Modal renders inline, so the
+          mobile drawer's focus trap and DOM containment hold. */}
       {dialog?.mode === "create" ? (
-        // Create mode: empty name + one blank simple-filter row, so a
-        // view created from the sidebar starts in the human-readable
-        // picker (K102) rather than in a DSL box.
         <ViewFormDialog onClose={() => { setDialog(null); }} />
       ) : null}
       {dialog?.mode === "edit" ? (
         <ViewFormDialog
           existing={dialog.view}
           {...(dialog.broken !== undefined ? { broken: dialog.broken } : {})}
+          {...(dialog.selectName === true ? { selectName: true } : {})}
           onClose={() => { setDialog(null); }}
         />
       ) : null}
@@ -1962,7 +2010,7 @@ function SavedViewsGroup({
         <DeleteViewDialog
           name={dialog.view.name}
           pinned={pins.includes(dialog.view.id)}
-          returnFocusTo={newFilterRef}
+          returnFocusTo={newViewRef}
           {...(del.isError ? { dataState: dataStateOf(del.error) } : {})}
           onCancel={() => { del.reset(); setDialog(null); }}
           onConfirm={() => { confirmDelete(dialog.view, dialog.broken === true); }}
@@ -1973,153 +2021,6 @@ function SavedViewsGroup({
       ) : null}
     </SectionShell>
   );
-}
-
-/**
- * The six built-in filters (Assigned to me, Reported by me, Mentions
- * me, Due this week, Overdue, High priority), in their own section
- * headed "Filters" (K125, amended Ken 2026-09-24).
- *
- * Split out of what was `SavedFiltersGroup` (now `SavedViewsGroup`
- * above) specifically so the Customize-sidebar panel's "Filters" row —
- * which the panel already let the user move/hide as one unit — moves
- * and hides a REAL section here. Before this split, the built-ins
- * always rendered inside the saved-views section regardless of the
- * `filters` group's position in the stored top-level order, so
- * reordering "Filters" in the panel changed nothing visible: Ken's
- * original complaint about the pre-K125 customiser ("so its not
- * connected" to the sidebar) reproduced under the very shape the K125
- * ruling was meant to fix. Now `filters`'s resolved position (from
- * `resolveSidebarOrder` against the group catalog, same mechanism every
- * other section uses) is this section's actual position, and hiding
- * the group here (`filtersGroupHidden`) removes the section entirely —
- * not just its contents — matching `MilestonesGroup`/`SprintsGroup`/etc.
- */
-function FiltersGroup({
-  collapsed,
-  currentUserId,
-  today,
-}: {
-  collapsed: boolean;
-  currentUserId: string | null;
-  today: string;
-}) {
-  const workflow = useWorkflow();
-  const priorities = workflow.data?.priorities;
-  const ctx = { currentUserId, today, priorities };
-  const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
-  const activeRow = useActiveRow(currentUserId, today);
-  const settings = useUserSettings();
-  // SHL-45: the built-in filters can be hidden/reordered by the same
-  // per-user setting. `resolveSidebarOrder` against the filter catalog
-  // gives their order + hidden flags; a hidden filter renders nothing.
-  const storedGroups = readSidebarGroups(settings.data?.settings);
-  const filterOrder = resolveSidebarOrder(storedGroups, [...SIDEBAR_FILTER_IDS]);
-  const filterById = new Map(BUILTIN_FILTERS.map(f => [f.id, f]));
-  // K125: the "Filters" group in the Customize-sidebar panel is one
-  // hideable unit — hiding it drops the WHOLE section (not just its
-  // contents), regardless of each built-in's own hidden flag (which the
-  // panel still lets the user set independently for when the group is
-  // back on). `SidebarGroups` (the caller) also skips rendering when
-  // `resolveSidebarOrder` marks this group hidden — this local check is
-  // for the per-filter contents WITHIN a visible section.
-  const filtersGroupHidden = (storedGroups.hidden ?? []).includes("filters");
-  const orderedFilters = filtersGroupHidden
-    ? []
-    : filterOrder
-        .filter(f => !f.hidden)
-        .flatMap(f => {
-          const def = filterById.get(f.id);
-          return def === undefined ? [] : [def];
-        });
-
-  // A hidden group still renders nothing, but the SECTION itself must
-  // also not appear — an empty "Filters" heading with no rows would be
-  // a worse signal than no heading at all (SHL-9's carve-out is for a
-  // group with genuinely no entries, not one its own user switched off).
-  if (filtersGroupHidden) return null;
-
-  return (
-    <SectionShell id="filters" label="Filters" collapsed={collapsed}>
-      {orderedFilters.map(f => {
-        const search = f.resolve(ctx);
-        const count = counts[f.id]?.count;
-        const countPending = counts[f.id]?.isLoading === true;
-        const countUnavailable = counts[f.id]?.unavailable === true;
-        // Non-resolvable built-ins (a user filter with no current user, or
-        // "High priority" on a scale that cannot express it) render as
-        // inert text, not a link.
-        if (search === null) {
-          return (
-            // SHL-8: says why it is inert and when it arrives, rather
-            // than being silently dead. `aria-disabled` carries the
-            // state to assistive tech, so the dimming is not the only
-            // signal (A11Y-31).
-            <div
-              key={f.id}
-              aria-disabled="true"
-              title={inertReason(f.id, f.label)}
-              className="opacity-50"
-            >
-              <ItemShell collapsed={collapsed} title={f.label}>
-                <span className="flex w-4 shrink-0 justify-center">
-                  <Icon name={f.icon} size={14} />
-                </span>
-                {!collapsed ? <span className="truncate">{f.label}</span> : null}
-              </ItemShell>
-            </div>
-          );
-        }
-        const active = sameRow(activeRow, { kind: "builtin", id: f.id });
-        return (
-          <Link
-            key={f.id}
-            to="/list"
-            search={prev => ({ ...clearSort(clearFilters(prev)), ...search })}
-            title={f.label}
-            className="no-underline"
-          >
-            <ItemShell active={active} collapsed={collapsed} title={f.label}>
-              <span className="flex w-4 shrink-0 justify-center">
-                <Icon name={f.icon} size={14} />
-              </span>
-              {!collapsed ? (
-                <>
-                  <span className="truncate">{f.label}</span>
-                  <Badge
-                    value={count}
-                    pending={countPending}
-                    unavailable={countUnavailable}
-                  />
-                </>
-              ) : null}
-            </ItemShell>
-          </Link>
-        );
-      })}
-    </SectionShell>
-  );
-}
-
-/**
- * Pinned views first in pin order, then the rest in config order.
- *
- * Pins that name a missing view are skipped rather than rendered as
- * broken entries — SET-13's third bullet and P7's "the sidebar
- * crashing because a pinned view was removed" violation.
- */
-function orderByPins<T extends { id: string }>(
-  views: readonly T[],
-  pins: readonly string[],
-): readonly T[] {
-  if (pins.length === 0) return views;
-  const byId = new Map(views.map(v => [v.id, v]));
-  const pinned = pins.flatMap(id => {
-    const v = byId.get(id);
-    return v === undefined ? [] : [v];
-  });
-  const pinnedIds = new Set(pinned.map(v => v.id));
-  return [...pinned, ...views.filter(v => !pinnedIds.has(v.id))];
 }
 
 function MilestonesGroup({

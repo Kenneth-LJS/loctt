@@ -13,7 +13,7 @@
 
 import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
 import { SHORTCUT_IDS } from "@loctt/contracts";
-import { SIDEBAR_GROUP_IDS, SIDEBAR_ITEM_IDS } from "@loctt/contracts";
+import { SIDEBAR_BUILTIN_VIEW_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import {
   applyArchivedScope,
   applyShortcutChanges,
@@ -25,6 +25,7 @@ import {
   getCurrentUser,
   loadAllUsers,
   loadOptionalConfigs,
+  loadSidebarSavedViews,
   loadUserSettings,
   readKeyboardShortcuts,
   readSidebarGroups,
@@ -34,7 +35,7 @@ import {
   resolveUserRef,
   saveUserSettings,
   SHORTCUT_VALID_IDS,
-  SIDEBAR_VALID_IDS,
+  sidebarValidIdsList,
   sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
@@ -129,29 +130,29 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     /**
-     * SHL-45, Ken's layer rule: the web sidebar-groups editor is a core
-     * capability, so an agent can read/configure it too.
+     * SHL-45, Ken's layer rule: the web sidebar customization is a core
+     * capability, so an agent can read/configure it too (K158 ids).
      */
     name: "get_sidebar_groups",
-    description: "Returns the active user's sidebar-groups customization (SHL-45): which built-in sidebar groups/filters show and in what order. `resolved` is the full ordered list with a `hidden` flag per item, exactly as the sidebar renders it: the built-in filters follow the `filters` group, and all read hidden while that group is hidden. `stored` is the raw per-user setting. Group ids: " + SIDEBAR_GROUP_IDS.join(", ") + ". Filter ids: " + SIDEBAR_ITEM_IDS.slice(SIDEBAR_GROUP_IDS.length).join(", ") + ".",
+    description: "Returns the active user's sidebar customization (SHL-45, K158): which sidebar groups, and which views inside the Views group, show and in what order. `resolved` is the full ordered list with a `hidden` flag per item, exactly as the sidebar renders it: the Views group's children (built-in views, and saved views as `view:<id>` with their `name` and `broken` when their filters no longer load) follow `views`, and all read hidden while that group is hidden. `stored` is the per-user setting (a value written before K158 is shown migrated). Group ids: " + SIDEBAR_GROUP_IDS.join(", ") + " (`layouts` is the List / Board / Timeline switcher). Built-in view ids: " + SIDEBAR_BUILTIN_VIEW_IDS.join(", ") + ". Saved views: `view:<id>`.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       const settings = await loadUserSettings(locttDir, current.id);
-      const stored = readSidebarGroups(settings);
-      // Every item id (groups + filters, B2 bug 3), resolved as the web
-      // sidebar renders it (A346), matching the CLI read.
-      const resolved = resolveRenderedSidebarItems(stored);
+      const savedViews = await loadSidebarSavedViews(locttDir, settings);
+      const stored = readSidebarGroups(settings, savedViews);
+      // Resolved as the web sidebar renders it (A346), matching the CLI read.
+      const resolved = resolveRenderedSidebarItems(stored, savedViews);
       return text(JSON.stringify({ user: current.id, user_name: current.name, stored, resolved }, null, 2));
     },
   },
   {
     name: "set_sidebar_groups",
-    description: "Sets the active user's sidebar-groups customization (SHL-45). `order` is the ids in render order (any built-in not listed follows in default order); `hidden` is the ids to hide (a hidden group renders nothing, a deliberate choice distinct from an empty group). Omit both and pass reset=true to clear back to the default. An unknown id is rejected with an error naming it (a typo must not silently no-op); duplicates are de-duplicated. Returns the resolved state.",
+    description: "Sets the active user's sidebar customization (SHL-45, K158). `order` is ids in render order: group ids order the sections, and the Views group's children (built-in view ids and `view:<id>` for a saved view) are ordered by their relative position in the same list. Anything not listed follows in its default place, and a saved view not listed appends. `hidden` is the ids to hide (a hidden group renders nothing, a deliberate choice distinct from an empty group). Omit both and pass reset=true to clear back to the default. An unknown id (including `view:<id>` for a view that does not exist) is rejected with an error naming it; duplicates are de-duplicated. Returns the resolved state.",
     inputSchema: {
-      order: z.array(z.string()).optional().describe("Group/filter ids in render order"),
-      hidden: z.array(z.string()).optional().describe("Group/filter ids to hide"),
+      order: z.array(z.string()).optional().describe("Group, built-in view and view:<id> ids in render order"),
+      hidden: z.array(z.string()).optional().describe("Group, built-in view and view:<id> ids to hide"),
       reset: z.boolean().optional().describe("Clear the setting back to the default order/visibility"),
     },
     handler: async ({ locttDir }, args) => {
@@ -164,27 +165,27 @@ export const TOOLS: readonly ToolDef[] = [
         return errorResult("reset cannot be combined with order/hidden");
       }
       const settings = await loadUserSettings(locttDir, current.id);
+      const savedViews = await loadSidebarSavedViews(locttDir, settings);
       if (reset) {
         const { sidebar_groups: _drop, ...rest } = settings;
         await saveUserSettings(locttDir, current.id, rest);
       } else if (orderArg !== undefined || hiddenArg !== undefined) {
         // Reject an unknown id rather than silently dropping it — parity
-        // with the CLI (SHL-45, B2 bug 4). A typo used to succeed and
-        // change nothing, so the agent believed a group was hidden.
+        // with the CLI (SHL-45, B2 bug 4).
         const bad: string[] = [];
         const parse = (raw: string[]): SidebarItemId[] => {
-          const { known, unknown } = validateSidebarIds(raw);
+          const { known, unknown } = validateSidebarIds(raw, savedViews);
           bad.push(...unknown);
           return known;
         };
-        const stored = readSidebarGroups(settings);
+        const stored = readSidebarGroups(settings, savedViews);
         const next: SidebarGroups = { ...stored };
         const orderIds = orderArg !== undefined ? parse(orderArg) : undefined;
         const hiddenIds = hiddenArg !== undefined ? parse(hiddenArg) : undefined;
         if (bad.length > 0) {
           return errorResult(
             `unknown sidebar id${bad.length > 1 ? "s" : ""}: ${bad.join(", ")}. `
-            + `Valid ids: ${SIDEBAR_VALID_IDS.join(", ")}`,
+            + `Valid ids: ${sidebarValidIdsList(savedViews)}`,
           );
         }
         if (orderIds !== undefined) {
@@ -197,10 +198,9 @@ export const TOOLS: readonly ToolDef[] = [
         }
         await saveUserSettings(locttDir, current.id, { ...settings, sidebar_groups: next });
       }
-      const after = readSidebarGroups(await loadUserSettings(locttDir, current.id));
-      // Every item id (groups + filters, B2 bug 3), resolved as the web
-      // sidebar renders it (A346), matching the CLI read.
-      const resolved = resolveRenderedSidebarItems(after);
+      const after = readSidebarGroups(await loadUserSettings(locttDir, current.id), savedViews);
+      // Resolved as the web sidebar renders it (A346), matching the CLI read.
+      const resolved = resolveRenderedSidebarItems(after, savedViews);
       return text(JSON.stringify({ user: current.id, user_name: current.name, stored: after, resolved }, null, 2));
     },
   },

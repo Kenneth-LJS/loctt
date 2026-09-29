@@ -1327,14 +1327,12 @@ test.describe("SHL-33 — an unusual status count does not distort the shell", (
     // has no group here, so this set must not grow with status count.
     // (The labels are plain styled divs, not ARIA headings, so they
     // are matched by their exact text within the sidebar.)
-    // "Saved filters" was already stale before K125 (the sidebar has
-    // said "Views" there since K102); K125 (amended, Ken 2026-09-24)
-    // split that one section into two — "Filters" (the six built-ins)
-    // and "Saved views" (saved views only) — so both now appear here.
+    // K158 (Ken, 2026-09-29): the built-in and saved views are one
+    // "Views" section again (K125 had split it into "Filters" and
+    // "Saved views").
     const KNOWN_GROUPS = [
       "Projects",
-      "Filters",
-      "Saved views",
+      "Views",
       "Milestones",
       "Sprints",
       "Labels",

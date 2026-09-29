@@ -150,7 +150,12 @@ export type ThemePreference = z.infer<typeof ThemePreferenceSchema>;
 
 /**
  * Sidebar pins (SET-13): the saved-view ids pinned to the sidebar's
- * Saved filters group, in sidebar order.
+ * Views group, in sidebar order.
+ *
+ * K158: the Views group's order is `sidebar_groups` (built-in and saved
+ * views in one list). Pins set a saved view's DEFAULT place (pinned
+ * first), which applies until the user places it in Customize sidebar,
+ * and seed the order a pre-K158 setting migrates to.
  *
  * Ids, not names — a view renamed in `queries.yaml` keeps its pin.
  * Absent means "pin nothing"; the sidebar still lists views, but the
@@ -167,34 +172,157 @@ export const SidebarPinsSchema = z
 export type SidebarPins = z.infer<typeof SidebarPinsSchema>;
 
 /**
- * The built-in sidebar group ids, and the built-in filter ids the
- * `sidebar_groups` setting can hide/reorder (SHL-45).
+ * The sidebar's top-level group ids, and the ids of the items inside the
+ * Views group, that the `sidebar_groups` setting orders and hides
+ * (SHL-45, K125, K158).
  *
- * These are the stable identities a `sidebar_groups` entry refers to.
- * The group ids name the top-level sidebar sections; the filter ids
- * name the built-in saved filters (they mirror
- * `apps/web/src/client/sidebar/builtinFilters.ts`). Both are kept here
- * so core, CLI and MCP validate against the same catalog the web
- * sidebar renders from.
+ * **K158 (Ken, 2026-09-29): one "Views" section.** *"why are you
+ * splitting filters vs saved views?!?! ... it should be 1. then we can
+ * re-order them, and we can hide."* The built-in views (Assigned to me,
+ * Reported by me, ...) and the saved views are one ordered, hideable list
+ * under one group, `views`. The List / Board / Timeline switcher, which
+ * used to own the id `views`, is now `layouts` (labelled "Layouts (List /
+ * Board / Timeline)" so it is not confused with Views).
  *
- * `views` (the List/Board/Timeline switcher) and `saved-filters` are
- * deliberately hideable/reorderable too, per Ken's 2026-09-06 ruling
- * (built-in groups AND filters are both).
- *
- * **`filters` (K125, Ken 2026-09-24).** The six `SIDEBAR_FILTER_IDS`
- * nest under this one group id — "Nest under 'Filters'" — so the
- * Customize-sidebar panel shows ONE reorderable/hideable row for the
- * whole set, alongside `projects`/`milestones`/etc., while each built-in
- * is still individually reorderable/hideable INSIDE it (its id stays in
- * `SIDEBAR_FILTER_IDS`, ordered/hidden exactly as before — `filters`
- * adds a group-level entry, it does not replace the per-filter ones).
- * Hiding `filters` hides every built-in filter from the sidebar
- * regardless of each one's own `hidden` flag; reordering it moves the
- * whole block as a unit. CLI/MCP need no change beyond this catalog
- * addition — `order`/`hidden` are still flat id lists over
- * `SIDEBAR_ITEM_IDS`, and `filters` is just one more valid id in it.
+ * The pre-K158 ids (`views` meaning the switcher, `saved-filters`,
+ * `filters`) live on only in `LEGACY_SIDEBAR_*` below, for reading a
+ * setting written before K158 (see `LegacySidebarGroupsSchema`).
  */
 export const SIDEBAR_GROUP_IDS = [
+  "layouts",
+  "projects",
+  "views",
+  "milestones",
+  "sprints",
+  "labels",
+  "recents",
+] as const;
+export type SidebarGroupId = (typeof SIDEBAR_GROUP_IDS)[number];
+
+/**
+ * The built-in views, children of the `views` group (K158; they were the
+ * "Filters" group's children under K125). They mirror
+ * `apps/web/src/client/sidebar/builtinFilters.ts`.
+ */
+export const SIDEBAR_BUILTIN_VIEW_IDS = [
+  "assigned-to-me",
+  "reported-by-me",
+  "mentions-me",
+  "due-this-week",
+  "overdue",
+  "high-priority",
+] as const;
+export type SidebarBuiltinViewId = (typeof SIDEBAR_BUILTIN_VIEW_IDS)[number];
+
+/**
+ * A saved view's id inside `sidebar_groups` (K158): `view:` + its
+ * `queries.yaml` id. The prefix keeps a saved view apart from a group or
+ * built-in id: a view's id is free text, and a view called `overdue` or
+ * `projects` must not collide with the built-in of that name.
+ */
+export const SAVED_VIEW_SIDEBAR_PREFIX = "view:";
+export type SavedViewSidebarId = `view:${string}`;
+
+export function savedViewSidebarId(viewId: string): SavedViewSidebarId {
+  return `${SAVED_VIEW_SIDEBAR_PREFIX}${viewId}`;
+}
+
+/** The saved view's own id, or undefined when `id` is not a saved-view entry. */
+export function parseSavedViewSidebarId(id: string): string | undefined {
+  if (!id.startsWith(SAVED_VIEW_SIDEBAR_PREFIX)) return undefined;
+  const rest = id.slice(SAVED_VIEW_SIDEBAR_PREFIX.length);
+  return rest === "" ? undefined : rest;
+}
+
+/**
+ * Every FIXED id a `sidebar_groups` entry may reference: the groups plus
+ * the built-in views. Saved views (`view:<id>`) are the open part.
+ */
+export const SIDEBAR_ITEM_IDS = [
+  ...SIDEBAR_GROUP_IDS,
+  ...SIDEBAR_BUILTIN_VIEW_IDS,
+] as const;
+export type SidebarFixedItemId = (typeof SIDEBAR_ITEM_IDS)[number];
+export type SidebarItemId = SidebarFixedItemId | SavedViewSidebarId;
+
+const FIXED_ITEM_IDS: ReadonlySet<string> = new Set(SIDEBAR_ITEM_IDS);
+
+/** Whether `id` is a well-formed `sidebar_groups` id (a fixed id or `view:<id>`). */
+export function isSidebarItemId(id: unknown): id is SidebarItemId {
+  if (typeof id !== "string") return false;
+  return FIXED_ITEM_IDS.has(id) || parseSavedViewSidebarId(id) !== undefined;
+}
+
+const SidebarItemIdSchema = z.custom<SidebarItemId>(isSidebarItemId, {
+  message: "not a sidebar id",
+});
+
+/** The stored-format version of `sidebar_groups` written since K158. */
+export const SIDEBAR_GROUPS_VERSION = 2;
+
+/**
+ * Sidebar-groups customization (SHL-45, K158): which sidebar groups and
+ * which views inside the Views group show, and in what order.
+ *
+ * ## Shape
+ *
+ * `version: 2` plus two flat id lists:
+ *
+ *  - **`order`**: the ids the user has an opinion about, in render
+ *    order. Group ids order the sections. The Views group's children
+ *    (built-in ids and `view:<id>`) are ordered by their relative
+ *    position in the same list. Anything not listed follows in its
+ *    default place: a group at its catalog slot, a built-in after the
+ *    placed children, a saved view after those (so a new saved view
+ *    appends).
+ *  - **`hidden`**: the ids the user chose to hide. A hidden id is a
+ *    deliberate choice, distinct from "absent config" (SHL-45's fourth
+ *    bullet / the SHL-9 carve-out).
+ *
+ * A single ordered array cannot express "hidden but remembered in this
+ * position", which reorder-then-hide-then-show needs; two lists can.
+ *
+ * `version` marks the K158 id set. A value without it was written before
+ * K158, where `views` meant the List / Board / Timeline switcher; it is
+ * read with `LegacySidebarGroupsSchema` and migrated on read
+ * (`core/users/sidebarGroups.ts`, `migrateLegacySidebarGroups`).
+ *
+ * ## Degradation (per corruption-handling-guide)
+ *
+ * The schema is the *stored* contract; tolerance lives in the reader
+ * (`core/users/sidebarGroups.ts`), which drops malformed and duplicate
+ * ids rather than throwing (P7). A `view:<id>` whose view no longer
+ * exists is not malformed: it is skipped when the sidebar resolves (a
+ * deleted view drops out of the order).
+ *
+ * Ids, not labels: a group or view is referenced by its stable id, so
+ * this survives a rename.
+ */
+export const SidebarGroupsSchema = z
+  .object({
+    version: z.literal(SIDEBAR_GROUPS_VERSION),
+    order: z
+      .array(SidebarItemIdSchema)
+      .refine(ids => new Set(ids).size === ids.length, {
+        message: "sidebar_groups.order must not repeat an id",
+      })
+      .optional(),
+    hidden: z
+      .array(SidebarItemIdSchema)
+      .refine(ids => new Set(ids).size === ids.length, {
+        message: "sidebar_groups.hidden must not repeat an id",
+      })
+      .optional(),
+  })
+  .strict();
+export type SidebarGroups = z.infer<typeof SidebarGroupsSchema>;
+
+/**
+ * The pre-K158 group ids (SHL-45, K125): `views` was the List / Board /
+ * Timeline switcher, and the built-ins and saved views were two groups,
+ * `filters` and `saved-filters`. Read-only: nothing writes these any more.
+ */
+export const LEGACY_SIDEBAR_GROUP_IDS = [
   "views",
   "projects",
   "saved-filters",
@@ -204,85 +332,35 @@ export const SIDEBAR_GROUP_IDS = [
   "labels",
   "recents",
 ] as const;
-export type SidebarGroupId = (typeof SIDEBAR_GROUP_IDS)[number];
-
-/**
- * The built-in filters nested under the `filters` group (K125). Each
- * id here is ALSO individually reorderable/hideable via the same
- * `sidebar_groups.order`/`hidden` lists — nesting under one group row
- * in the Customize-sidebar panel does not collapse their own identity.
- */
-export const SIDEBAR_FILTER_IDS = [
-  "assigned-to-me",
-  "reported-by-me",
-  "mentions-me",
-  "due-this-week",
-  "overdue",
-  "high-priority",
+export type LegacySidebarGroupId = (typeof LEGACY_SIDEBAR_GROUP_IDS)[number];
+export const LEGACY_SIDEBAR_ITEM_IDS = [
+  ...LEGACY_SIDEBAR_GROUP_IDS,
+  ...SIDEBAR_BUILTIN_VIEW_IDS,
 ] as const;
-export type SidebarFilterId = (typeof SIDEBAR_FILTER_IDS)[number];
+export type LegacySidebarItemId = (typeof LEGACY_SIDEBAR_ITEM_IDS)[number];
 
-/**
- * Every id a `sidebar_groups` entry may reference: the built-in groups
- * plus the built-in filters. This is the closed set the schema accepts;
- * an unknown id is dropped on load (degrade), never stored (SHL-45).
- */
-export const SIDEBAR_ITEM_IDS = [
-  ...SIDEBAR_GROUP_IDS,
-  ...SIDEBAR_FILTER_IDS,
-] as const;
-export type SidebarItemId = (typeof SIDEBAR_ITEM_IDS)[number];
-
-/**
- * Sidebar-groups customization (SHL-45): which built-in sidebar
- * groups/filters show, and in what order.
- *
- * ## Shape
- *
- * Two ordered id lists rather than one array of `{id, hidden}`:
- *
- *  - **`order`** — the ids the user has an opinion about, in the order
- *    they should render. Any built-in NOT listed here renders after
- *    these, in its natural default position, still visible. So a fresh
- *    user with no setting gets every group in default order, and a user
- *    who reordered only two groups need not enumerate all of them.
- *  - **`hidden`** — the ids the user chose to hide. A hidden id is a
- *    deliberate choice, distinct from "absent config" (SHL-45's fourth
- *    bullet / the SHL-9 carve-out): a hidden group renders nothing, not
- *    the "empty affordance" a group with no *entries* shows.
- *
- * A single ordered array cannot express "hidden but remembered in this
- * position", which reorder-then-hide-then-show needs; two lists can.
- *
- * ## Degradation (per corruption-handling-guide)
- *
- * The schema is the *stored* contract; tolerance lives in the reader
- * (`core/users/sidebarGroups.ts`), which drops unknown ids and
- * de-dups rather than throwing — a hand-edited unknown/duplicate id
- * must never make the sidebar unrenderable (P7). Here the schema still
- * rejects duplicates so a clean save stays clean; the reader is what
- * tolerates a dirty file.
- *
- * Ids, not labels: a group is referenced by its stable id, so this
- * survives a re-label.
- */
-export const SidebarGroupsSchema = z
+/** A `sidebar_groups` value written before K158 (no `version`). */
+export const LegacySidebarGroupsSchema = z
   .object({
     order: z
-      .array(z.enum(SIDEBAR_ITEM_IDS))
+      .array(z.enum(LEGACY_SIDEBAR_ITEM_IDS))
       .refine(ids => new Set(ids).size === ids.length, {
         message: "sidebar_groups.order must not repeat an id",
       })
       .optional(),
     hidden: z
-      .array(z.enum(SIDEBAR_ITEM_IDS))
+      .array(z.enum(LEGACY_SIDEBAR_ITEM_IDS))
       .refine(ids => new Set(ids).size === ids.length, {
         message: "sidebar_groups.hidden must not repeat an id",
       })
       .optional(),
   })
   .strict();
-export type SidebarGroups = z.infer<typeof SidebarGroupsSchema>;
+export type LegacySidebarGroups = z.infer<typeof LegacySidebarGroupsSchema>;
+
+/** What `settings.yaml` may hold: the K158 shape, or a pre-K158 value still to migrate. */
+export const StoredSidebarGroupsSchema = z.union([SidebarGroupsSchema, LegacySidebarGroupsSchema]);
+export type StoredSidebarGroups = z.infer<typeof StoredSidebarGroupsSchema>;
 
 /**
  * `.passthrough()`, unlike its `.strict()` siblings above, and
@@ -306,7 +384,7 @@ export const UserSettingsSchema = z.object({
   editor_mode: EditorModeSchema.optional(),
   theme: ThemePreferenceSchema.optional(),
   sidebar_pins: SidebarPinsSchema.optional(),
-  sidebar_groups: SidebarGroupsSchema.optional(),
+  sidebar_groups: StoredSidebarGroupsSchema.optional(),
   // K133: the single-key shortcut switches. See `shortcuts.ts`.
   keyboard_shortcuts: KeyboardShortcutsSchema.optional(),
 }).passthrough();

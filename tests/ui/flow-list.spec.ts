@@ -4529,7 +4529,12 @@ test.describe("VUE — saving a view (M1.3)", () => {
     const brokenLink = page.locator('a[data-broken-view="01M2BROKENVIEW0000000000001"]');
     await expect(brokenLink).toBeVisible();
     await expect(brokenLink).toContainText("Busted");
-    await expect(brokenLink).toContainText(/broken/i);
+    // K158: the mark is a warning icon in the row's count slot, named
+    // "Broken view" for assistive tech, rather than the word in the link.
+    await expect(
+      page.locator('[data-broken-view-row="01M2BROKENVIEW0000000000001"]')
+        .getByRole("img", { name: "Broken view" }),
+    ).toBeVisible();
 
     // Bullet 2: clicking it shows the parse error with the offending
     // position, rather than an empty list.
@@ -5513,8 +5518,11 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
     const link = page.getByRole("link", { name: /Mentions me/ });
     await expect(link).toBeVisible();
 
-    // It carries a count badge — the honest total, here 1.
-    await expect(link.locator("xpath=..")).toContainText("1");
+    // It carries a count badge — the honest total, here 1. K158: the count
+    // is in the row's slot, beside the link.
+    await expect(
+      page.locator("aside [data-builtin-row='mentions-me'] [data-testid='sidebar-row-count']"),
+    ).toHaveText("1");
 
     // Clicking it navigates to the filter state and reproduces the row.
     await link.click();
@@ -5599,16 +5607,19 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
 
-    const aside = page.locator("aside");
+    // K158: the count is in the row's trailing slot (a sibling of the
+    // link, sharing its box with the ⋯), so it is read from the row.
+    const count = (id: string) =>
+      page.locator(`aside [data-builtin-row='${id}'] [data-testid='sidebar-row-count']`);
     // A filter matching one task shows 1, not the page count.
-    await expect(aside.getByText("High priority").locator("xpath=..")).toContainText("1");
+    await expect(count("high-priority")).toHaveText("1");
     // A filter matching none shows 0, not a blank.
-    await expect(aside.getByText("Overdue").locator("xpath=..")).toContainText("0");
+    await expect(count("overdue")).toHaveText("0");
 
     // Creating a matching task updates the badge on refetch.
     await tracker.run(["create", "Later", "--priority", "high"]);
     await page.reload();
-    await expect(aside.getByText("High priority").locator("xpath=..")).toContainText("2");
+    await expect(count("high-priority")).toHaveText("2");
   });
 
   // @verifies SHL-9

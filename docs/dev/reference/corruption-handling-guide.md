@@ -237,8 +237,10 @@ the crash sentinel is fatal until the backup is restored.
   K13). `checkDataIntegrity` reports each degraded field as `malformed`
   and each unreadable profile as `unreadable`, via
   `loadAllUsersDetailed`.
-- **per-user `sidebar_groups` salvage** (SHL-45) — a hand-edited unknown
-  or duplicate id is lifted out on load so the sidebar still renders (P7);
+- **per-user `sidebar_groups` salvage** (SHL-45, K158) — a hand-edited
+  unknown or duplicate id (or an unknown `version`) is lifted out on load
+  so the sidebar still renders (P7); a pre-K158 value is not a fault and
+  is migrated on read;
   `collectSidebarGroupsDrops` (in `users/settings.ts`) reads the raw
   settings and `checkDataIntegrity` emits a `malformed` finding naming
   each dropped id (and one for a wholly-unshaped value). Non-blocking —
@@ -273,6 +275,7 @@ This month's additions, walked against the checklists above:
 |---|---|---|---|---|
 | `keyboard_shortcuts` (K133) | field-local | yes — `salvageKeyboardShortcuts`, fails open (all on) | yes — `collectKeyboardShortcutsDrops` → `checkDataIntegrity` | had zero test at the doctor/integrity layer (only unit-level `shortcuts.test.ts`); added two `integrity.test.ts` cases |
 | `sidebar_groups` incl. `filters` group id (K125) | field-local | yes — `salvageSidebarGroups`, degrades to "no customization" | yes — `collectSidebarGroupsDrops` → `checkDataIntegrity`, tested | none — the `filters` group id is just one more entry in the closed `SIDEBAR_ITEM_IDS` set the existing salvage already walks; no separate code path to miss |
+| `sidebar_groups` version 2: one `views` group, `view:<id>` children (K158, A370) | field-local | yes — `salvageSidebarGroups` reads by `version` (absent = the pre-K158 id set, migrated on read with the saved views loaded; 2 = the K158 set; any other version reported and read as 2); a malformed, duplicate or stray part drops alone | yes — the same `collectSidebarGroupsDrops` path, tested for a malformed `view:` id and for a clean pre-K158 value producing no finding | a `view:<id>` whose view is gone is not a finding: it is a stale reference the resolver skips (a deleted view drops out of the order), not corruption |
 | Body draft (`sessionStorage`, A338) | field-local (per-tab, ephemeral) | yes — `readBodyDraft` drops an unparseable/wrong-shaped entry and a blocked/throwing `Storage` degrades to "no draft" everywhere it's touched | n/a — not on-disk tracker state, so outside doctor's scope by design | none — `bodyDraft.test.ts` already covers the malformed-JSON, wrong-type, and blocked-storage cases |
 | Link `rank` (K143, B41) | field-local (an edge without one) | yes — sorts after the ranked edges; reorder ranks its siblings first | yes — `relationshipFindings` "has no rank", repaired by `--repair-relationships` | none; tested in `task/traversal.test.ts` and `relationship-repair.test.ts` |
 | Retired `ranked` on a relationship (K143) | field-local (a key that no longer means anything) | yes — dropped on read, the kind loads | yes — `workflow.yaml retired settings` warn | none; `config/retired-keys.test.ts` |

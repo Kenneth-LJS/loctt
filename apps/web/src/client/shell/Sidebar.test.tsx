@@ -259,6 +259,22 @@ async function renderSidebarAt(
   await screen.findByText("Projects");
 }
 
+/**
+ * K158: the count sits in the row's trailing slot, a sibling of the link
+ * (so the ⋯ can share its box), not inside the link. The Views row that
+ * holds `el`.
+ */
+function viewsRowOf(el: HTMLElement): HTMLElement {
+  const row = el.closest(".sidebar-views-row");
+  if (!(row instanceof HTMLElement)) throw new Error("not inside a Views row");
+  return row;
+}
+
+/** The text of the count in the slot of the Views row holding `el`. */
+function slotCountOf(el: HTMLElement): string | null {
+  return viewsRowOf(el).querySelector("[data-testid=sidebar-row-count]")?.textContent ?? null;
+}
+
 afterEach(() => {
   cleanup();
   if (priorQc) { priorQc.clear(); priorQc = undefined; }
@@ -299,8 +315,12 @@ describe("Sidebar", () => {
     // "Views" no longer described only saved views once "Filters" was a
     // sibling section, and the Customize-sidebar panel needed the same
     // label to make the connection between the two surfaces visible.
+    //
+    // K158 (Ken, 2026-09-29): "Filters" and "Saved views" are one section
+    // again, headed "Views" — *"why are you splitting filters vs saved
+    // views?!?! ... it should be 1"*.
     for (const label of [
-      "Projects", "Filters", "Saved views", "Milestones", "Sprints", "Labels", "Recently viewed",
+      "Projects", "Views", "Milestones", "Sprints", "Labels", "Recently viewed",
     ]) {
       expect(await screen.findByText(label)).toBeTruthy();
     }
@@ -447,13 +467,14 @@ describe("Sidebar", () => {
     // workflow config (VUE-24), which arrives a tick later — so wait
     // for the link rather than for the text, which is present in both
     // states.
+    // K158: the count is in the row's slot, beside the link.
     const highPriority = await screen.findByRole("link", { name: /High priority/ });
-    expect(within(highPriority).getByText("3")).toBeTruthy();
+    await waitFor(() => { expect(slotCountOf(highPriority)).toBe("3"); });
     // CMT-10: "Mentions me" now resolves to `comment_mentions =
     // currentUser()`, so with a current user it is a live link with a
     // count like the other user filters.
     const mentions = await screen.findByRole("link", { name: /Mentions me/ });
-    expect(within(mentions).getByText("3")).toBeTruthy();
+    await waitFor(() => { expect(slotCountOf(mentions)).toBe("3"); });
   });
 
   it("highlights the active List view", async () => {
@@ -521,16 +542,14 @@ describe("Sidebar Views section active state (UI-16b)", () => {
     const savedView = (screen.getByText("My open bugs")).closest("a") as HTMLElement;
     expect(savedView.getAttribute("aria-current")).toBeNull();
 
-    // Only one row within the Filters section is active at a time.
+    // Only one row within the Views section is active at a time.
     // Scoped to that section's body — the List/Board/Timeline switcher
     // above it is independently active on `/list` and is not what this
     // assertion is about.
     //
-    // K125 (amended, Ken 2026-09-24): built-ins moved OUT of the
-    // "sidebar-section-saved-filters" body (now saved views only, headed
-    // "Saved views") into their own "sidebar-section-filters" body
-    // (headed "Filters") — was scoped to `saved-filters` when both
-    // rendered together under one heading.
+    // K158 (Ken, 2026-09-29): the built-ins and saved views are one
+    // "Views" section again ("sidebar-section-views"); under K125 this
+    // was scoped to the built-ins' own "sidebar-section-filters".
     //
     // Scoped to `ItemShell`'s own `data-active` marker (`[data-active]`),
     // not `[aria-current="page"]`: TanStack Router's `<Link>` ALSO sets
@@ -538,7 +557,7 @@ describe("Sidebar Views section active state (UI-16b)", () => {
     // plain `aria-current` query double-counts one active row (the `<a>`
     // and the `ItemShell` `<span>` inside it). `data-active` is the
     // component's own state and appears exactly once per active row.
-    const filtersSection = document.getElementById("sidebar-section-filters");
+    const filtersSection = document.getElementById("sidebar-section-views");
     expect(filtersSection).not.toBeNull();
     const activeRows = filtersSection?.querySelectorAll("[data-active]");
     expect(activeRows?.length).toBe(1);
@@ -761,7 +780,7 @@ describe("Sidebar built-in filters", () => {
       "Assigned to me", "Reported by me", "Due this week", "Overdue", "High priority",
     ]) {
       const link = await screen.findByRole("link", { name: new RegExp(label) });
-      expect(within(link).getByText("0")).toBeTruthy();
+      await waitFor(() => { expect(slotCountOf(link)).toBe("0"); });
     }
   });
 
@@ -795,11 +814,13 @@ describe("Sidebar built-in filters", () => {
    * rows.
    */
   it("shows the true total rather than a page size", async () => {
-    TASK_TOTAL = 1280;
+    // K158 caps the slot at "99+", so the true total is shown below the
+    // cap: 87 is more than a page of the list and still exact.
+    TASK_TOTAL = 87;
     await renderSidebarAt("/list");
 
     const link = await screen.findByRole("link", { name: /Assigned to me/ });
-    expect(within(link).getByText("1280")).toBeTruthy();
+    await waitFor(() => { expect(slotCountOf(link)).toBe("87"); });
   });
 
   /**
@@ -862,7 +883,7 @@ describe("Sidebar on an empty tracker", () => {
     await renderSidebarAt("/list");
 
     const link = await screen.findByRole("link", { name: /Overdue/ });
-    expect(within(link).getByText("0")).toBeTruthy();
+    await waitFor(() => { expect(slotCountOf(link)).toBe("0"); });
   });
 });
 
@@ -884,10 +905,11 @@ describe("Sidebar count badges while pending", () => {
     const link = await screen.findByRole("link", { name: /Overdue/ });
     expect(link.getAttribute("href")).toContain("/list");
 
-    const badge = link.querySelector("[data-pending]");
+    const badge = viewsRowOf(link).querySelector("[data-pending]");
     expect(badge).not.toBeNull();
-    // The slot has width before the number lands.
-    expect(badge?.className).toMatch(/min-w-/);
+    // The slot has its fixed width before the number lands (K158: the ⋯
+    // button's own width, so nothing shifts when the count arrives).
+    expect(viewsRowOf(link).querySelector("[data-testid=sidebar-row-slot]")?.className).toMatch(/\bw-7\b/);
   });
 });
 
@@ -907,7 +929,7 @@ describe("Sidebar count badges that never arrive", () => {
 
     const link = await screen.findByRole("link", { name: /Overdue/ });
     const badge = await waitFor(() => {
-      const el = link.querySelector("[data-unavailable]");
+      const el = viewsRowOf(link).querySelector("[data-unavailable]");
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
@@ -1049,9 +1071,8 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
     FAIL_VIEWS = true;
     await renderSidebarAt("/list");
-    // "Saved views" — was "Views" (K102 vocab), renamed again by K125
-    // (amended, Ken 2026-09-24) once "Filters" became its own section.
-    await screen.findByText("Saved views");
+    // K158: one "Views" section (was "Saved views" under K125).
+    await screen.findByText("Views");
     expect(screen.queryByText(/was removed/)).toBeNull();
   });
 });
@@ -1088,89 +1109,78 @@ describe("Sidebar groups customization (SHL-45)", () => {
     expect(screen.queryByText(/No labels yet/)).toBeNull();
   });
 
-  it("hides a built-in filter without removing the Filters section", async () => {
-    // @verifies SHL-45 — built-in filters are hideable too.
-    // Amended (K125, Ken 2026-09-24): the built-ins now render in their
-    // own "Filters" section (was "Views", the combined built-ins +
-    // saved-views section, before the K125 split above).
-    SETTINGS = { sidebar_groups: { hidden: ["overdue"] } };
+  it("hides a built-in view without removing the Views section", async () => {
+    // @verifies SHL-45 — built-in views are hideable too.
+    // K158: the built-ins render in the one "Views" section (they had
+    // their own "Filters" section under K125).
+    SETTINGS = { sidebar_groups: { version: 2, hidden: ["overdue"] } };
     await renderSidebarAt("/list");
     await waitFor(() => {
       expect(screen.queryByText("Overdue")).toBeNull();
     });
-    screen.getByText("Filters");
-    // A non-hidden filter still shows.
+    screen.getByText("Views");
+    // A non-hidden built-in and the saved view still show.
     screen.getByText("Assigned to me");
+    screen.getByText("My open bugs");
   });
 
-  it("K125 (amended, Ken 2026-09-24): moving 'filters' in the stored order moves the rendered Filters section, connecting the customiser to the sidebar", async () => {
-    // Ken's fix ruling, verbatim: "Nest under 'Filters' — One 'Filters'
-    // section you can move as a unit ... They stay together in the
-    // sidebar." The first cut of this ticket gave `filters` a real
-    // stored identity but no live-sidebar row of its own — moving it in
-    // the Customize-sidebar panel changed nothing visible, which was
-    // the exact "not connected to the sidebar" complaint Ken's original
-    // ticket raised. This is the literal round-trip: an explicit
-    // `filters` position in the stored order must move where the
-    // "Filters" section (heading + its built-ins) renders relative to
-    // the other sections — same mechanism every other section already
-    // uses (`resolveSidebarOrder` against the group catalog).
-    SETTINGS = { sidebar_groups: { order: ["filters", "projects", "labels"] } };
+  it("K158: renders the built-in and saved views interleaved, in the stored order, under one Views heading", async () => {
+    // @verifies SHL-50
+    SETTINGS = { sidebar_groups: { version: 2, order: ["view:v_mine", "overdue", "assigned-to-me"] } };
     await renderSidebarAt("/list");
     await waitFor(() => {
-      const filtersHeader = screen.getByText("Filters");
-      const projectsHeader = screen.getByText("Projects");
-      expect(
-        filtersHeader.compareDocumentPosition(projectsHeader)
-          & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
+      const section = document.getElementById("sidebar-section-views");
+      const labels = [...(section?.querySelectorAll(".sidebar-views-row") ?? [])].map(r => r.textContent);
+      expect(labels.slice(0, 3).map(t => t?.replace(/\d+$/, ""))).toEqual(["My open bugs", "Overdue", "Assigned to me"]);
     });
-    screen.getByText("Assigned to me");
-    // The section heading is the real label, not the raw stored id.
-    expect(screen.queryByText("filters")).toBeNull();
-  });
-
-  it("K125 gap fix: a pre-migration flat stored order (a filter id at the top level, no 'filters' entry) still places the live Filters section at the migrated position", async () => {
-    // Regression guard for a bug caught live: the panel's
-    // `resolveGroupedSidebarOrder` already ran this migration, but
-    // `SidebarGroups` (the LIVE sidebar) called the plain
-    // `resolveSidebarOrder` directly and so never migrated — an
-    // existing user's stored order (from before `filters` existed,
-    // with an individual filter id like "overdue" at the top level)
-    // put the live Filters section at its bare DEFAULT catalog slot
-    // instead of where the user's own filter position implied,
-    // discovered by describing a real tracker's sidebar order live.
-    SETTINGS = { sidebar_groups: { order: ["overdue", "projects", "labels"] } };
-    await renderSidebarAt("/list");
-    await waitFor(() => {
-      const filtersHeader = screen.getByText("Filters");
-      const projectsHeader = screen.getByText("Projects");
-      // "overdue" led the pre-migration order, so the migrated Filters
-      // section leads too — same rule `resolveGroupedSidebarOrder`
-      // documents (A339): spliced in at the first filter id's own
-      // position.
-      expect(
-        filtersHeader.compareDocumentPosition(projectsHeader)
-          & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    });
-  });
-
-  it("K125: hiding the 'filters' group removes the whole Filters section, not just its rows", async () => {
-    // The six built-ins now live in their own "Filters" section; hiding
-    // that group must drop the SECTION (heading included) — same as
-    // every other hidden group (Milestones/Sprints/etc.) — not just
-    // empty out its contents under a heading with nothing beneath it.
-    SETTINGS = { sidebar_groups: { hidden: ["filters"] } };
-    await renderSidebarAt("/list");
-    await waitFor(() => {
-      expect(screen.queryByText("Overdue")).toBeNull();
-    });
-    expect(screen.queryByText("Assigned to me")).toBeNull();
-    expect(screen.queryByText("Due this week")).toBeNull();
+    // One section: no separate Filters or Saved views heading.
     expect(screen.queryByText("Filters")).toBeNull();
-    // The Saved views section still renders — only Filters is gone.
-    screen.getByText("Saved views");
+    expect(screen.queryByText("Saved views")).toBeNull();
+    // "+ New view" closes the section.
+    const section = document.getElementById("sidebar-section-views");
+    expect(section?.lastElementChild?.getAttribute("data-testid")).toBe("sidebar-new-filter");
+  });
+
+  it("K158: moving 'views' in the stored order moves the rendered Views section", async () => {
+    SETTINGS = { sidebar_groups: { version: 2, order: ["views", "projects", "labels"] } };
+    await renderSidebarAt("/list");
+    await waitFor(() => {
+      const viewsHeader = screen.getByText("Views");
+      const projectsHeader = screen.getByText("Projects");
+      expect(
+        viewsHeader.compareDocumentPosition(projectsHeader)
+          & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
+  it("K158: a pre-K158 setting renders migrated (one Views section where the earlier old section sat)", async () => {
+    // @verifies SHL-54 — the K125-era value: Filters first, above
+    // Projects; a hidden saved-views group hides each saved view.
+    SETTINGS = { sidebar_groups: { order: ["filters", "projects", "saved-filters"], hidden: ["saved-filters"] } };
+    await renderSidebarAt("/list");
+    await waitFor(() => {
+      const viewsHeader = screen.getByText("Views");
+      const projectsHeader = screen.getByText("Projects");
+      expect(
+        viewsHeader.compareDocumentPosition(projectsHeader)
+          & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.queryByText("My open bugs")).toBeNull();
+    });
+    screen.getByText("Overdue");
+  });
+
+  it("K158: hiding the 'views' group removes the whole Views section, not just its rows", async () => {
+    SETTINGS = { sidebar_groups: { version: 2, hidden: ["views"] } };
+    await renderSidebarAt("/list");
+    await waitFor(() => {
+      expect(screen.queryByText("Overdue")).toBeNull();
+    });
+    expect(screen.queryByText("My open bugs")).toBeNull();
+    expect(screen.queryByText("Views")).toBeNull();
+    expect(screen.queryByTestId("sidebar-new-filter")).toBeNull();
+    screen.getByText("Projects");
   });
 
   it("falls back to the default (all groups) when the setting is corrupt", async () => {
@@ -1289,17 +1299,64 @@ describe("Sidebar saved-filter row actions", () => {
     return { calls };
   }
 
-  it("shows a kebab on a user-view row and none on a built-in", async () => {
+  it("K158: a saved view's ⋯ offers Edit, Rename, Delete and Hide; a built-in's offers Hide", async () => {
+    // @verifies SHL-52 — was "a kebab on a user view and none on a
+    // built-in"; K158 gives every row the ⋯ (*"custom views can also have
+    // the '...' but it should align"*), and no Pin.
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");
-    // The user view carries the kebab.
-    expect(
-      screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }),
-    ).toBeTruthy();
-    // A built-in ("Assigned to me") does not.
-    expect(
-      screen.queryByRole("button", { name: /Actions for saved filter "Assigned to me"/ }),
-    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
+    expect(screen.getAllByRole("menuitem").map(m => m.textContent)).toEqual(["Edit", "Rename", "Delete", "Hide"]);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    cleanup();
+
+    await renderSidebarAt("/list");
+    await screen.findByText("Assigned to me");
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "Assigned to me"' }));
+    expect(screen.getAllByRole("menuitem").map(m => m.textContent)).toEqual(["Hide"]);
+  });
+
+  it("K158: Hide on a built-in writes its hidden flag in one merged settings PUT, keeping the stored order", async () => {
+    // @verifies SHL-52
+    SETTINGS = { theme: "dark", sidebar_groups: { version: 2, order: ["labels"] } };
+    await renderSidebarAt("/list");
+    await screen.findByText("Overdue");
+    const { calls } = captureWrites();
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "Overdue"' }));
+    fireEvent.click(screen.getByTestId("view-hide"));
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
+      expect(puts.length).toBe(1);
+      expect(puts[0]?.body).toEqual({
+        theme: "dark",
+        sidebar_groups: { version: 2, order: ["labels"], hidden: ["overdue"] },
+      });
+    });
+  });
+
+  it("K158: Hide on a saved view writes view:<id> to the hidden list", async () => {
+    // @verifies SHL-52
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-hide"));
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
+      expect(puts[0]?.body).toMatchObject({ sidebar_groups: { version: 2, hidden: ["view:v_mine"] } });
+    });
+  });
+
+  it("K158: Rename opens the same edit dialog with the name selected", async () => {
+    // @verifies SHL-52
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-rename"));
+    await screen.findByTestId("view-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("view-form-name");
+    expect(name.value).toBe("My open bugs");
+    expect([name.selectionStart, name.selectionEnd]).toEqual([0, "My open bugs".length]);
   });
 
   it("Edit opens the prefilled dialog and issues one PUT /api/views/:id", async () => {
@@ -1307,7 +1364,7 @@ describe("Sidebar saved-filter row actions", () => {
     await screen.findByText("My open bugs");
     const { calls } = captureWrites();
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
     fireEvent.click(screen.getByTestId("view-edit"));
     await screen.findByTestId("view-edit-dialog");
     // K102: a valid view opens as DROPDOWN ROWS seeded from its stored
@@ -1339,7 +1396,7 @@ describe("Sidebar saved-filter row actions", () => {
     await screen.findByText("My open bugs");
     const { calls } = captureWrites();
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
     fireEvent.click(screen.getByTestId("view-delete"));
     await screen.findByTestId("delete-view-dialog");
     fireEvent.click(screen.getByTestId("delete-view-confirm"));
@@ -1360,7 +1417,7 @@ describe("Sidebar saved-filter row actions", () => {
     await screen.findByText("My open bugs");
     const { calls } = captureWrites();
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
     fireEvent.click(screen.getByTestId("view-delete"));
     await screen.findByTestId("delete-view-dialog");
     fireEvent.click(screen.getByTestId("delete-view-confirm"));
@@ -1415,7 +1472,7 @@ describe("Sidebar saved-filter row actions", () => {
     await screen.findByText("My open bugs");
     failDeletes();
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
     fireEvent.click(screen.getByTestId("view-delete"));
     await screen.findByTestId("delete-view-dialog");
     fireEvent.click(screen.getByTestId("delete-view-confirm"));
@@ -1437,7 +1494,7 @@ describe("Sidebar saved-filter row actions", () => {
     await screen.findByText("My open bugs");
     failDeletes();
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
     fireEvent.click(screen.getByTestId("view-delete"));
     await screen.findByTestId("delete-view-dialog");
     fireEvent.click(screen.getByTestId("delete-view-confirm"));
@@ -1456,52 +1513,41 @@ describe("Sidebar saved-filter row actions", () => {
     });
   });
 
-  it("Pin issues one merged PUT /api/user-settings carrying the pin", async () => {
+  it("Delete drops the view's pin and its sidebar place in one merged settings PUT", async () => {
+    // K158: the ⋯ no longer offers Pin (Ken's list: Edit, Rename, Delete,
+    // Hide). A deleted view's pin and its `view:<id>` entries go in the
+    // same write, once the DELETE has landed.
+    SETTINGS = { sidebar_pins: ["v_mine"], sidebar_groups: { version: 2, order: ["view:v_mine", "labels"], hidden: ["overdue"] } };
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");
     const { calls } = captureWrites();
-
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
-    // Not yet pinned → the item reads "Pin to top".
-    fireEvent.click(screen.getByTestId("view-pin"));
-
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    fireEvent.click(await screen.findByTestId("delete-view-confirm"));
     await waitFor(() => {
       const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
       expect(puts.length).toBe(1);
-      expect(puts[0]?.body).toMatchObject({ sidebar_pins: ["v_mine"] });
+      expect(puts[0]?.body).toEqual({ sidebar_pins: [], sidebar_groups: { version: 2, order: ["labels"], hidden: ["overdue"] } });
     });
   });
 
-  it("Unpin drops the pin in a merged PUT when the view is already pinned", async () => {
-    SETTINGS = { sidebar_pins: ["v_mine"] };
-    await renderSidebarAt("/list");
-    await screen.findByText("My open bugs");
-    const { calls } = captureWrites();
-
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
-    // Already pinned → the toggle reads "Unpin".
-    fireEvent.click(screen.getByText("Unpin"));
-
-    await waitFor(() => {
-      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
-      expect(puts.length).toBe(1);
-      expect(puts[0]?.body).toMatchObject({ sidebar_pins: [] });
-    });
-  });
-
-  it("a broken-view row offers Edit but not Pin", async () => {
+  it("a broken-view row offers Edit, Delete and Hide, with a warning mark instead of a count", async () => {
+    // @verifies SHL-53
     BROKEN_VIEWS = [
       { id: "v_bad", name: "Bad view", summary: "not a query", error: "parse error", index: 1, rawText: "id: v_bad" },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Bad view");
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
-    // Edit (VUE-22 fix path) and Delete are offered; Pin is not.
-    expect(screen.getByTestId("broken-view-edit")).toBeTruthy();
-    expect(screen.getByTestId("broken-view-delete")).toBeTruthy();
-    expect(screen.queryByText(/^Pin/)).toBeNull();
-    expect(screen.queryByText("Unpin")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "Bad view"' }));
+    // Edit (VUE-22 fix path), Delete and Hide (K158) are offered.
+    expect(screen.getAllByRole("menuitem").map(m => m.textContent)).toEqual(["Edit", "Delete", "Hide"]);
+    // K158: *"a broken view shows a warning mark instead"* of a count.
+    const row = viewsRowOf(screen.getByText("Bad view"));
+    const mark = row.querySelector("[data-testid=sidebar-row-broken]");
+    expect(mark?.getAttribute("role")).toBe("img");
+    expect(mark?.getAttribute("aria-label")).toBe("Broken view");
+    expect(row.querySelector("[data-testid=sidebar-row-count]")).toBeNull();
   });
 
   /**
@@ -1538,7 +1584,7 @@ describe("Sidebar saved-filter row actions", () => {
     await renderSidebarAt("/list");
     await screen.findByText("Bad view");
     const captured = captureWrites();
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "Bad view"' }));
     fireEvent.click(screen.getByTestId("broken-view-edit"));
     await screen.findByTestId("view-edit-dialog");
     await screen.findByTestId("view-filter-field-0");
@@ -1619,7 +1665,7 @@ describe("Sidebar saved-filter row actions", () => {
     await screen.findByText("Bad view");
     const { calls } = captureWrites();
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "Bad view"' }));
     fireEvent.click(screen.getByTestId("broken-view-delete"));
     const confirm = await screen.findByTestId("delete-view-confirm");
     fireEvent.click(confirm);
@@ -1639,7 +1685,7 @@ describe("Sidebar saved-filter row actions", () => {
     await screen.findByText("Healthy view");
     const { calls } = captureWrites();
 
-    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Healthy view"' }));
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for view "Healthy view"' }));
     fireEvent.click(screen.getByTestId("view-delete"));
     fireEvent.click(await screen.findByTestId("delete-view-confirm"));
 
@@ -2209,21 +2255,52 @@ describe("Sidebar narrow rail suppression (#9)", () => {
  * edge zig-zagged row to row. The fix matches the kebab wrapper's own
  * right padding to `ItemShell`'s, so both row kinds end at the same x.
  */
-describe("Sidebar Views section trailing-slot alignment (UI-16c)", () => {
-  it("insets the saved-view kebab wrapper by the same padding ItemShell gives a badge row's right edge", async () => {
-    // jsdom does not lay out CSS, so this cannot assert actual pixel
-    // positions (getBoundingClientRect is always zero) — it asserts the
-    // class-level contract instead: `ItemShell`'s own right inset is
-    // `px-2.5` (`Sidebar.tsx`'s `ItemShell`, the `collapsed ? … :
-    // "gap-2.5 px-2.5"` branch), and a kebab wrapper — a SIBLING of
-    // `ItemShell`, outside that padding — needs a matching `pr-2.5` of
-    // its own or its trailing edge sits 8.75px further out than a
-    // badge's. Live-measured in the browser (dev server, 1440x900): both
-    // edges land at x=178.25 with the fix, x=178.25 vs x=187 without it.
+describe("Sidebar Views section trailing slot (UI-16c, K158)", () => {
+  it("K158: every Views row ends in one slot the ⋯ button's width, holding both the count and the ⋯, inset like every other row's trailing control", async () => {
+    // @verifies SHL-51 — jsdom does not lay out CSS, so this asserts the
+    // class contract; the real measurement (the ⋯ and the count at the
+    // same x, the same width) is `flow-sidebar-views.spec.ts`. The slot
+    // is `w-7`, which is `IconButton`'s `sm` size the ⋯ uses, and sits at
+    // `right-2.5`, `ItemShell`'s own `px-2.5` inset (UI-16c: every row
+    // kind ends at the same x as a project row's kebab, `pr-2.5`).
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");
-    const viewRow = document.querySelector("[data-view-row]");
-    expect(viewRow?.className).toMatch(/\bpr-2\.5\b/);
+    const rows = [...document.querySelectorAll<HTMLElement>(".sidebar-views-row")];
+    expect(rows.length).toBe(7);
+    for (const row of rows) {
+      const slot = row.querySelector<HTMLElement>("[data-testid=sidebar-row-slot]");
+      expect(slot?.className).toMatch(/\bw-7\b/);
+      expect(slot?.className).toMatch(/\bright-2\.5\b/);
+      const kebab = slot?.querySelector("button[aria-haspopup]");
+      expect(kebab?.className).toMatch(/\bw-7\b/);
+      // The ⋯ is never inside the link (a button in an anchor is invalid).
+      expect(kebab?.closest("a")).toBeNull();
+    }
+  });
+
+  it("K158: caps the count at 99+, keeping the true total in the tooltip and for assistive tech", async () => {
+    // @verifies SHL-51, VUE-16
+    TASK_TOTAL = 1280;
+    await renderSidebarAt("/list");
+    const link = await screen.findByRole("link", { name: /Overdue/ });
+    await waitFor(() => { expect(slotCountOf(link)).toBe("99+1280"); });
+    const count = viewsRowOf(link).querySelector("[data-testid=sidebar-row-count]");
+    expect(count?.querySelector("[aria-hidden=true]")?.textContent).toBe("99+");
+    expect(count?.querySelector(".sr-only")?.textContent).toBe("1280");
+    expect(link.getAttribute("title")).toBe("Overdue, 1280 tasks");
+    const saved = await screen.findByRole("link", { name: /My open bugs/ });
+    await waitFor(() => { expect(slotCountOf(saved)).toBe("99+1280"); });
+  });
+
+  it("K158: a saved view's count is the list's own request for that view", async () => {
+    // @verifies SHL-53
+    TASK_TOTAL = 42;
+    await renderSidebarAt("/list");
+    const saved = await screen.findByRole("link", { name: /My open bugs/ });
+    await waitFor(() => { expect(slotCountOf(saved)).toBe("42"); });
+    const fetchSpy = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const urls = fetchSpy.mock.calls.map(c => String(c[0]));
+    expect(urls.some(u => u.includes("/api/tasks?limit=0&view=v_mine"))).toBe(true);
   });
 });
 

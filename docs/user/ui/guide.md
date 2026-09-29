@@ -54,21 +54,37 @@ drawer; on desktop you can drag its right edge to resize it.
 
 Groups:
 
-- **Views** — List, Board, Timeline. Switching between them carries your
-  current filters across.
-- **Projects** — "All projects" plus a row per project (the default is
-  marked). A search box appears when you have many.
-- **Saved views** — the queries you've saved, and any view whose query no
-  longer parses (marked, still openable). "+ New view" opens the view
+- **List / Board / Timeline** — the three layouts. Clicking one shows all
+  tasks in that layout, with the sidebar's scope cleared.
+- **Projects** — a row per project. A search box appears when you have
+  many.
+- **Views** — the built-in views (Assigned to me, Reported by me, Mentions
+  me, Due this week, Overdue, High priority) and your saved views, in one
+  list in the order you choose. "+ New view" at the bottom opens the view
   builder.
-- **Filters** — the built-in filters, with live counts: Assigned to me,
-  Reported by me, Mentions me, Due this week, Overdue, High priority.
 - **Milestones**, **Sprints**, **Labels** — rows that filter the List to
   one milestone, sprint, or label.
 - **Recently viewed** — the tasks you opened most recently.
 
-Each row's kebab (⋯) menu holds its actions — edit, pin, archive, and a
-link to the Settings section that manages it.
+Each row in **Views** ends in its task count, shown up to "99+" (hover the
+row for the exact total). Hover a row, or tab to it, and the count gives
+way to a ⋯ menu in the same place:
+
+- a built-in view's ⋯ has **Hide**;
+- a saved view's ⋯ has **Edit**, **Rename**, **Delete** and **Hide**.
+
+A saved view whose filters no longer load shows a warning mark instead of
+a count; it still opens, and its ⋯ has Edit (to repair it), Delete and
+Hide. On a touch screen the count stays and the ⋯ is not shown; the same
+actions are in Settings.
+
+Other rows' kebab (⋯) menus hold their actions, such as edit and archive.
+
+**Customize sidebar** (in the footer, and Settings → Sidebar groups) is
+where you reorder and hide the groups, and the views inside **Views**,
+each with its own switch. A view you hid from its ⋯ comes back here.
+Switching **Views** off hides the whole section, and its views' own
+switches wait until it is back on.
 
 The footer pins a **Settings** link so it never scrolls away.
 

@@ -126,6 +126,13 @@ ships; do not fold the multi-sort bullets back here.*
 - The badge is not capped silently; if capped for display (`999+`), the true count is available on hover and the list header states the real total.
 - Badge computation does not block the sidebar from rendering.
 
+> **Amended (K158, Ken 2026-09-29).** The display cap is "99+", not
+> "999+": *"task count must have same width as the ... button, so maybe
+> we make task count go to a max of 99 task, e.g. '99+' for 100
+> onwards"*. The true total stays available: in the row's tooltip on
+> hover (hover shows the ⋯ in the slot, SHL-51) and to assistive tech.
+> The first bullet's "shows the true total" holds below the cap.
+
 ### VUE-17 · M4 · major · P9
 **A saved view with five sort fields applies all five in order.**
 - All five entries persist to `queries.yaml` in the authored order.
