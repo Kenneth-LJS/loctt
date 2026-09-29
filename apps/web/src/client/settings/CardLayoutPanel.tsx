@@ -21,8 +21,10 @@ import { SettingsSortableList } from "./SettingsSortableList.tsx";
  *
  * A hidden field still needs somewhere to be turned back on. So the
  * rows are all of `CARD_LAYOUT_FIELDS`: the visible ones first in
- * their stored order, then the hidden ones. Only the visible prefix is
- * written.
+ * their stored order, as the drag list, then the hidden ones as a list
+ * of their own with no handles (they have no order to change, so the
+ * drag list never offers, or announces, a move into them). Only the
+ * visible fields are written.
  *
  * ## SET-26: hiding everything is allowed, and stays legible
  *
@@ -92,16 +94,16 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
   // (BRD-47), which it can only do with one source of truth.
   const visible = resolveCardLayout(stored);
   const hidden = CARD_LAYOUT_FIELDS.filter(f => !visible.includes(f));
-  const rows: readonly CardLayoutField[] = [...visible, ...hidden];
 
   const write = (next: readonly CardLayoutField[]): void => {
     save.mutate({ ...stored, card_layout: [...next] } as UserSettings);
   };
 
+  // Reordering is only meaningful among the visible fields: the hidden
+  // ones have no stored order. So they are a second list with no
+  // handles, and a visible field cannot be moved (or announced as moved)
+  // into them.
   const onMove = (from: number, to: number): void => {
-    // Reordering is only meaningful among the visible fields; the
-    // hidden tail has no render order to change.
-    if (from >= visible.length || to >= visible.length) return;
     const next = [...visible];
     const [moved] = next.splice(from, 1);
     if (moved === undefined) return;
@@ -117,6 +119,28 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
     );
   };
 
+  const fieldRow = (field: CardLayoutField, isVisible: boolean): React.JSX.Element => (
+    <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1">
+      <span className="flex-1 text-[0.9286rem] text-text-primary">
+        {FIELD_LABELS[field]}
+      </span>
+      <button
+        type="button"
+        data-testid={`card-field-toggle-${field}`}
+        aria-pressed={isVisible}
+        onClick={() => { toggle(field); }}
+        className={
+          "inline-flex min-h-[24px] items-center rounded px-2 py-0.5 text-[0.8571rem] "
+          + (isVisible
+            ? "bg-accent-muted text-accent"
+            : "bg-bg-muted text-text-tertiary")
+        }
+      >
+        {isVisible ? "Visible" : "Hidden"}
+      </button>
+    </div>
+  );
+
   return (
     <div data-testid="card-layout-panel">
       <h1 className="mb-2 text-lg font-semibold text-text-primary">Card layout</h1>
@@ -124,37 +148,28 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
       <div className="flex flex-wrap gap-8">
         <div className="min-w-[18rem] flex-1">
           <SettingsSortableList
-            items={rows}
+            items={visible}
             rowKey={f => f}
             rowLabel={f => FIELD_LABELS[f]}
             onMove={onMove}
             testIdPrefix="card-field"
           >
-            {field => {
-              const isVisible = visible.includes(field);
-              return (
-                <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1">
-                  <span className="flex-1 text-[0.9286rem] text-text-primary">
-                    {FIELD_LABELS[field]}
-                  </span>
-                  <button
-                    type="button"
-                    data-testid={`card-field-toggle-${field}`}
-                    aria-pressed={isVisible}
-                    onClick={() => { toggle(field); }}
-                    className={
-                      "inline-flex min-h-[24px] items-center rounded px-2 py-0.5 text-[0.8571rem] "
-                      + (isVisible
-                        ? "bg-accent-muted text-accent"
-                        : "bg-bg-muted text-text-tertiary")
-                    }
-                  >
-                    {isVisible ? "Visible" : "Hidden"}
-                  </button>
-                </div>
-              );
-            }}
+            {field => fieldRow(field, true)}
           </SettingsSortableList>
+          {hidden.length > 0 && (
+            <div className={visible.length > 0 ? "mt-1" : ""}>
+              <SettingsSortableList
+                items={hidden}
+                rowKey={f => f}
+                rowLabel={f => FIELD_LABELS[f]}
+                onMove={() => undefined}
+                reorderable={false}
+                testIdPrefix="card-field-hidden"
+              >
+                {field => fieldRow(field, false)}
+              </SettingsSortableList>
+            </div>
+          )}
 
           <Button
             variant="ghost"

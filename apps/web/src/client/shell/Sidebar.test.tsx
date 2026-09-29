@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { comboValue, expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
@@ -70,7 +70,7 @@ let SETTINGS: Record<string, unknown> = {};
 /** Saved views returned by /api/views, per-test (SHL-32). */
 // `conditions` optional: a valid view carries it (edit seeds the builder
 // from it); fixtures that only exercise listing/delete may omit it.
-let VIEWS: { id: string; name: string; filters: unknown[]; archived?: boolean; icon?: string; color?: unknown }[] = [
+let VIEWS: { id: string; name: string; filters: unknown[]; archived?: boolean; archivedScope?: string; icon?: string; color?: unknown }[] = [
   {
     id: "v_mine",
     name: "My open bugs",
@@ -1130,8 +1130,10 @@ describe("Sidebar groups customization (SHL-45)", () => {
     await renderSidebarAt("/list");
     await waitFor(() => {
       const section = document.getElementById("sidebar-section-views");
-      const labels = [...(section?.querySelectorAll(".sidebar-views-row") ?? [])].map(r => r.textContent);
-      expect(labels.slice(0, 3).map(t => t?.replace(/\d+$/, ""))).toEqual(["My open bugs", "Overdue", "Assigned to me"]);
+      // The visible name only: the row also holds the count.
+      const labels = [...(section?.querySelectorAll(".sidebar-views-row") ?? [])]
+        .map(r => r.querySelector(".truncate")?.textContent);
+      expect(labels.slice(0, 3)).toEqual(["My open bugs", "Overdue", "Assigned to me"]);
     });
     // One section: no separate Filters or Saved views heading.
     expect(screen.queryByText("Filters")).toBeNull();
@@ -2278,18 +2280,58 @@ describe("Sidebar Views section trailing slot (UI-16c, K158)", () => {
     }
   });
 
-  it("K158: caps the count at 99+, keeping the true total in the tooltip and for assistive tech", async () => {
-    // @verifies SHL-51, VUE-16
+  it("K158: caps the count at 99+, keeping the true total in the tooltip and in the link's name", async () => {
+    // @verifies SHL-51, VUE-16 — was "... and for assistive tech", which
+    // asserted the true total as a visually hidden span inside the slot.
+    // The slot is `visibility: hidden` while the row has focus, so that
+    // span was unreachable exactly when a screen reader is on the link
+    // (review M3): the test was asserting the bug.
     TASK_TOTAL = 1280;
     await renderSidebarAt("/list");
-    const link = await screen.findByRole("link", { name: /Overdue/ });
-    await waitFor(() => { expect(slotCountOf(link)).toBe("99+1280"); });
+    const link = await screen.findByRole("link", { name: "Overdue, 1280 tasks" });
+    await waitFor(() => { expect(slotCountOf(link)).toBe("99+"); });
     const count = viewsRowOf(link).querySelector("[data-testid=sidebar-row-count]");
-    expect(count?.querySelector("[aria-hidden=true]")?.textContent).toBe("99+");
-    expect(count?.querySelector(".sr-only")?.textContent).toBe("1280");
+    // The slot is not read a second time.
+    expect(count?.getAttribute("aria-hidden")).toBe("true");
     expect(link.getAttribute("title")).toBe("Overdue, 1280 tasks");
-    const saved = await screen.findByRole("link", { name: /My open bugs/ });
-    await waitFor(() => { expect(slotCountOf(saved)).toBe("99+1280"); });
+    await screen.findByRole("link", { name: "My open bugs, 1280 tasks" });
+  });
+
+  it("the count is part of the row link's name, where focus on the row cannot hide it (review M3)", async () => {
+    // @verifies SHL-51
+    TASK_TOTAL = 3;
+    await renderSidebarAt("/list");
+    await screen.findByRole("link", { name: "Overdue, 3 tasks" });
+    await screen.findByRole("link", { name: "My open bugs, 3 tasks" });
+    // It is the link's own name, not text in the slot the focus styles
+    // hide.
+    const link = await screen.findByRole("link", { name: "Overdue, 3 tasks" });
+    expect(link.getAttribute("aria-label")).toBe("Overdue, 3 tasks");
+  });
+
+  it("one task reads as one task, and a failed count says so in the name (review M3)", async () => {
+    // @verifies SHL-51
+    TASK_TOTAL = 1;
+    await renderSidebarAt("/list");
+    await screen.findByRole("link", { name: "Overdue, 1 task" });
+    cleanup();
+    FAILED_COUNTS = true;
+    await renderSidebarAt("/list");
+    await screen.findByRole("link", { name: "Overdue, count unavailable" });
+  });
+
+  it("a saved view's count refetches when only its archived scope changes (review minor 4)", async () => {
+    // @verifies SHL-53
+    TASK_TOTAL = 3;
+    await renderSidebarAt("/list");
+    await screen.findByRole("link", { name: "My open bugs, 3 tasks" });
+    // An edit changes the archived scope and nothing else; the server now
+    // counts the archived tasks too. The views list refetches (as the
+    // edit dialog's invalidation does).
+    VIEWS = VIEWS.map(v => ({ ...v, archivedScope: "all" }));
+    TASK_TOTAL = 5;
+    await act(async () => { await priorQc?.invalidateQueries({ queryKey: ["views"] }); });
+    await screen.findByRole("link", { name: "My open bugs, 5 tasks" });
   });
 
   it("K158: a saved view's count is the list's own request for that view", async () => {

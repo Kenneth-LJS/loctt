@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SortableMove, SortableTreeProps } from "./SortableTree.tsx";
@@ -31,11 +31,14 @@ afterEach(cleanup);
 function renderTree(
   items: readonly Node[],
   props: Partial<SortableTreeProps<Node>> = {},
-): { onMove: ReturnType<typeof vi.fn<(m: SortableMove) => void>> } {
-  const onMove = vi.fn<(m: SortableMove) => void>();
-  render(
+): {
+  onMove: ReturnType<typeof vi.fn<(m: SortableMove) => void | Promise<unknown>>>;
+  rerender: (items: readonly Node[], props?: Partial<SortableTreeProps<Node>>) => void;
+} {
+  const onMove = vi.fn<(m: SortableMove) => void | Promise<unknown>>();
+  const tree = (list: readonly Node[], extra: Partial<SortableTreeProps<Node>>) => (
     <SortableTree
-      items={items}
+      items={list}
       getId={n => n.id}
       getChildren={n => n.children}
       itemName={n => n.id.toUpperCase()}
@@ -47,10 +50,14 @@ function renderTree(
           <span>{n.id}</span>
         </div>
       )}
-      {...props}
-    />,
+      {...extra}
+    />
   );
-  return { onMove };
+  const { rerender } = render(tree(items, props));
+  return {
+    onMove,
+    rerender: (list, extra = props) => { rerender(tree(list, extra)); },
+  };
 }
 
 /** Rendered row ids, depth-first, in document order. */
@@ -260,6 +267,193 @@ describe("SortableTree: drag", () => {
     renderTree(NESTED, { nesting: true, canReorder: l => l.depth === 0 });
     expect(row("a").getAttribute("draggable")).toBe("true");
     expect(row("a1").getAttribute("draggable")).toBe("false");
+  });
+});
+
+const ABC: readonly Node[] = [{ id: "a" }, { id: "b" }, { id: "c" }];
+const XABC: readonly Node[] = [{ id: "x" }, ...ABC];
+
+function announced(): string {
+  return screen.getByTestId("reorder-announcement").textContent ?? "";
+}
+
+/** Runs the deferred blur check (a zero-delay timeout). */
+async function flushTimers(): Promise<void> {
+  await act(async () => { await new Promise(r => setTimeout(r, 5)); });
+}
+
+describe("SortableTree: the held item is an id (M2)", () => {
+  // @verifies REL-15
+  it("a refetch adding a row mid-pickup still moves, and writes, the picked-up item", () => {
+    // Blocks is [A,B,C]; C is picked up and moved up one; a poll adds X
+    // at the front. By index, the screen would now move B and Enter
+    // would rerank B.
+    const { onMove, rerender } = renderTree(ABC);
+    fireEvent.keyDown(handle("c"), { key: " " });
+    fireEvent.keyDown(handle("c"), { key: "ArrowUp" });
+    expect(rendered()).toEqual(["a", "c", "b"]);
+    rerender(XABC);
+    expect(rendered()).toEqual(["x", "a", "c", "b"]);
+    expect(row("c").getAttribute("data-picked-up")).toBe("true");
+    expect(row("b").getAttribute("data-picked-up")).toBeNull();
+    fireEvent.keyDown(handle("c"), { key: "Enter" });
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onMove).toHaveBeenCalledWith({ parentId: null, fromIndex: 3, toIndex: 2, before: "b" });
+  });
+
+  // @verifies REL-53
+  it("a refetch adding a row mid-drag still writes the dragged item", () => {
+    const { onMove, rerender } = renderTree(ABC);
+    fireEvent.dragStart(row("c"));
+    rerender(XABC);
+    expect(row("c").getAttribute("data-dragging")).toBe("true");
+    fireEvent.dragOver(row("a"));
+    expect(lines()).toEqual([{ row: "a", edge: "above" }]);
+    fireEvent.drop(row("a"));
+    expect(onMove).toHaveBeenCalledWith({ parentId: null, fromIndex: 3, toIndex: 1, before: "a" });
+  });
+
+  // @verifies REL-15
+  it("the picked-up item disappearing cancels the pickup, and says so", () => {
+    const { onMove, rerender } = renderTree(ABC);
+    fireEvent.keyDown(handle("c"), { key: " " });
+    fireEvent.keyDown(handle("c"), { key: "ArrowUp" });
+    rerender([{ id: "a" }, { id: "b" }]);
+    expect(rendered()).toEqual(["a", "b"]);
+    expect(document.querySelector("[data-picked-up]")).toBeNull();
+    expect(lines()).toEqual([]);
+    expect(announced()).toBe("Move cancelled");
+    // It comes back: nothing is held, so Enter picks up rather than drops.
+    rerender(ABC);
+    fireEvent.keyDown(handle("c"), { key: "Enter" });
+    expect(row("c").getAttribute("data-picked-up")).toBe("true");
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  // @verifies REL-53
+  it("the dragged item disappearing cancels the drag: a drop writes nothing", () => {
+    const { onMove, rerender } = renderTree(ABC);
+    fireEvent.dragStart(row("c"));
+    rerender([{ id: "a" }, { id: "b" }]);
+    expect(announced()).toBe("Move cancelled");
+    fireEvent.dragOver(row("a"));
+    fireEvent.drop(row("a"));
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+describe("SortableTree: a pickup ends when it can no longer land (minor 2)", () => {
+  // @verifies REL-15
+  it("focus going to nothing cancels the pickup; a later Enter picks up again, never a stale drop", async () => {
+    const { onMove } = renderTree(FLAT);
+    handle("c").focus();
+    fireEvent.keyDown(handle("c"), { key: " " });
+    fireEvent.keyDown(handle("c"), { key: "ArrowUp" });
+    // A click on nothing focusable: focus goes to the body.
+    act(() => { handle("c").blur(); });
+    await flushTimers();
+    expect(document.querySelector("[data-picked-up]")).toBeNull();
+    expect(rendered()).toEqual(["a", "b", "c", "d"]);
+    expect(announced()).toBe("Move cancelled");
+    fireEvent.keyDown(handle("c"), { key: "Enter" });
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  // @verifies REL-15
+  it("the handle turning disabled mid-pickup cancels it", () => {
+    const { onMove, rerender } = renderTree(FLAT);
+    fireEvent.keyDown(handle("c"), { key: " " });
+    fireEvent.keyDown(handle("c"), { key: "ArrowUp" });
+    rerender(FLAT, { disabled: true });
+    expect(document.querySelector("[data-picked-up]")).toBeNull();
+    expect(rendered()).toEqual(["a", "b", "c", "d"]);
+    expect(announced()).toBe("Move cancelled");
+    rerender(FLAT, {});
+    fireEvent.keyDown(handle("c"), { key: "Enter" });
+    expect(row("c").getAttribute("data-picked-up")).toBe("true");
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+describe("SortableTree: where a drag may start and land", () => {
+  // @verifies REL-53, SHL-50
+  it("a press on a row of a disabled level does not drag its draggable ancestor (minor 3)", () => {
+    renderTree(NESTED, { nesting: true, disabled: l => l.depth === 1 });
+    expect(row("a1").getAttribute("draggable")).toBe("false");
+    // The browser makes the nearest draggable ancestor, a, the source.
+    fireEvent.pointerDown(screen.getByTestId("content-a1"));
+    const start = fireEvent.dragStart(row("a"));
+    expect(start).toBe(false); // cancelled
+    expect(document.querySelector("[data-dragging]")).toBeNull();
+    // A press on a's own row still drags it.
+    fireEvent.pointerDown(screen.getByTestId("content-a"));
+    fireEvent.dragStart(row("a"));
+    expect(row("a").getAttribute("data-dragging")).toBe("true");
+  });
+
+  // @verifies REL-53
+  it("the line clears over a gap between rows, where no drop is accepted (minor 5)", () => {
+    const { onMove } = renderTree(FLAT);
+    fireEvent.dragStart(row("a"));
+    fireEvent.dragOver(row("c"));
+    expect(lines()).toHaveLength(1);
+    const list = row("c").parentElement as HTMLElement;
+    fireEvent.dragOver(list);
+    expect(lines()).toEqual([]);
+    fireEvent.drop(list);
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  // @verifies REL-53
+  it("a drop on the item's own slot says it stayed, and writes nothing (minor 7)", () => {
+    const { onMove } = renderTree(FLAT);
+    fireEvent.dragStart(row("b"));
+    fireEvent.dragOver(row("b"));
+    fireEvent.drop(row("b"));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(announced()).toBe("B stayed at position 2 of 4");
+  });
+});
+
+describe("SortableTree: a keyboard drop while the write lands (minor 6)", () => {
+  // @verifies REL-15
+  it("keeps the dropped order and the handle's focus until new items arrive", () => {
+    const { onMove, rerender } = renderTree(FLAT);
+    onMove.mockReturnValue(new Promise(() => undefined));
+    handle("c").focus();
+    fireEvent.keyDown(handle("c"), { key: " " });
+    fireEvent.keyDown(handle("c"), { key: "ArrowUp" });
+    fireEvent.keyDown(handle("c"), { key: "Enter" });
+    expect(onMove).toHaveBeenCalledTimes(1);
+    // Dropped, not held: no pickup mark, no line, but the new order.
+    expect(document.querySelector("[data-picked-up]")).toBeNull();
+    expect(lines()).toEqual([]);
+    expect(rendered()).toEqual(["a", "c", "b", "d"]);
+    expect(document.activeElement).toBe(handle("c"));
+    // The refetch lands in that order.
+    rerender([{ id: "a" }, { id: "c" }, { id: "b" }, { id: "d" }]);
+    expect(rendered()).toEqual(["a", "c", "b", "d"]);
+    expect(document.activeElement).toBe(handle("c"));
+  });
+
+  // @verifies REL-15
+  it("a failed write puts the stored order back", async () => {
+    const { onMove } = renderTree(FLAT);
+    onMove.mockReturnValue(Promise.reject(new Error("refused")));
+    fireEvent.keyDown(handle("c"), { key: " " });
+    fireEvent.keyDown(handle("c"), { key: "ArrowUp" });
+    fireEvent.keyDown(handle("c"), { key: "Enter" });
+    await act(async () => { await Promise.resolve(); });
+    expect(rendered()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  // @verifies REL-15
+  it("a caller that returns nothing re-renders from its own items (nothing moves on its own)", () => {
+    renderTree(FLAT);
+    fireEvent.keyDown(handle("c"), { key: " " });
+    fireEvent.keyDown(handle("c"), { key: "ArrowUp" });
+    fireEvent.keyDown(handle("c"), { key: "Enter" });
+    expect(rendered()).toEqual(["a", "b", "c", "d"]);
   });
 });
 

@@ -67,19 +67,15 @@ const SHORTCUTS: readonly { group: string; items: readonly Shortcut[] }[] = [
       { keys: ["Ctrl", "S"], action: "Save the description", scope: "Editing a description" },
       { keys: ["Esc"], action: "Cancel editing the description", scope: "Editing a description" },
       // apps/web/src/client/ui/SortableTree.tsx onHandleKeyDown (K156)
+      // Space and Enter do the same thing there: pick up, or drop.
       {
-        keys: ["Space"],
+        keys: ["Space", "/", "Enter"],
         action: "Pick up the row, or drop it",
         scope: "A drag handle in a reorderable list",
       },
       {
         keys: ["↑", "/", "↓"],
         action: "Move the picked-up row up or down",
-        scope: "A drag handle in a reorderable list",
-      },
-      {
-        keys: ["Enter"],
-        action: "Drop the picked-up row",
         scope: "A drag handle in a reorderable list",
       },
       {

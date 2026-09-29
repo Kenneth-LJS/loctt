@@ -23335,6 +23335,69 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A373 · Review fixes for the SortableTree primitive and the Views sidebar (K156, K158)
+
+#### A373 · Held items by id, the count in the link's name, and nine smaller fixes (review of ui/sortable-tree)
+
+**Ticket:** review of B51–B54 · **Date:** 2026-09-29 · **Commit:** ui/sortable-tree · **Agent-made** (under K156, K158; A369, A370, REL-15, REL-46, REL-52, REL-53, SHL-50, SHL-51, SHL-53, SET-12, messaging.md).
+
+**The situation.** An independent review of the branch found two major defects and ten minor ones. M2: `SortableTree` held a pickup or a drag by its stored index (`Held.origin`), so a refetch mid-move moved and wrote a different row (Blocks [A,B,C], C picked up and moved up, a poll adds X at the front: the screen moves B and Enter reranks B). M3: the Views row's count sat in a slot beside the link, `visibility: hidden` while the row has focus, so a screen reader on the link never reached it (on main it was inside the link's name). Minors: a tap on the count hit the slot, not the link; a pickup survived focus going to nothing and a handle turning disabled; with Views off in Customize sidebar, dragging a disabled child dragged the Views group; the saved-view count key ignored `archivedScope`; the drop line stayed over gaps; a keyboard drop on the task page lost focus and flickered to the stored order until the refetch; three announcement/reference inaccuracies; two tests that could not fail; three stale comments; REL-52's "under the Child heading". The fixes needed calls the review left open.
+
+**What had to be decided.**
+1. What a held item remembers instead of an index, and what its pending position means after a refetch.
+2. How a pickup or drag ends when its item vanishes or its level goes inert.
+3. How "focus went to nothing" is told apart from a re-render moving the held row.
+4. Where the count goes in the accessibility tree.
+5. How a drag is kept from starting on a nested row that cannot move.
+6. What the drop line does over a gap.
+7. How a keyboard drop keeps its order until the refetch, without breaking "nothing moves on its own" (REL-46).
+8. What an in-place drop announces.
+9. How Card layout's hidden fields stop taking part in reordering.
+10. How the saved-view count follows an archived-scope edit.
+11. The Keyboard panel's reorder rows.
+
+**Options considered / decided** (chosen first).
+
+1. *Held by id.* (a) `Held` keeps `id` and `delta` (places moved so far), and the primitive re-derives the stored index by id on every render (`place`), over a map of every rendered level. After a refetch the pending position is `origin + delta`, clamped: moving C up one stays "C just above its old neighbour" when a row is added elsewhere ([X,A,C,B], and Enter reranks C before B). The drag's `over` is also an id. (b) Keep `current` as an absolute pending index: an insertion above shifts the meaning of that index. (c) Cancel the pickup on any change to the level: throws away a move for an unrelated poll. (a) chosen.
+2. *Lost items.* (a) An effect cancels a pickup or drag whose item is gone from its level or whose level is now inert (`disabled`) or not reorderable, and announces "Move cancelled" (the Escape wording, already used). A drop on a cancelled drag writes nothing. (b) Keep the move and write it when possible: writes a move the person can no longer see.
+3. *Focus to nothing.* (a) A blur with `relatedTarget === null` is checked once the event is over (`setTimeout 0`): if the handle is not the active element then, the pickup is cancelled. The layout effect that restores focus after a re-render now runs on every render (not only on pickup change) and only takes focus from nothing (`body`), never from another control. A window losing focus keeps the handle active, so that pickup survives. (b) Cancel at once on a null `relatedTarget`: would cancel whenever a browser fires blur while React moves the held row. In Chromium and jsdom a node move fires no blur (a mutation cancelling at once left every keyboard reorder spec green), so the deferral is defensive and not red-provable there; kept because the cost is one timeout and a browser that does fire blur on a move would otherwise break every keyboard reorder.
+4. *Count in the accessibility tree.* (a) The row link's `aria-label` is the view name plus what the slot says: "Overdue, 3 tasks", "1 task", the true total above the "99+" cap ("Everything, 101 tasks"), "count unavailable" for a failed count; nothing while pending, and no `aria-label` at all then (the visible name is the name). The slot's count is `aria-hidden` so it is not read twice. (b) Visually hidden text inside the link: Chrome separates the link's flex items with spaces in the computed name ("Overdue , 3 tasks"), measured in the Playwright accessibility snapshot. (c) `aria-describedby` to a never-hidden element: NVDA does not read descriptions in browse mode, so the count would again be missing where it matters. The broken-view mark is left as it was (its own `role="img"` name, and the link's `title` carries the parse error): the review raised counts only.
+5. *Drag start.* (a) The tree records the row a pointer press lands in (`onPointerDown` on the root); a row's `dragstart` whose press landed in a nested row other than itself is cancelled (`preventDefault`). This covers a disabled level (Customize sidebar, Views off) and a level with no handles (the task page's grandchildren), since the browser drags the nearest draggable ancestor in both. (b) Make only the handle draggable: a draggable `<button>` is unreliable in Firefox, and it changes A369's recorded "the row is the drag source". (a) chosen.
+6. *Gaps.* (a) Any `dragover` that reaches the tree's root is one no row accepted (accepting rows stop propagation), so the root clears the line. (b) Accept a drop in the gap: there is no defined landing place between two rows' boxes that a line already marks. (a) chosen.
+7. *Keyboard drop while the write lands.* (a) `onMove` may return a promise. After a keyboard drop that moved, the primitive keeps showing the dropped order (no pickup mark, no line) while `items` is the same array it was dropped on, and drops that order when the promise rejects. The task page's `move` returns the rerank as a promise (resolve on success, reject in `onError`), so the row neither flickers back nor loses focus. A caller returning nothing (every Settings list, which updates its own copy at once) is unchanged. (b) Keep the order until `items` changes, with no promise: a refused rerank refetches identical data, which React Query's structural sharing returns as the same array, so the moved order would stay on screen forever (against REL-46). (c) Only refocus the handle by id: the flicker stays. Limitation: a write that succeeds and whose refetch returns an unchanged order would keep the dropped order until the next change to `items`; a successful rerank always changes the order, so this was not guarded further.
+8. *In-place drop.* "B stayed at position 2 of 4", for a drag onto its own slot and for a keyboard drop where it was picked up (which said "dropped at position N"). Nothing is written in either case.
+9. *Card layout.* (a) Two lists: the visible fields in the reorderable list, the hidden ones in a second `SettingsSortableList` with the new `reorderable={false}` (the 24px spacer keeps the rows aligned; test ids `card-field-hidden-*`). A visible field can only move among visible fields. (b) A per-item "can move" on the primitive with bounded moves: a new primitive feature for one caller. SET-12 amended (hidden fields have no handle).
+10. *Archived scope.* The saved-view count's revision is `[filters, archivedScope]` (`countRevision`). Not also an invalidation on edit: the revision already gives an edited view a new key, and the view dialog's `["views"]` invalidation is what delivers the edit.
+11. *Keyboard panel.* One row, "Space or Enter: Pick up the row, or drop it", replacing "Space: Pick up the row, or drop it" and "Enter: Drop the picked-up row".
+
+**Also done (no call needed).** `flow-relationships-alignment.spec.ts` "cannot be dropped among grandchildren" now dispatches the drop and asserts the one rerank's body; its scenario moved the grandchild under the third child (drag A onto C's grandchild, expect `after: T-4`), because with the ancestor at index 0 the wrong-level mutation produced the same write and the test could not fail. `flow-onboarding.spec.ts` drops the "Filters" and "Saved views" absence checks (no section has those names, so they could not fail; the Views heading check covers the section). Stale comments fixed in `SettingsSortableList.tsx`, `useCreateView.ts`, `ShortcutSettingsEditor.tsx`. The slot CSS moved `pointer-events: none` from the count to the whole slot, with `auto` on the ⋯ wrapper.
+
+**Why.** REL-15 and REL-53 (a move writes the row that was moved, announced truthfully); REL-46 (a refused write shows the stored order); A369's primitive contract (the row is the drag source); SHL-51 and VUE-16 (the count, and the true total, reachable by assistive tech); A370 item 10 (a tap on the count reaches the link); K125's rule (a switched-off group's children are inert); messaging.md (short, plain announcements, no new sentence kinds).
+
+**To revert.**
+1. Id-held items: `Held.delta`, `place`, `levels`/`collect` in `ui/SortableTree.tsx` (back to `origin`/`current` indices).
+2. Lost-item cancel: the `pickupLost`/`draggingLost` effect.
+3. Focus to nothing: the `window.setTimeout` branch of the handle's `onBlur` and the every-render `useLayoutEffect` (back to "ignore null relatedTarget" and `[pickup]` deps).
+4. Count in the name: `slotSpeech`, the `ariaLabel` in `ViewsRow` and the `aria-label` on the two `Link`s in `shell/Sidebar.tsx`; the `aria-hidden` on `SlotCount`'s spans.
+5. Drag start: `pressedRow` and its check in `onDragStart`.
+6. Gaps: the root `onDragOver` in `SortableTree`.
+7. Settling order: `settling` state and `settled` in `SortableTree`; the `Promise` return in `RelationshipsPanel.move` and `TaskTree`'s `onMove` type.
+8. "stayed at": the two `stayed at position` branches in `SortableTree`.
+9. Card layout: the second `SettingsSortableList` in `CardLayoutPanel.tsx` and `reorderable` in `SettingsSortableList.tsx`.
+10. Archived scope: `countRevision` in `Sidebar.tsx`.
+11. Keyboard panel: the merged Space/Enter row in `KeyboardPanel.tsx`.
+12. Slot pointer events: `.sidebar-slot` / `.sidebar-slot-actions` in `styles/index.css`.
+
+**Cases.** Amended with A373 notes: REL-15 (three bullets: held by identity, cancel on focus loss or disable, order and focus kept while the write lands), REL-52 (readout "beside" the Child heading), REL-53 (drop on a grandchild lands by its ancestor in one write, no line over gaps, in-place drop announced as staying, no drag from a row that cannot move), SHL-50 (a drag on a disabled Views child moves nothing), SHL-51 (tap on the count opens the view; the count is part of the link's name), SHL-53 (count follows an archived-scope edit), SET-12 (hidden fields have no handle).
+
+**Tests (each shown red by a mutation of the fix, then restored).**
+- `ui/SortableTree.test.tsx` (11 new): refetch mid-pickup and mid-drag writes the held item, vanished item cancels pickup and drag (4 red with an index-held origin reintroduced); focus to nothing cancels (red with the deferred check removed); disabled mid-pickup cancels (red with `usable` ignoring `disabled`); a press in a disabled nested row does not drag its ancestor (red with the press check removed); line clears over a gap (red with the old root handler); own-slot drop says "stayed" (red with that branch removed); keyboard drop keeps order and focus until new items (red with `settled` forced null); a rejected write puts the order back (red when the rejection does not clear it); a void caller re-renders from its items (guards the unchanged path).
+- `shell/Sidebar.test.tsx`: the capped-count test now asserts the link name "Overdue, 1280 tasks" and the slot `aria-hidden`. It was asserting the bug (the true total as a visually hidden span in the slot, the element hidden while the row has focus). Two new name tests (count, "1 task", "count unavailable") and one archived-scope test (red with the revision back to filters only). All four red with the `aria-label` removed. The "interleaved order" test now reads the label span (the row's text had changed shape, not its meaning).
+- `settings/CardLayoutPanel.test.tsx` (1 new): hidden field has no handle, a move past the last visible field stays put and writes nothing (red with the one-list layout restored).
+- `settings/SettingsShell.test.tsx` (1 new): Enter and Space both "Pick up the row, or drop it" (red with the old two rows).
+- Playwright: `flow-sidebar-views` (touch tap on the count by coordinates, red with the old slot CSS; new focused-link accessible-name test, red with the `aria-label` removed; SHL-53's capped count reads the count and the link), `flow-sidebar-k125` K125-9 (real mouse drag from a disabled child drags nothing, with a positive control from the Views row; red with the press check removed), `flow-relationships-children-reorder` (held rerank: order and focus kept, red with `settled` forced null), `flow-relationships-alignment` grandchildren drop (red with rows claiming drops at any level).
+- Not red-provable: the deferral in item 3 (no browser here fires blur on a node move; a mutation cancelling at once left the keyboard reorder specs green).
+
 ### A372 · Sidebar settings upgrade step 0.3.0 → 0.4.0; read-time compatibility removed (B54, K160)
 
 #### A372 · The 0.4.0 step: what it converts, what it leaves, what an old shape is afterwards (B54)

@@ -120,6 +120,56 @@ test.describe("K125 (amended K158) — Customize sidebar: nested Views group", (
     expect(await childToggle.isChecked()).toBe(before);
   });
 
+  // @verifies SHL-50
+  test("K125-9: with the Views group off, a drag started on a disabled child row drags nothing", async ({
+    page,
+    tracker,
+  }) => {
+    // The child row is not draggable, so a browser drags its nearest
+    // draggable ancestor instead: the whole Views group. Review minor 3.
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await openCustomizeSidebar(page);
+    await page.getByTestId("sidebar-group-toggle-views").click();
+    await expect(page.getByTestId("sidebar-view-handle-overdue")).toBeDisabled();
+
+    const viewsRow = page.getByTestId("sidebar-group-row-views");
+    const position = await viewsRow.getAttribute("data-position");
+    const writes: string[] = [];
+    page.on("request", r => { if (r.url().includes("/api/user-settings") && r.method() === "PUT") writes.push(r.url()); });
+
+    /** A real mouse drag from `from`'s label to `to`, checked mid-flight. */
+    const dragFrom = async (from: import("@playwright/test").Locator, to: import("@playwright/test").Locator) => {
+      const a = await from.boundingBox();
+      const b = await to.boundingBox();
+      if (a === null || b === null) throw new Error("no box");
+      await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2 + 12, { steps: 4 });
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+    };
+
+    // Positive control: the same gesture from the Views row's own label
+    // does start a drag of the group.
+    const viewsLabel = viewsRow.locator(":scope > div span.truncate").first();
+    const layoutsRow = page.getByTestId("sidebar-group-row-layouts");
+    await dragFrom(viewsLabel, viewsLabel);
+    await expect(viewsRow).toHaveAttribute("data-dragging", "true");
+    await page.mouse.up();
+    await expect(page.locator("[data-dragging]")).toHaveCount(0);
+
+    // From a disabled child: nothing is dragged, nothing moves, nothing
+    // is written.
+    const childLabel = page.getByTestId("sidebar-view-row-overdue").locator("span.truncate");
+    await dragFrom(childLabel, layoutsRow);
+    await expect(page.locator("[data-dragging]")).toHaveCount(0);
+    await expect(page.getByTestId("drop-line")).toHaveCount(0);
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    await expect(viewsRow).toHaveAttribute("data-position", position ?? "");
+    expect(writes).toHaveLength(0);
+  });
+
   test("K125-6: hiding the Views group drops every built-in and saved view from the live sidebar", async ({
     page,
     tracker,

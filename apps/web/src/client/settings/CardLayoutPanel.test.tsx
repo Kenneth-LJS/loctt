@@ -82,6 +82,24 @@ describe("CardLayoutPanel", () => {
   });
 
   // @verifies SET-12
+  it("a hidden field has no handle, and a visible one cannot be moved into the hidden fields (review minor 7)", async () => {
+    // Was one list of every field, where a move into the hidden tail
+    // was announced ("moved to position 4 of 7") and then ignored.
+    SETTINGS = { card_layout: ["labels", "assignee", "due_date"] };
+    renderPanel();
+    const { fireEvent } = await import("@testing-library/react");
+    const last = await screen.findByTestId("card-field-handle-due_date");
+    expect(screen.queryByTestId("card-field-handle-priority")).toBeNull();
+    expect(screen.getByTestId("card-field-toggle-priority").getAttribute("aria-pressed")).toBe("false");
+    fireEvent.keyDown(last, { key: " " });
+    fireEvent.keyDown(last, { key: "ArrowDown" });
+    expect(screen.getByTestId("card-field-announcement").textContent).toBe("Due date is at position 3 of 3");
+    fireEvent.keyDown(last, { key: "Enter" });
+    await new Promise(r => setTimeout(r, 20));
+    expect(PUTS.length).toBe(0);
+  });
+
+  // @verifies SET-12
   it("writes the layout without a field that was hidden", async () => {
     SETTINGS = { card_layout: ["assignee", "labels", "due_date"] };
     renderPanel();

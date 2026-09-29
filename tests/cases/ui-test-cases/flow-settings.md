@@ -110,11 +110,16 @@ This case previously asserted the panels were read-only. That was an early draft
 ### SET-12 · M4 · major · P1 P3
 **Card layout drag editor changes the board.**
 
-- The editor lists the available card fields with visible/hidden state and a drag handle for order.
+- The editor lists the available card fields with visible/hidden state and a drag handle for order. Only the visible fields have a handle: the hidden ones have no stored order, so they follow as a list of their own, and a visible field cannot be moved (or announced as moved) among them.
 - Dragging assignee above labels and hiding due date changes every board card on the next render, in that order, with no due date.
 - The layout is saved per user; a second user's board is unaffected.
 - **The write landed in `settings.yaml`**: re-read the file and confirm the new `card_layout` array, in order. SET-11 checks disk for its panel; this one asserted only the render.
 - The editor shows a live card preview so the effect is visible before leaving the panel.
+
+> **Amended (A373, 2026-09-29).** The first bullet's second and third
+> sentences are added. The editor was one list of every field, where a
+> move into the hidden tail was announced and then ignored (review
+> minor 7).
 
 ### SET-14 · M4 · blocker · P4 P10
 **Diagnostics runs the equivalent of `loctt doctor` inline.**

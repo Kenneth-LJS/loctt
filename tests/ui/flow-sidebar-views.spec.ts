@@ -38,14 +38,21 @@ async function createView(
 /** The Views section's rows, top to bottom, by their visible name. */
 async function rowNames(page: Page): Promise<string[]> {
   return page.locator("#sidebar-section-views .sidebar-views-row").evaluateAll(rows =>
-    rows.map(r => r.querySelector("a, [aria-disabled]")?.textContent?.trim() ?? ""));
+    rows.map(r => r.querySelector(".truncate")?.textContent?.trim() ?? ""));
 }
 
-/** The row whose link reads `name`. */
+/**
+ * A Views row's link by its view name. The link's accessible name is the
+ * view name followed by what its slot says ("Overdue, 3 tasks").
+ */
+function viewLink(page: Page | Locator, name: string): Locator {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return page.getByRole("link", { name: new RegExp(`^${escaped}(, .*)?$`) });
+}
+
+/** The row whose link is the view `name`. */
 function row(page: Page, name: string): Locator {
-  return page.locator("#sidebar-section-views .sidebar-views-row", {
-    has: page.getByRole("link", { name, exact: true }),
-  });
+  return page.locator("#sidebar-section-views .sidebar-views-row", { has: viewLink(page, name) });
 }
 
 async function box(l: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -187,10 +194,10 @@ test.describe("K158 — the count/⋯ slot", () => {
     const due = row(page, "Due this week");
     await expect(due.getByTestId("sidebar-row-count")).toHaveText("0");
     // Tab from the previous row's link: its ⋯, then this row's link.
-    await page.getByRole("link", { name: "Mentions me", exact: true }).focus();
+    await viewLink(page, "Mentions me").focus();
     await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "Due this week", exact: true })).toBeFocused();
+    await expect(viewLink(page, "Due this week")).toBeFocused();
     const actions = due.locator(".sidebar-slot-actions");
     await expect(actions).toHaveCSS("opacity", "1");
     await expect(due.getByTestId("sidebar-row-count")).toBeHidden();
@@ -198,6 +205,32 @@ test.describe("K158 — the count/⋯ slot", () => {
     await page.keyboard.press("Tab");
     await expect(due.getByRole("button", { name: 'Actions for view "Due this week"' })).toBeFocused();
     await expect(actions).toHaveCSS("opacity", "1");
+  });
+
+  // @verifies SHL-51
+  test("SHL-51: the count stays in the focused link's accessible name while the slot hides it", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seedBulk(100);
+    await tracker.seed([{ title: "Hot", fields: { priority: "high" } }]);
+    await createView(tracker, "Everything");
+    await page.goto(`${tracker.baseURL}/list`);
+    const hp = row(page, "High priority");
+    await expect(hp.getByTestId("sidebar-row-count")).toHaveText("1");
+    // Keyboard focus: the ⋯ replaces the count on screen...
+    // Tab from the previous row's link: its ⋯, then this row's link.
+    await viewLink(page, "Overdue").focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    const link = viewLink(page, "High priority");
+    await expect(link).toBeFocused();
+    await expect(hp.getByTestId("sidebar-row-count")).toBeHidden();
+    // ...and the accessibility tree still has it, on the focused link.
+    await expect(link).toHaveAccessibleName("High priority, 1 task");
+    // Above the cap, the true total.
+    await expect(row(page, "Everything").getByTestId("sidebar-row-count")).toHaveText("99+");
+    await expect(viewLink(page, "Everything")).toHaveAccessibleName("Everything, 101 tasks");
   });
 
   // @verifies SHL-51, SHL-53
@@ -212,13 +245,13 @@ test.describe("K158 — the count/⋯ slot", () => {
 
     await page.goto(`${tracker.baseURL}/list`);
     // The visible text is "99+"; the true total is kept for assistive
-    // tech (a visually hidden span) and in the tooltip (VUE-16).
-    await expect(row(page, "Everything").getByTestId("sidebar-row-count").locator("[aria-hidden='true']")).toHaveText("99+");
-    await expect(page.getByRole("link", { name: "Everything", exact: true })).toHaveAttribute("title", "Everything, 101 tasks");
+    // tech (the link's name) and in the tooltip (VUE-16).
+    await expect(row(page, "Everything").getByTestId("sidebar-row-count")).toHaveText("99+");
+    await expect(viewLink(page, "Everything")).toHaveAttribute("title", "Everything, 101 tasks");
     const hot = row(page, "Hot ones").getByTestId("sidebar-row-count");
     await expect(hot).toHaveText("1");
 
-    await page.getByRole("link", { name: "Hot ones", exact: true }).click();
+    await viewLink(page, "Hot ones").click();
     await expect(page.getByText(/Showing 1–1 of 1\b/)).toBeVisible();
     await expect(page.locator("tbody tr")).toHaveCount(1);
   });
@@ -260,7 +293,11 @@ test.describe("K158 — touch screens keep the count", () => {
     const overdue = row(page, "Overdue");
     await expect(overdue.getByTestId("sidebar-row-count")).toHaveText("0");
     await expect(overdue.getByRole("button", { name: 'Actions for view "Overdue"' })).toBeHidden();
-    await overdue.getByRole("link", { name: "Overdue", exact: true }).tap();
+    // A tap on the count itself (A370: the count ignores the pointer, so
+    // the tap reaches the link). By coordinates: the count is not a hit
+    // target of its own, so a locator tap on it would wait forever.
+    const count = await box(overdue.getByTestId("sidebar-row-count"));
+    await page.touchscreen.tap(count.x + count.width / 2, count.y + count.height / 2);
     await expect(page).toHaveURL(/q=/);
     await expect(overdue.getByTestId("sidebar-row-count")).toBeVisible();
   });

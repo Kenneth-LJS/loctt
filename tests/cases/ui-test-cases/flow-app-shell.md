@@ -537,7 +537,7 @@ orbit instead of rotating on the spot.
 - The rows render in the user's stored order, built-in and saved views interleaved as the user placed them. A view the user never placed follows the placed ones: built-ins in their default order, then saved views (a new saved view appends at the end).
 - A view the user hid is not rendered. Hiding the Views group hides the whole section, heading included.
 - "+ New view" is the last row of the section.
-- In Customize sidebar the Views group is one row with the built-in and saved views as its children, one level deep, each with its own switch and reorder handle; they reorder within the group only. While the Views group's switch is off, every child's switch and handle is disabled but still visible (K125's rule).
+- In Customize sidebar the Views group is one row with the built-in and saved views as its children, one level deep, each with its own switch and reorder handle; they reorder within the group only. While the Views group's switch is off, every child's switch and handle is disabled but still visible (K125's rule), and a drag started on a child row moves nothing (it does not drag the Views group).
 - The List / Board / Timeline switcher's row in Customize sidebar is labelled so it is not confused with Views: "Layouts (List / Board / Timeline)".
 - The active-row highlight still marks exactly one row (K118).
 
@@ -545,6 +545,10 @@ orbit instead of rotating on the spot.
 > re-order them, and we can hide"*; order and unhide live in Settings →
 > Customize sidebar (*"we have the settings, right? where you can reorder
 > things, no?"*), not by dragging in the sidebar.
+
+> **Amended (A373, 2026-09-29).** The fifth bullet's last clause is
+> added: with Views off, dragging a disabled child dragged the whole
+> Views group, its nearest draggable ancestor (review minor 3).
 
 ### SHL-51 · M4 · major · P2 P6
 **Every Views row ends in one slot that shows the task count at rest and the ⋯ on hover or keyboard focus, without shifting anything.** The sidebar's Views section on a desktop browser with a mouse.
@@ -554,13 +558,21 @@ orbit instead of rotating on the spot.
 - Hovering the row, or giving anything in it keyboard focus, replaces the count with the ⋯ in the same box: the ⋯'s left and right edges equal the count slot's, and the row's icon and name do not move. Leaving the row brings the count back.
 - The slot ends at the same x as every other sidebar row's trailing control (a project row's ⋯).
 - While a count is loading the slot is already reserved; a count that fails or times out shows an unavailable mark, never a permanent spinner (SHL-23).
-- On a touch screen (no hover) the count stays and no ⋯ is offered in the sidebar; the same actions are in Settings (Customize sidebar, Saved views).
+- On a touch screen (no hover) the count stays and no ⋯ is offered in the sidebar; the same actions are in Settings (Customize sidebar, Saved views). A tap on the count itself opens the view, like a tap anywhere else on the row.
+- The count is part of the row link's accessible name ("Overdue, 3 tasks"; "1 task"; the true total above the "99+" cap; "count unavailable" for a failed count), so a screen reader has it while the row has focus and the ⋯ hides the visible count. The visible count is not read a second time.
 
 > Added (K158, Ken 2026-09-29): *"when you hover, replace task count
 > with the '...'. but task count must have same width as the ... button,
 > so maybe we make task count go to a max of 99 task, e.g. '99+' for 100
 > onwards"*. The touch-screen bullet is the orchestrator's call recorded
 > in K158.
+
+> **Amended (A373, 2026-09-29).** An independent review found the count
+> unreachable for a screen reader: it sat beside the link, hidden while
+> the row had focus (review M3; before K158 it was inside the link's
+> name). The last bullet is added. It also found a tap on the count
+> landing on the slot rather than the link (review minor 1); the touch
+> bullet's last sentence is added.
 
 ### SHL-52 · M4 · major · P2 P5
 **A Views row's ⋯ acts on that view: Hide for a built-in; Edit, Rename, Delete and Hide for a saved view.** The ⋯ opened on a built-in row, then on a saved-view row.
@@ -581,12 +593,16 @@ orbit instead of rotating on the spot.
 **Saved views show task counts too, and a broken saved view shows a warning mark instead.** A tracker with a saved view matching several tasks and a saved view whose filters no longer load (a hand edit to `queries.yaml`).
 
 - A healthy saved view's count is the same number clicking it lists (the count is the list's own request for that view).
-- The count updates after a task is created or edited that the view matches, without a full reload.
+- The count updates after a task is created or edited that the view matches, without a full reload. It also updates when the view itself is edited, including an edit to its archived scope alone.
 - A broken saved view shows a warning mark in the slot instead of a number. The mark has an accessible name ("Broken view") and its tooltip gives the parse error. The row is still a link (VUE-22), and its ⋯ offers Edit (the confirmed-replacement repair, VUE-42), Delete and Hide.
 
 > Added (K158, Ken 2026-09-29): *"then all of them should show numbers"*;
 > K158: *"Saved views show counts too; a broken view shows a warning mark
 > instead."*
+
+> **Amended (A373, 2026-09-29).** The second bullet's last sentence is
+> added: the count's cache key ignored the archived scope, so after an
+> edit to it the count was stale (review minor 4).
 
 ### SHL-54 · M4 · major · P1 P7 P8
 **The one Views group is stored per user as one `views` group, a setting from before it is migrated without losing the user's order or hidden choices, and CLI and MCP read and write the same ids.** Per-user `sidebar_groups` in `settings.yaml`.

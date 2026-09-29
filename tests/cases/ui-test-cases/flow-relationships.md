@@ -204,6 +204,25 @@ K143; there is no longer a "ranked" group to pick.)
   write ever leaving; the move is committed once, on Enter or Space.
 - The Children tree's direct children use the same keyboard model (B40,
   K140, K143).
+- The picked-up row is held by identity, not position: if the list
+  refetches mid-move (a row added, removed or reordered by another
+  writer), the same row stays picked up, keeps the move made so far,
+  and is the one written on drop. If it disappears, the move is
+  cancelled and announced.
+- The move is also cancelled, with no write, when focus leaves the
+  handle (to another control or to nothing) or the handle becomes
+  disabled; a later Enter picks up again rather than dropping a stale
+  move.
+- After a drop, the row stays where it was dropped, and its handle keeps
+  focus, while the write lands. A refused write puts it back.
+
+> **Amended (A373, 2026-09-29).** An independent review of K156 found
+> the pickup was held by position, so a poll arriving mid-move moved
+> and wrote a different row (review M2), that a pickup survived focus
+> going to nothing or a disabled handle, and that a keyboard drop on
+> the task page dropped focus to the page and flickered back to the
+> old order until the refetch. The last three bullets are added for
+> those.
 
 ### A.4 Attachments
 
@@ -583,8 +602,15 @@ Parent and a Child that has no children of its own (K156).
   toggle slot.
 - A row that cannot be reordered (a grandchild, an undeclared kind) keeps
   the handle's space, so its content does not jump left.
-- The child-progress readout under the Child heading shows its numbers
+- The child-progress readout beside the Child heading shows its numbers
   next to its bar and does not run past the list's right edge.
+
+> **Amended (A373, 2026-09-29).** The last bullet said the readout sits
+> "under the Child heading". K156 moved it beside the heading, on the
+> heading's line, so it shows even while the group is collapsed
+> (`RelationshipsPanel.tsx`). The bullet's requirement (numbers next to
+> the bar, nothing past the right edge) is unchanged. Only the position
+> word was stale.
 
 ### REL-53 · M2 · major · P8
 **Moving a row shows where it will land.** A group with three or more rows
@@ -597,4 +623,17 @@ Parent and a Child that has no children of its own (K156).
 - While a row is picked up from the keyboard and moved, the same line
   marks the edge it moved across; it goes away on drop or Escape.
 - A row moves within its own level only: in the Children tree a direct
-  child cannot be dropped among grandchildren.
+  child cannot be dropped among grandchildren. Dropped on a grandchild,
+  it lands next to that grandchild's top-level ancestor, in one write.
+- Over a gap between rows, where no drop is accepted, no line is drawn.
+- A drop on the dragged row's own slot writes nothing and is announced
+  as staying where it was, not as a move.
+- A drag cannot start from a row that cannot move itself (a grandchild,
+  or a row whose handle is disabled): pressing on it does not drag the
+  row it sits inside.
+
+> **Amended (A373, 2026-09-29).** An independent review of K156 found
+> the drop line left over gaps, an in-place drop announced as a move,
+> and a disabled child row dragging its whole parent group (Customize
+> sidebar with Views off). The last three bullets and the second
+> sentence of the fourth are added for those.

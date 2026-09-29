@@ -402,15 +402,17 @@
   display: grid;
   align-items: center;
   justify-items: end;
+  /* The slot sits over the link's right end: only the ⋯ takes the
+     pointer, so a tap or click on the count (or the slot around it)
+     lands on the link. */
+  pointer-events: none;
 }
 .sidebar-slot > * {
   grid-area: 1 / 1;
 }
-.sidebar-slot-count {
-  pointer-events: none;
-}
 .sidebar-slot-actions {
   opacity: 0;
+  pointer-events: auto;
 }
 @media (hover: hover) {
   .sidebar-views-row:hover .sidebar-slot-actions { opacity: 1; }

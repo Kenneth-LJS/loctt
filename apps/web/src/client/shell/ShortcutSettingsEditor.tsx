@@ -21,8 +21,9 @@ import { useKeyboardShortcutSettings } from "./useKeyboardShortcutSettings.ts";
  * default", which asks first and then turns everything back on.
  *
  * While the master is off, the per-shortcut switches are disabled but
- * keep their state (as the K125 Filters group's children do), so
- * turning the master back on restores the user's choices.
+ * keep their state (as the Views group's children do in Customize
+ * sidebar, K125's rule), so turning the master back on restores the
+ * user's choices.
  */
 /**
  * The sentence for a shortcut switch whose save failed. A timed-out

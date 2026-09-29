@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import { SortableTree } from "../ui/SortableTree.tsx";
 
 /**
- * A flat, boxed, reorderable Settings list (SET-6, SET-21, SET-34, SET-12,
- * SET-13, SHL-45) on the shared `ui/SortableTree` (K156): statuses,
- * priorities, task types, relationships, card layout, sidebar groups and
- * pins.
+ * A flat, boxed, reorderable Settings list (SET-6, SET-21, SET-34, SET-12)
+ * on the shared `ui/SortableTree` (K156): statuses, priorities, task
+ * types, relationships and card layout. (Customize sidebar, SET-13 and
+ * SHL-45, is a nested tree and uses `SortableTree` directly.)
  *
  * It only fixes the Settings conventions around the primitive, which
  * owns the drag, the drop line, the keyboard pickup and the
@@ -27,6 +27,7 @@ export function SettingsSortableList<T>({
   rowLabel,
   onMove,
   enabled = true,
+  reorderable = true,
   testIdPrefix,
   children,
 }: {
@@ -37,6 +38,12 @@ export function SettingsSortableList<T>({
   readonly onMove: (from: number, to: number) => void;
   /** False while a write is in flight or the list cannot reorder. */
   readonly enabled?: boolean;
+  /**
+   * False for a list whose order means nothing (card layout's hidden
+   * fields): no handles, only their 24px slot, so rows line up with a
+   * reorderable list above.
+   */
+  readonly reorderable?: boolean;
   readonly testIdPrefix: string;
   readonly children: (item: T, index: number) => ReactNode;
 }): React.JSX.Element {
@@ -47,6 +54,7 @@ export function SettingsSortableList<T>({
       itemName={rowLabel}
       onMove={m => { onMove(m.fromIndex, m.toIndex); }}
       disabled={!enabled}
+      canReorder={() => reorderable}
       listClassName="space-y-1"
       testIds={{
         row: item => `${testIdPrefix}-row-${rowKey(item)}`,

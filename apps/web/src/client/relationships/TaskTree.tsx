@@ -35,7 +35,10 @@ import { buildTree, hasCycle } from "./tree.ts";
  *
  * The rows are the last response. A drop calls `onMove` with stored
  * indices; the panel sends one rerank and re-renders from the refetch,
- * so a refused rerank leaves the row where the file says it is.
+ * so a refused rerank leaves the row where the file says it is. A
+ * keyboard drop keeps its order on screen until that refetch lands (the
+ * primitive's settling order), so the row neither flickers back nor
+ * loses focus in between; a refused rerank puts it back at once.
  */
 
 interface TaskTreeItem {
@@ -63,8 +66,12 @@ export function TaskTree({
   readonly statusOf: (key: string | undefined) => StatusDef | undefined;
   readonly removing: boolean;
   readonly onRemove: (row: RelationshipRow) => void;
-  /** A depth-0 move, in the group's stored row indices. */
-  readonly onMove: (from: number, to: number) => void;
+  /**
+   * A depth-0 move, in the group's stored row indices. The promise settles
+   * with the write, so a keyboard drop keeps its order on screen until
+   * the refetch lands (a rejection puts the stored order back).
+   */
+  readonly onMove: (from: number, to: number) => Promise<unknown> | undefined;
 }): React.JSX.Element {
   const nodes = useMemo(
     () => (group.tree ? buildTree(group.rows, group.key, taskIndex, taskId) : undefined),
@@ -113,7 +120,7 @@ export function TaskTree({
         // Every declared kind is ordered (K143); core refuses to rerank a
         // kind workflow.yaml does not declare, so that group gets none.
         canReorder={level => level.depth === 0 && !group.unknown}
-        onMove={m => { onMove(m.fromIndex, m.toIndex); }}
+        onMove={m => onMove(m.fromIndex, m.toIndex)}
         listClassName="space-y-0.5"
         renderItem={(item, ctx) => {
           const view = (

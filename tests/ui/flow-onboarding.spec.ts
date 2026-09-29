@@ -156,12 +156,11 @@ test("an uninitialized directory routes to the wizard on every route, never to a
       // badge renders a `0` implying a tracker exists.
       await expect(page.getByLabel("Toggle sidebar")).toHaveCount(0);
       // K158 (Ken, 2026-09-29): built-in and saved views are one
-      // "Views" section again (K125 had split it into "Filters" and
-      // "Saved views"). Its heading is a toggle button; the switcher's
-      // "List" link is the other thing a rendered sidebar would show.
+      // "Views" section; its heading toggle is what a rendered sidebar
+      // would show. (Absence checks for "Filters" and "Saved views" were
+      // dropped: no section carries those names any more, so they could
+      // not fail. The Views heading check covers the section.)
       await expect(page.getByTestId("sidebar-section-toggle-views")).toHaveCount(0);
-      await expect(page.getByText("Filters")).toHaveCount(0);
-      await expect(page.getByText("Saved views")).toHaveCount(0);
       await expect(page.getByText("Recently viewed")).toHaveCount(0);
     }
 

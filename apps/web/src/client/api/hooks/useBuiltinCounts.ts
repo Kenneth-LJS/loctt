@@ -108,8 +108,9 @@ export function useBuiltinCounts(
  * One request per view, like the built-ins; see A370 for why these are
  * not batched into one server call.
  *
- * `revision` is anything that changes when the view's definition does
- * (its filters, serialised), so an edit refetches. The key lives under
+ * `revision` is anything that changes when what the view matches does
+ * (its filters and its archived scope, serialised: `countRevision` in
+ * the sidebar), so an edit refetches. The key lives under
  * `["builtin-count"]` so every task write that refreshes the built-in
  * counts (`useTaskMutations`, `useSetField`, git sync, user switch)
  * refreshes these too. A broken view is never passed here: it has no

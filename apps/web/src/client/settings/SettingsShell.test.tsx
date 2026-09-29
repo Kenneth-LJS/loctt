@@ -121,3 +121,23 @@ describe("SettingsShell — the pane owns the padding (K-layout)", () => {
     expect(panel.className).not.toContain("p-8");
   });
 });
+
+/**
+ * The Keyboard panel's reference for a reorder handle says what the
+ * handle does (`ui/SortableTree.tsx` `onHandleKeyDown`): Enter picks a
+ * row up as well as dropping it, exactly like Space. It used to list
+ * Enter only as "Drop the picked-up row".
+ */
+describe("KeyboardPanel — the reorder handle's keys", () => {
+  it("lists Enter, with Space, as picking up or dropping the row", async () => {
+    renderShell("keyboard");
+    const panel = await screen.findByTestId("keyboard-panel");
+    const rows = [...panel.querySelectorAll("tr")].filter(r =>
+      r.textContent?.includes("A drag handle in a reorderable list"));
+    const actionsFor = (key: string): string[] => rows
+      .filter(r => [...r.querySelectorAll("kbd")].some(k => k.textContent === key))
+      .map(r => r.querySelectorAll("td")[1]?.firstChild?.textContent ?? "");
+    expect(actionsFor("Enter")).toEqual(["Pick up the row, or drop it"]);
+    expect(actionsFor("Space")).toEqual(["Pick up the row, or drop it"]);
+  });
+});

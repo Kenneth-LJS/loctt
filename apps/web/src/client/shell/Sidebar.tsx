@@ -1,4 +1,4 @@
-import type { EntityColor, LabelDef, MilestoneDef, ProjectDef, SidebarGroupId, SidebarItemId, SprintDef, UserSettings } from "@loctt/contracts";
+import type { EntityColor, LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, SidebarItemId, SprintDef, UserSettings } from "@loctt/contracts";
 import { savedViewSidebarId } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { createContext, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
@@ -1527,6 +1527,37 @@ function rowTitle(name: string, slot: SlotContent): string {
   return slot.kind === "count" && slot.value > 99 ? `${name}, ${slot.value} tasks` : name;
 }
 
+/**
+ * What the slot says, as the end of the row link's accessible name
+ * ("Overdue, 3 tasks"), or "" when there is nothing to say.
+ *
+ * The visible count sits in the slot beside the link and is
+ * `visibility: hidden` while the row has focus (the ⋯ takes its place),
+ * so a screen reader on the link would never reach it there. The link's
+ * name (its `aria-label`) carries it instead, with the true total above the "99+" cap
+ * (VUE-16), and the slot's own text is hidden from assistive tech so it
+ * is not read twice.
+ */
+function slotSpeech(slot: SlotContent): string {
+  switch (slot.kind) {
+    case "count":
+      return `, ${String(slot.value)} ${slot.value === 1 ? "task" : "tasks"}`;
+    case "unavailable":
+      return ", count unavailable";
+    default:
+      return "";
+  }
+}
+
+/**
+ * What a saved view's count depends on: its filters and its archived
+ * scope (K107, a property of the view, not a filter). An edit to either
+ * gives the count a new query key, so it refetches.
+ */
+function countRevision(view: SavedQuery | undefined): string {
+  return JSON.stringify([view?.filters ?? [], view?.archivedScope ?? null]);
+}
+
 function slotContentOf(count: BuiltinCount | undefined): SlotContent {
   if (count === undefined) return { kind: "none" };
   if (count.count !== undefined) return { kind: "count", value: count.count };
@@ -1539,28 +1570,30 @@ function SlotCount({ content }: { readonly content: SlotContent }) {
   const base = "sidebar-slot-count text-[0.7857rem] tabular-nums text-text-tertiary";
   switch (content.kind) {
     case "count":
-      // Above the cap the true total is still there for assistive tech
-      // (and in the row's tooltip, `rowTitle`): VUE-16, a capped count
-      // must not hide the real one.
-      return content.value > 99 ? (
-        <span data-testid="sidebar-row-count" className={base}>
-          <span aria-hidden="true">{formatSlotCount(content.value)}</span>
-          <span className="sr-only">{content.value}</span>
-        </span>
-      ) : (
-        <span data-testid="sidebar-row-count" className={base}>
+      // Hidden from assistive tech: the link's name carries the count,
+      // and above the cap the true total (`slotSpeech`; VUE-16, a capped
+      // count must not hide the real one). The tooltip has it too
+      // (`rowTitle`).
+      return (
+        <span data-testid="sidebar-row-count" aria-hidden="true" className={base}>
           {formatSlotCount(content.value)}
         </span>
       );
     case "pending":
       return (
-        <span data-testid="sidebar-row-count" data-pending="true" className={base}>
+        <span data-testid="sidebar-row-count" data-pending="true" aria-hidden="true" className={base}>
           {"···"}
         </span>
       );
     case "unavailable":
       return (
-        <span data-testid="sidebar-row-count" data-unavailable="true" title="Count unavailable" className={base}>
+        <span
+          data-testid="sidebar-row-count"
+          data-unavailable="true"
+          aria-hidden="true"
+          title="Count unavailable"
+          className={base}
+        >
           —
         </span>
       );
@@ -1590,9 +1623,11 @@ function SlotCount({ content }: { readonly content: SlotContent }) {
  * the count at rest, the ⋯ on hover or keyboard focus (the CSS in
  * `styles/index.css`, `.sidebar-slot`). The link reserves that width with
  * a spacer so a long name truncates before it. The ⋯ is a sibling of the
- * link, never inside it (a button in an anchor is invalid HTML), and the
- * count ignores the pointer, so a tap on it on a touch screen reaches the
- * link.
+ * link, never inside it (a button in an anchor is invalid HTML). The slot
+ * ignores the pointer everywhere except on the ⋯ itself, so a tap on the
+ * count on a touch screen reaches the link. The count is also said as
+ * part of the link's name (`slotSpeech`, as its `aria-label`), since the
+ * slot hides it while the row has focus.
  *
  * The slot ends where every other row's trailing control does (`right`
  * matches `ItemShell`'s `px-2.5`, the UI-16c inset).
@@ -1604,6 +1639,7 @@ function ViewsRow({
   icon,
   label,
   renderLink,
+  name,
   slot,
   actionsLabel,
   actions,
@@ -1614,12 +1650,24 @@ function ViewsRow({
   readonly title: string;
   readonly icon: ReactNode;
   readonly label: ReactNode;
-  readonly renderLink: (content: ReactNode) => ReactNode;
+  /**
+   * The row's link around `content`. `ariaLabel` is the link's accessible
+   * name when the slot has something to say ("Overdue, 3 tasks"), else
+   * undefined (the visible name is the whole name).
+   */
+  readonly renderLink: (content: ReactNode, ariaLabel: string | undefined) => ReactNode;
+  /** The view's name as text, the start of `ariaLabel`. */
+  readonly name: string;
   readonly slot: SlotContent;
   readonly actionsLabel: string;
   readonly actions: readonly RowAction[];
   readonly rowAttributes: Record<string, string>;
 }) {
+  const speech = slotSpeech(slot);
+  // An `aria-label`, not visually hidden text inside the link: the row
+  // is a flex box, and a browser separates its items with spaces in the
+  // computed name ("Overdue , 3 tasks").
+  const ariaLabel = speech === "" ? undefined : `${name}${speech}`;
   const content = (
     <ItemShell active={active} collapsed={collapsed} title={title}>
       <span className="flex w-4 shrink-0 items-center justify-center">{icon}</span>
@@ -1632,10 +1680,10 @@ function ViewsRow({
     </ItemShell>
   );
   // Collapsed rail: icon only, no slot (no room for a count or a ⋯).
-  if (collapsed) return <div {...rowAttributes}>{renderLink(content)}</div>;
+  if (collapsed) return <div {...rowAttributes}>{renderLink(content, undefined)}</div>;
   return (
     <div {...rowAttributes} className="sidebar-views-row relative rounded-md hover:bg-bg-muted">
-      {renderLink(content)}
+      {renderLink(content, ariaLabel)}
       <div
         data-testid="sidebar-row-slot"
         className={`sidebar-slot absolute inset-y-0 right-2.5 ${SLOT_WIDTH}`}
@@ -1693,7 +1741,7 @@ function ViewsGroup({
   const viewCounts = useSavedViewCounts(
     children.flatMap(c =>
       c.kind === "saved" && !c.broken
-        ? [{ id: c.viewId, revision: JSON.stringify(queriesById.get(c.viewId)?.filters ?? []) }]
+        ? [{ id: c.viewId, revision: countRevision(queriesById.get(c.viewId)) }]
         : [],
     ),
   );
@@ -1803,6 +1851,7 @@ function ViewsGroup({
                 collapsed={collapsed}
                 active={false}
                 title={f.label}
+                name={f.label}
                 icon={icon}
                 label={f.label}
                 renderLink={content => (
@@ -1824,13 +1873,15 @@ function ViewsGroup({
               collapsed={collapsed}
               active={sameRow(activeRow, { kind: "builtin", id: f.id })}
               title={rowTitle(f.label, slot)}
+              name={f.label}
               icon={icon}
               label={f.label}
-              renderLink={content => (
+              renderLink={(content, ariaLabel) => (
                 <Link
                   to="/list"
                   search={prev => ({ ...clearSort(clearFilters(prev)), ...search })}
                   title={rowTitle(f.label, slot)}
+                  aria-label={ariaLabel}
                   className="block no-underline"
                 >
                   {content}
@@ -1858,6 +1909,7 @@ function ViewsGroup({
               collapsed={collapsed}
               active={active}
               title={child.name}
+              name={child.name}
               icon={<ViewIcon icon={undefined} />}
               label={<span className="text-text-secondary">{child.name}</span>}
               renderLink={content => (
@@ -1919,15 +1971,17 @@ function ViewsGroup({
             collapsed={collapsed}
             active={active}
             title={rowTitle(v.name, slot)}
+            name={v.name}
             // UI-19 / K104: the view's own icon, tinted by its colour; a
             // view with none shows the grey dot (Ken, 2026-09-23).
             icon={<ViewIcon icon={v.icon} color={v.color} />}
             label={v.name}
-            renderLink={content => (
+            renderLink={(content, ariaLabel) => (
               <Link
                 to="/list"
                 search={prev => ({ ...clearSort(clearFilters(prev)), view: v.id })}
                 title={rowTitle(v.name, slot)}
+                aria-label={ariaLabel}
                 className="block no-underline"
               >
                 {content}

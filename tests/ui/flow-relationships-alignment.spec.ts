@@ -155,20 +155,42 @@ test("REL-53: a keyboard move shows the line at the pending edge; Escape clears 
 // @verifies REL-53
 test("REL-53: a direct child cannot be dropped among grandchildren", async ({ page, tracker }) => {
   const [p] = await tracker.seed([{ title: "Parent" }]);
-  for (const title of ["A", "B"]) await tracker.run(["create", title, "--parent", p ?? ""]);
-  await tracker.run(["create", "G", "--parent", "T-2"]); // T-4 under A
+  for (const title of ["A", "B", "C"]) await tracker.run(["create", title, "--parent", p ?? ""]);
+  await tracker.run(["create", "G", "--parent", "T-4"]); // T-5 under C
   await openTask(page, tracker, p ?? "");
-  const reranks: string[] = [];
-  page.on("request", r => { if (r.url().includes("/rerank")) reranks.push(r.url()); });
+  const reranks: { url: string; body: string | null }[] = [];
+  page.on("request", r => { if (r.url().includes("/rerank")) reranks.push({ url: r.url(), body: r.postData() }); });
 
   const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
-  const bItem = page.locator('[data-group="child"] li[data-depth="0"]').filter({ has: page.locator('[data-testid="tree-node"][data-depth="0"]', { hasText: "T-3" }) });
+  const topItem = (key: string) => page.locator('[data-group="child"] li[data-depth="0"]')
+    .filter({ has: page.locator('[data-testid="tree-node"][data-depth="0"]', { hasText: key }) });
+  const aItem = topItem("T-2");
   const gRow = page.locator('[data-group="child"] li[data-depth="1"]');
-  await bItem.dispatchEvent("dragstart", { dataTransfer });
+  await aItem.dispatchEvent("dragstart", { dataTransfer });
   await gRow.dispatchEvent("dragover", { dataTransfer });
-  // The drop lands next to G's top-level ancestor A, never inside A.
+  // The drop lands next to G's top-level ancestor C (below it: A moves
+  // down), never inside C.
   await expect(page.getByTestId("drop-line")).toHaveCount(1);
   await expect(gRow.getByTestId("drop-line")).toHaveCount(0);
-  await bItem.dispatchEvent("dragend", { dataTransfer });
-  expect(reranks).toHaveLength(0);
+  await expect(topItem("T-4")).toHaveAttribute("data-drop-indicator", "below");
+  // Drop it there. (This test used to stop before the drop, so it could
+  // not fail on what the drop does.)
+  const settled = page.waitForResponse(r => r.url().includes("/rerank") && r.request().method() === "POST");
+  await gRow.dispatchEvent("drop", { dataTransfer });
+  await aItem.dispatchEvent("dragend", { dataTransfer });
+  expect((await settled).status()).toBe(200);
+  // One write: A, placed after C, at the top level.
+  expect(reranks).toHaveLength(1);
+  expect(reranks[0]?.url).toMatch(/\/relationships\/child\/T-2\/rerank$/);
+  expect(JSON.parse(reranks[0]?.body ?? "{}")).toEqual({ after: "T-4" });
+  // A is now the last direct child, and G is still C's only child.
+  const topLevel = page.locator('[data-group="child"] [data-testid="tree-node"][data-depth="0"]');
+  await expect(topLevel).toHaveCount(3);
+  await expect(topLevel.nth(0)).toContainText("T-3");
+  await expect(topLevel.nth(1)).toContainText("T-4");
+  await expect(topLevel.nth(2)).toContainText("T-2");
+  const nested = page.locator('[data-group="child"] [data-testid="tree-node"][data-depth="1"]');
+  await expect(nested).toHaveCount(1);
+  await expect(nested).toContainText("T-5");
+  await expect(topItem("T-4").locator('[data-testid="tree-node"][data-depth="1"]')).toHaveCount(1);
 });

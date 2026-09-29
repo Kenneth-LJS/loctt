@@ -129,6 +129,47 @@ test("B40: children reorder by keyboard; the order survives a reload and `loctt 
   expect(await shownChildOrder(tracker, k.p)).toEqual([k.c, k.a, k.b]);
 });
 
+// @verifies REL-15
+test("REL-15: a keyboard drop keeps its order and the handle's focus while the write lands", async ({ page, tracker }) => {
+  const k = await family(tracker);
+  const id = {
+    a: await idOf(tracker.root, k.a),
+    b: await idOf(tracker.root, k.b),
+    c: await idOf(tracker.root, k.c),
+  };
+  await openTask(page, tracker, k.p);
+  await expect.poll(() => renderedChildren(page)).toEqual([id.a, id.b, id.c]);
+
+  // Hold the rerank so the gap between the drop and the refetch is wide
+  // enough to look at.
+  let release: () => void = () => undefined;
+  const held = new Promise<void>(r => { release = r; });
+  await page.route("**/rerank", async route => {
+    await held;
+    await route.continue();
+  });
+
+  const handle = handleFor(page, id.c);
+  await handle.focus();
+  await handle.press("ArrowUp");
+  await handle.press("ArrowUp");
+  await handle.press("Enter");
+  // The write is in flight: the dropped order stays, the handle keeps
+  // focus, and nothing is shown as held.
+  await page.waitForTimeout(200);
+  expect(await renderedChildren(page)).toEqual([id.c, id.a, id.b]);
+  await expect(handle).toBeFocused();
+  await expect(page.locator('[data-group="child"] [data-picked-up]')).toHaveCount(0);
+
+  const settled = page.waitForResponse(r => r.url().includes("/rerank") && r.request().method() === "POST");
+  release();
+  expect((await settled).status()).toBe(200);
+  await expect.poll(() => storedChildOrder(tracker.root, k.p)).toEqual([id.c, id.a, id.b]);
+  await page.waitForTimeout(300);
+  expect(await renderedChildren(page)).toEqual([id.c, id.a, id.b]);
+  await expect(handle).toBeFocused();
+});
+
 test("B40: Escape during a keyboard move puts the child back and writes nothing", async ({ page, tracker }) => {
   const k = await family(tracker);
   const ids = [await idOf(tracker.root, k.a), await idOf(tracker.root, k.b), await idOf(tracker.root, k.c)];

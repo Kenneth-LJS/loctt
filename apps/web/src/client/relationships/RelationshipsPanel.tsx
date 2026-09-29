@@ -156,11 +156,11 @@ export function RelationshipsPanel({
     group: RelationshipGroup,
     from: number,
     to: number,
-  ): void => {
-    if (from === to) return;
+  ): Promise<unknown> | undefined => {
+    if (from === to) return undefined;
     const rows = group.rows;
     const moved = rows[from];
-    if (moved === undefined) return;
+    if (moved === undefined) return undefined;
     setErrorFor(group.key, undefined);
 
     // The neighbour the row lands next to, in the list *without* the
@@ -183,26 +183,34 @@ export function RelationshipsPanel({
             before: anchor.resolvedKey ?? anchor.target,
           };
 
-    rerank.mutate(vars, {
-      /**
-       * REL-46. Nothing was moved in local state, so a failure needs no
-       * rollback — the row is already where the file says it is, which
-       * is what "the UI never leaves a position on screen that isn't on
-       * disk" asks for. The message names the action, the row and the
-       * group, and carries the server's own reason.
-       *
-       * A refusal from core (e.g. a kind removed from workflow.yaml
-       * while the page was open) arrives here as an ordinary
-       * `ReorderError`, which the web route maps to a 400, rendering
-       * through this same branch.
-       */
-      onError: (err: Error) => {
-        setErrorFor(
-          group.key,
-          `Reordering ${moved.resolvedKey ?? moved.target} under “${group.label}” `
-          + `failed: ${messageOf(err)}`,
-        );
-      },
+    // The promise settles with the write, so the tree can keep a
+    // keyboard drop's order on screen until the refetch (TaskTree).
+    return new Promise((resolve, reject) => {
+      rerank.mutate(vars, {
+        onSuccess: resolve,
+        /**
+         * REL-46. Nothing was moved in local state, so a failure needs no
+         * rollback — the row is already where the file says it is, which
+         * is what "the UI never leaves a position on screen that isn't on
+         * disk" asks for. (A keyboard drop's order, shown while the write
+         * lands, is dropped by the rejection below.) The message names the
+         * action, the row and the group, and carries the server's own
+         * reason.
+         *
+         * A refusal from core (e.g. a kind removed from workflow.yaml
+         * while the page was open) arrives here as an ordinary
+         * `ReorderError`, which the web route maps to a 400, rendering
+         * through this same branch.
+         */
+        onError: (err: Error) => {
+          setErrorFor(
+            group.key,
+            `Reordering ${moved.resolvedKey ?? moved.target} under “${group.label}” `
+            + `failed: ${messageOf(err)}`,
+          );
+          reject(err);
+        },
+      });
     });
   };
 
@@ -304,7 +312,7 @@ export function RelationshipsPanel({
                   statusOf={statusOf}
                   removing={unlink.isPending}
                   onRemove={row => { onRemove(group, row); }}
-                  onMove={(from, to) => { move(group, from, to); }}
+                  onMove={(from, to) => move(group, from, to)}
                 />
               )}
 

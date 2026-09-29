@@ -1,4 +1,4 @@
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Icon } from "./Icon.tsx";
 
@@ -29,9 +29,12 @@ import { Icon } from "./Icon.tsx";
  * accent line is drawn between the two items where the drop would land,
  * at that level's indentation: below the hovered row when moving down,
  * above it when moving up. Hovering the row's own slot draws nothing,
- * because that drop would change nothing. The line clears on drag end
- * and when the pointer leaves the list. A nested draggable (a link) does
- * not start a reorder.
+ * because that drop would change nothing. The line clears on drag end,
+ * when the pointer leaves the list, and over anything in it that is not
+ * a drop target (the gaps between rows). A nested draggable (a link)
+ * does not start a reorder, and neither does a press on a nested row
+ * that cannot move itself: the browser would otherwise drag the nearest
+ * draggable ancestor, a row the person never grabbed.
  *
  * ## Keyboard: pick up, move, drop (REL-15)
  *
@@ -39,8 +42,19 @@ import { Icon } from "./Icon.tsx";
  * it up if nothing is held. Arrows move it within its level, and the
  * rows re-render in the pending order, with the same drop line marking
  * the edge it moved across. Enter or Space drops it, calling `onMove`
- * once; Escape puts it back and calls nothing. Every step is announced
- * through a polite live region.
+ * once (a drop where it started calls nothing and is announced as
+ * staying there); Escape puts it back and calls nothing. Focus leaving the handle
+ * (to another control or to nothing) and the handle turning disabled
+ * also put it back. Every step is announced through a polite live
+ * region.
+ *
+ * ## The held item is an id, never an index
+ *
+ * A pickup or a drag remembers the item's id and how far it has moved,
+ * and finds the item in `items` again on every render. A refetch that
+ * adds, removes or reorders rows mid-move therefore still moves, and
+ * writes, the item that was picked up. If that item disappears, the move
+ * is cancelled and announced.
  *
  * ## Leading controls and alignment
  *
@@ -57,6 +71,12 @@ import { Icon } from "./Icon.tsx";
  * The primitive keeps no copy of the items. What it renders is what the
  * caller passes, except for the keyboard pickup's pending order, so a
  * failed write snaps back simply by the caller not changing `items`.
+ *
+ * One exception, for callers that re-render only from a refetch (the
+ * task page): when `onMove` returns a promise, a keyboard drop keeps
+ * showing the dropped order until `items` changes, so the row does not
+ * flicker back to the stored order and its handle keeps focus. A
+ * rejected promise puts the stored order back at once.
  */
 
 export interface SortableLevel {
@@ -111,7 +131,11 @@ export interface SortableTreeProps<T> {
   /** How the item is named in its handle's label and the announcements. */
   readonly itemName: (item: T) => string;
   readonly renderItem: (item: T, ctx: SortableRowContext) => ReactNode;
-  readonly onMove: (move: SortableMove) => void;
+  /**
+   * Called once per move. Returning a promise keeps a keyboard drop's
+   * order on screen until `items` changes, or until the promise rejects.
+   */
+  readonly onMove: (move: SortableMove) => void | Promise<unknown>;
   /** Off: a flat list, children ignored. */
   readonly nesting?: boolean;
   /** How many levels render. Unlimited by default. */
@@ -146,10 +170,22 @@ interface Held {
   /** The level's path key: ancestor ids joined by "/", "" at the top. */
   readonly level: string;
   readonly parentId: string | null;
+  /** The held item. Its index is looked up by this on every render. */
   readonly id: string;
-  /** Stored index in the level. */
+  /** How many places it has moved from its stored index (0 while dragging). */
+  readonly delta: number;
+}
+
+interface LevelInfo<T> {
+  readonly items: readonly T[];
+  readonly parentId: string | null;
+  readonly depth: number;
+}
+
+/** Where a held item is now: its stored index and its pending one. */
+interface Placed<T> {
+  readonly info: LevelInfo<T>;
   readonly origin: number;
-  /** Pending index in the level (always `origin` while dragging). */
   readonly current: number;
 }
 
@@ -171,35 +207,115 @@ export function SortableTree<T>({
 }: SortableTreeProps<T>): React.JSX.Element {
   const [pickup, setPickup] = useState<Held | null>(null);
   const [dragging, setDragging] = useState<Held | null>(null);
-  /** The row index (in `dragging`'s level) the pointer is over. */
-  const [over, setOver] = useState<number | null>(null);
+  /** The id of the row (in `dragging`'s level) the pointer is over. */
+  const [over, setOver] = useState<string | null>(null);
+  /**
+   * A keyboard drop whose write is still landing: its order stays on
+   * screen while `items` is the array it was dropped on (see "Nothing
+   * moves on its own").
+   */
+  const [settling, setSettling] = useState<{ readonly held: Held; readonly items: readonly T[] } | null>(null);
   const [announcement, setAnnouncement] = useState("");
   /** Items whose expanded state differs from `startCollapsed`'s default, by path. */
   const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
   const handles = useRef(new Map<string, HTMLButtonElement>());
-
-  // A re-render in the pending order can move the held row's DOM node,
-  // which drops focus; put it back so the next arrow key still lands.
-  useLayoutEffect(() => {
-    if (pickup === null) return;
-    const el = handles.current.get(pathOf(pickup.level, pickup.id));
-    if (el !== undefined && document.activeElement !== el) el.focus();
-  }, [pickup]);
+  /** The pickup as of the last commit, for the deferred blur check. */
+  const pickupRef = useRef<Held | null>(null);
+  /** The row the last pointer press landed in, for `onDragStart`. */
+  const pressedRow = useRef<Element | null>(null);
 
   const isDisabled = (level: SortableLevel): boolean =>
     typeof disabled === "function" ? disabled(level) : disabled;
 
-  const commit = (held: Held, siblings: readonly T[], to: number): void => {
-    if (to === held.origin) return;
-    const rest = siblings.filter((_, i) => i !== held.origin);
-    const anchor = to > held.origin ? rest[to - 1] : rest[to];
-    onMove({
-      parentId: held.parentId,
-      fromIndex: held.origin,
+  const childrenOf = (item: T, depth: number): readonly T[] =>
+    nesting && depth + 1 < maxDepth ? (getChildren?.(item) ?? []) : [];
+
+  // Every level this tree renders, by path key, so a held item is found
+  // by id wherever it now sits.
+  const levels = new Map<string, LevelInfo<T>>();
+  const collect = (levelItems: readonly T[], depth: number, parentId: string | null, key: string): void => {
+    levels.set(key, { items: levelItems, parentId, depth });
+    for (const item of levelItems) {
+      const kids = childrenOf(item, depth);
+      if (kids.length > 0) collect(kids, depth + 1, getId(item), pathOf(key, getId(item)));
+    }
+  };
+  collect(items, 0, null, "");
+
+  /** Where `held` is now, or null if its item or its level is gone. */
+  const place = (held: Held | null): Placed<T> | null => {
+    if (held === null) return null;
+    const info = levels.get(held.level);
+    if (info === undefined) return null;
+    const origin = info.items.findIndex(i => getId(i) === held.id);
+    if (origin < 0) return null;
+    const current = Math.min(Math.max(origin + held.delta, 0), info.items.length - 1);
+    return { info, origin, current };
+  };
+
+  /** Whether `held` can still move: its item is there and its level is live. */
+  const usable = (held: Held): boolean => {
+    const placed = place(held);
+    if (placed === null) return false;
+    const level = { parentId: placed.info.parentId, depth: placed.info.depth };
+    return canReorder(level) && !isDisabled(level);
+  };
+
+  // A held item that vanished (a refetch dropped it) or whose level went
+  // inert mid-move: cancel, so a later Enter or drop cannot write a
+  // stale move.
+  const pickupLost = pickup !== null && !usable(pickup);
+  const draggingLost = dragging !== null && !usable(dragging);
+  useEffect(() => {
+    if (!pickupLost && !draggingLost) return;
+    if (pickupLost) setPickup(null);
+    if (draggingLost) {
+      setDragging(null);
+      setOver(null);
+    }
+    setAnnouncement("Move cancelled");
+  }, [pickupLost, draggingLost]);
+
+  // A settling drop ends once the items it was dropped on are replaced.
+  useEffect(() => {
+    if (settling !== null && settling.items !== items) setSettling(null);
+  }, [settling, items]);
+
+  // A re-render in the pending order can move the held row's DOM node,
+  // which drops focus to nothing; put it back so the next arrow key
+  // still lands. Never taken from another control.
+  useLayoutEffect(() => {
+    pickupRef.current = pickup;
+    if (pickup === null) return;
+    const el = handles.current.get(pathOf(pickup.level, pickup.id));
+    const active = document.activeElement;
+    if (el !== undefined && active !== el && (active === null || active === document.body)) el.focus();
+  });
+
+  const cancelPickup = (level: string, id: string): void => {
+    const p = pickupRef.current;
+    if (p === null || p.level !== level || p.id !== id) return;
+    pickupRef.current = null;
+    setPickup(null);
+    setAnnouncement("Move cancelled");
+  };
+
+  const commit = (
+    parentId: string | null,
+    siblings: readonly T[],
+    from: number,
+    to: number,
+  ): void | Promise<unknown> => {
+    if (to === from) return;
+    const rest = siblings.filter((_, i) => i !== from);
+    const anchor = to > from ? rest[to - 1] : rest[to];
+    return onMove({
+      parentId,
+      fromIndex: from,
       toIndex: to,
       ...(anchor === undefined
         ? {}
-        : to > held.origin
+        : to > from
           ? { after: getId(anchor) }
           : { before: getId(anchor) }),
     });
@@ -211,36 +327,49 @@ export function SortableTree<T>({
     levelKey: string,
     parentId: string | null,
     siblings: readonly T[],
-    storedIndex: number,
   ): void => {
     const id = getId(item);
     const count = siblings.length;
+    const origin = siblings.findIndex(s => getId(s) === id);
+    if (origin < 0) return;
     const held = pickup !== null && pickup.level === levelKey && pickup.id === id ? pickup : null;
+    const current = held === null ? origin : Math.min(Math.max(origin + held.delta, 0), count - 1);
     const name = itemName(item);
 
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault();
-      const active = held ?? { level: levelKey, parentId, id, origin: storedIndex, current: storedIndex };
-      const to = active.current + (e.key === "ArrowUp" ? -1 : 1);
+      const to = current + (e.key === "ArrowUp" ? -1 : 1);
       if (to < 0 || to >= count) {
         if (held === null) return;
-        setAnnouncement(`${name} is at position ${String(active.current + 1)} of ${String(count)}`);
+        setAnnouncement(`${name} is at position ${String(current + 1)} of ${String(count)}`);
         return;
       }
-      setPickup({ ...active, current: to });
+      setPickup({ level: levelKey, parentId, id, delta: to - origin });
       setAnnouncement(`${name} moved to position ${String(to + 1)} of ${String(count)}`);
       return;
     }
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       if (held === null) {
-        setPickup({ level: levelKey, parentId, id, origin: storedIndex, current: storedIndex });
-        setAnnouncement(`${name} picked up, position ${String(storedIndex + 1)} of ${String(count)}`);
+        setSettling(null);
+        setPickup({ level: levelKey, parentId, id, delta: 0 });
+        setAnnouncement(`${name} picked up, position ${String(origin + 1)} of ${String(count)}`);
         return;
       }
       setPickup(null);
-      setAnnouncement(`${name} dropped at position ${String(held.current + 1)} of ${String(count)}`);
-      commit(held, siblings, held.current);
+      if (current === origin) {
+        setAnnouncement(`${name} stayed at position ${String(origin + 1)} of ${String(count)}`);
+        return;
+      }
+      setAnnouncement(`${name} dropped at position ${String(current + 1)} of ${String(count)}`);
+      const result = commit(parentId, siblings, origin, current);
+      if (result instanceof Promise) {
+        const entry = { held: { level: levelKey, parentId, id, delta: current - origin }, items };
+        setSettling(entry);
+        result.then(undefined, () => {
+          setSettling(s => (s === entry ? null : s));
+        });
+      }
       return;
     }
     if (e.key === "Escape" && held !== null) {
@@ -252,6 +381,8 @@ export function SortableTree<T>({
     }
   };
 
+  const settled = settling !== null && settling.items === items ? settling.held : null;
+
   const renderLevel = (
     levelItems: readonly T[],
     depth: number,
@@ -261,14 +392,20 @@ export function SortableTree<T>({
     const level: SortableLevel = { parentId, depth };
     const reorderable = canReorder(level);
     const inert = isDisabled(level);
-    const held = pickup !== null && pickup.level === levelKey ? pickup : null;
-    const rendered = held === null ? levelItems : moveInArray(levelItems, held.origin, held.current);
-    const draggingHere = dragging !== null && dragging.level === levelKey ? dragging : null;
+    // The picked-up item, and the order it is shown in (a pickup's, or a
+    // settling drop's).
+    const heldHere = pickup !== null && pickup.level === levelKey && !pickupLost ? pickup : null;
+    const held = heldHere === null ? null : place(heldHere);
+    const pending = held ?? (settled !== null && settled.level === levelKey ? place(settled) : null);
+    const rendered = pending === null ? levelItems : moveInArray(levelItems, pending.origin, pending.current);
+    const draggingHere = dragging !== null && dragging.level === levelKey && !draggingLost ? dragging : null;
+    const dragged = draggingHere === null ? null : place(draggingHere);
+    const overIndex = dragged === null || over === null ? -1 : levelItems.findIndex(i => getId(i) === over);
 
     // Where the line goes in this level, as [rendered index, edge].
     let line: readonly [number, Edge] | null = null;
-    if (draggingHere !== null && over !== null && over !== draggingHere.origin) {
-      line = [over, draggingHere.origin < over ? "below" : "above"];
+    if (dragged !== null && overIndex >= 0 && overIndex !== dragged.origin) {
+      line = [overIndex, dragged.origin < overIndex ? "below" : "above"];
     } else if (held !== null && held.current !== held.origin) {
       line = [held.current, held.current < held.origin ? "above" : "below"];
     }
@@ -277,13 +414,14 @@ export function SortableTree<T>({
       <ul className={`m-0 list-none p-0 ${listClassName}`}>
         {rendered.map((item, index) => {
           const id = getId(item);
-          const storedIndex = held === null ? index : levelItems.indexOf(item);
           const path = pathOf(levelKey, id);
-          const kids = nesting && depth + 1 < maxDepth ? (getChildren?.(item) ?? []) : [];
+          const kids = childrenOf(item, depth);
           const hasChildren = kids.length > 0;
           const expanded = hasChildren && (startCollapsed ? toggled.has(path) : !toggled.has(path));
           const edge = line !== null && line[0] === index ? line[1] : undefined;
-          const moving = (held?.id === id) || (draggingHere?.id === id);
+          const isHeld = heldHere?.id === id;
+          const isDragged = draggingHere?.id === id;
+          const moving = isHeld || isDragged;
           const name = itemName(item);
           const canDrag = reorderable && !inert;
 
@@ -301,15 +439,25 @@ export function SortableTree<T>({
                 `Reorder ${name}, position ${String(index + 1)} of ${String(rendered.length)}. `
                 + "Arrow up and down to move, Enter to drop, Escape to cancel."
               }
-              onKeyDown={e => { onHandleKeyDown(e, item, levelKey, parentId, levelItems, storedIndex); }}
+              onKeyDown={e => { onHandleKeyDown(e, item, levelKey, parentId, levelItems); }}
               onBlur={e => {
+                if (!isHeld) return;
                 // Focus moving to another control ends the pickup
-                // without a write; a re-render dropping focus does not
-                // (relatedTarget is null then, and it is restored).
-                if (held?.id === id && e.relatedTarget !== null) {
-                  setPickup(null);
-                  setAnnouncement("Move cancelled");
+                // without a write.
+                if (e.relatedTarget !== null) {
+                  cancelPickup(levelKey, id);
+                  return;
                 }
+                // Focus going to nothing also ends it, but a re-render
+                // that moves this row does that too, and the layout
+                // effect above puts focus straight back. So look once
+                // the event is over. (A window losing focus leaves this
+                // handle the active element, so the pickup survives.)
+                window.setTimeout(() => {
+                  const el = handles.current.get(path);
+                  if (el !== undefined && document.activeElement === el) return;
+                  cancelPickup(levelKey, id);
+                }, 0);
               }}
               // B4/WCAG 2.5.8: a visible 24px target. A208: the drawn icon.
               className="inline-flex min-h-[24px] min-w-[24px] shrink-0 cursor-grab items-center justify-center rounded text-text-tertiary hover:bg-bg-muted hover:text-text-secondary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
@@ -350,8 +498,8 @@ export function SortableTree<T>({
               data-sortable-row=""
               data-depth={String(depth)}
               data-position={String(index + 1)}
-              data-dragging={draggingHere?.id === id ? "true" : undefined}
-              data-picked-up={held?.id === id ? "true" : undefined}
+              data-dragging={isDragged ? "true" : undefined}
+              data-picked-up={isHeld ? "true" : undefined}
               // SET-6: the drop indicator is an attribute a test can read,
               // not only a line a person can see.
               data-drop-indicator={edge}
@@ -359,6 +507,16 @@ export function SortableTree<T>({
               onDragStart={e => {
                 // A nested draggable (a link) or a deeper row starts its own drag.
                 if (!canDrag || e.target !== e.currentTarget) return;
+                // A press on a nested row that cannot move (a disabled
+                // level, a level with no handles) makes the browser drag
+                // the nearest draggable ancestor, this row. That is not
+                // the row the person grabbed: no drag.
+                const pressed = pressedRow.current;
+                if (pressed !== null && pressed !== e.currentTarget && e.currentTarget.contains(pressed)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
                 e.stopPropagation();
                 // A synthetic event (a test, a dispatched drag) may carry none.
                 const dt = e.dataTransfer as DataTransfer | null | undefined;
@@ -367,7 +525,8 @@ export function SortableTree<T>({
                   dt.setData("text/plain", name);
                 }
                 setPickup(null);
-                setDragging({ level: levelKey, parentId, id, origin: storedIndex, current: storedIndex });
+                setSettling(null);
+                setDragging({ level: levelKey, parentId, id, delta: 0 });
                 setOver(null);
               }}
               onDragOver={e => {
@@ -376,7 +535,7 @@ export function SortableTree<T>({
                 e.stopPropagation();
                 const dt = e.dataTransfer as DataTransfer | null | undefined;
                 if (dt !== null && dt !== undefined) dt.dropEffect = "move";
-                if (over !== index) setOver(index);
+                if (over !== id) setOver(id);
               }}
               onDrop={e => {
                 if (draggingHere === null) return;
@@ -384,10 +543,20 @@ export function SortableTree<T>({
                 e.stopPropagation();
                 setDragging(null);
                 setOver(null);
-                setAnnouncement(
-                  `${itemName(levelItems[draggingHere.origin] as T)} moved to position ${String(index + 1)} of ${String(levelItems.length)}`,
-                );
-                commit(draggingHere, levelItems, index);
+                if (dragged === null) return;
+                const movedName = itemName(levelItems[dragged.origin] as T);
+                const count = String(levelItems.length);
+                // `index` is this row's place in the stored order: no
+                // pickup is shown while dragging.
+                if (index === dragged.origin) {
+                  setAnnouncement(`${movedName} stayed at position ${String(index + 1)} of ${count}`);
+                  return;
+                }
+                setAnnouncement(`${movedName} moved to position ${String(index + 1)} of ${count}`);
+                const result = commit(parentId, levelItems, dragged.origin, index);
+                // A drag shows nothing pending, so a failure has nothing
+                // to put back here; the caller reports it.
+                if (result instanceof Promise) result.catch(() => undefined);
               }}
               onDragEnd={e => {
                 e.stopPropagation();
@@ -429,11 +598,14 @@ export function SortableTree<T>({
   return (
     <div
       data-sortable-tree=""
-      onDragOver={e => {
-        // Over a row of another level (a row that did not claim the
-        // event): that is no drop target, so no line.
-        const row = (e.target as Element).closest("[data-sortable-row]");
-        if (row !== null && over !== null) setOver(null);
+      onPointerDown={e => {
+        pressedRow.current = (e.target as Element).closest("[data-sortable-row]");
+      }}
+      onDragOver={() => {
+        // A row that accepts the drop claims the event (stopPropagation),
+        // so anything reaching here is no drop target: a row of another
+        // level, or a gap between rows. No line there.
+        if (over !== null) setOver(null);
       }}
       onDragLeave={e => {
         const next = e.relatedTarget as Node | null;

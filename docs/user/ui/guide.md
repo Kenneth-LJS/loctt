@@ -67,8 +67,9 @@ Groups:
 - **Recently viewed** — the tasks you opened most recently.
 
 Each row in **Views** ends in its task count, shown up to "99+" (hover the
-row for the exact total). Hover a row, or tab to it, and the count gives
-way to a ⋯ menu in the same place:
+row for the exact total; a screen reader reads the count, and the exact
+total, as part of the row's name). Hover a row, or tab to it, and the
+count gives way to a ⋯ menu in the same place:
 
 - a built-in view's ⋯ has **Hide**;
 - a saved view's ⋯ has **Edit**, **Rename**, **Delete** and **Hide**.
