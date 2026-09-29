@@ -48,6 +48,17 @@ interface RestoreReport {
   readonly renamedEntities: readonly { type: string; from: string; to: string }[];
   readonly displacedBodies: readonly { taskId: string; path: string }[];
   readonly badLines: readonly { line: number; file: string; reason: string }[];
+  /** An older backup is upgraded as part of the restore (K161). */
+  readonly upgrade?: {
+    readonly from: string;
+    readonly to: string;
+    readonly steps: readonly {
+      readonly from: string;
+      readonly to: string;
+      readonly description: string;
+      readonly changes?: string;
+    }[];
+  };
 }
 
 // Human-readable label for each restore mode. The raw mode value
@@ -376,6 +387,28 @@ export function BackupPanel() {
                 {report.displacedBodies.length} existing task
                 {report.displacedBodies.length === 1 ? " description was" : " descriptions were"} preserved.
               </p>
+            )}
+            {/* K161: the preview says the restored data will be
+                upgraded and lists the steps, as the Upgrade screen does.
+                The result says it was. */}
+            {report.upgrade !== undefined && (
+              <div data-testid="backup-restore-upgrade" className="mt-2">
+                <p className="m-0 text-text-primary">
+                  {report.dryRun
+                    ? `The restored data will be upgraded from format ${report.upgrade.from} to ${report.upgrade.to}.`
+                    : `The restored data was upgraded from format ${report.upgrade.from} to ${report.upgrade.to}.`}
+                </p>
+                <ol className="m-0 mt-1 list-decimal pl-5">
+                  {report.upgrade.steps.map(step => (
+                    <li key={`${step.from}-${step.to}`} data-testid="backup-restore-upgrade-step">
+                      {step.description}
+                      {report.dryRun && step.changes !== undefined && (
+                        <span className="block text-text-tertiary">{step.changes}</span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
             )}
             {report.badLines.length > 0 && (
               <p className="mt-1 text-danger-fg">

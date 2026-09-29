@@ -130,6 +130,37 @@ An older tracker runs every step between its format and the current one,
 in order, in one upgrade and after one backup: a `0.1.0` tracker goes
 through `0.3.0` to `0.4.0`.
 
+### Restoring a backup taken at an older format
+
+A backup records the format of the tracker it was taken from. Restoring
+one taken at an older format (`loctt restore`, MCP `restore`, or
+Settings → Backup & restore) upgrades the restored data as part of the
+restore, with the same steps as `loctt migrate`. You don't run
+`loctt migrate` afterwards, and your tracker's own format doesn't change.
+
+The preview (`loctt restore <file> --dry-run`, MCP `restore` with
+`dry_run`, or **Preview (dry run)** in the web UI) says so and lists the
+steps with what each changes:
+
+```
+The restored data will be upgraded from format 0.1.0 to 0.4.0:
+  1. 0.1.0 → 0.3.0  Save the order of every task's links
+     …
+  2. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout
+     …
+```
+
+The steps run on a copy of the backup's data, before anything is written
+to your tracker, and see only what the backup carries: links are ordered
+as the tracker that took the backup showed them, and your tracker's own
+tasks are left alone. If a step fails, nothing is restored and your
+tracker is exactly as it was. The backup file is never changed.
+
+A backup from a newer format is refused, naming the release to install.
+A backup written by `loctt` 0.2.x or earlier records its format as `1`.
+Change `"schema_version":1` in its first line to
+`"schema_version":"0.1.0"`, then restore it.
+
 ### The 0.1.0 → 0.3.0 upgrade
 
 This upgrade gives every link a stored position (a rank), in the order the

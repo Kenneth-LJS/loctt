@@ -24,7 +24,8 @@
  * leaves a half-written tracker with nothing to recover from (BAK-C14).
  */
 
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import type { LocttState, Task } from "@loctt/contracts";
@@ -54,13 +55,22 @@ import {
   getUserDir,
   isPathContained,
 } from "../paths/index.js";
-import { compareFormatVersions, CURRENT_SCHEMA_VERSION, SchemaTooNewError } from "../schema/version.js";
+import { applyMigrationSteps } from "../schema/migrate.js";
+import { findMigrationPath, formatForRecordedVersion, type Migration } from "../schema/migrations.js";
+import {
+  compareFormatVersions,
+  CURRENT_SCHEMA_VERSION,
+  SchemaTooNewError,
+  SchemaUnmigratableError,
+  writeSchemaVersion,
+} from "../schema/version.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { withStateLock } from "../state/lock.js";
 import { stagedSwap, type StagedWrite } from "../state/staged-swap.js";
 import { fillMissingRanks } from "../task/edge-rank.js";
 import { assembleTaskFile, parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
-import { type BackupRecord } from "./format.js";
+import { exportBackup } from "./export.js";
+import { type BackupHeader, type BackupRecord } from "./format.js";
 import { BackupFormatError, type BadLine, readBackupPart, resolveBackupSet } from "./read.js";
 
 export type RestoreMode = "bare" | "merge" | "overwrite";
@@ -93,10 +103,54 @@ export interface RestoreReport {
   readonly displacedBodies: readonly { taskId: string; path: string }[];
   readonly configsRestored: number;
   readonly usersRestored: number;
+  /**
+   * Present when the backup was taken at an older format: the restored
+   * data was (or, on a dry run, would be) upgraded from `from` to `to`
+   * by these steps, as part of the restore (K161).
+   */
+  readonly upgrade?: RestoreUpgrade;
+}
+
+/** One upgrade step, as the preview shows it (`Migration` without `apply`). */
+export interface RestoreUpgradeStep {
+  readonly from: string;
+  readonly to: string;
+  readonly description: string;
+  readonly changes?: string;
+  readonly risky?: boolean;
+}
+
+/** The upgrade a restore of an older backup runs (K161). */
+export interface RestoreUpgrade {
+  /** The format the backup records, as written in its header. */
+  readonly from: string;
+  /** `CURRENT_SCHEMA_VERSION`. */
+  readonly to: string;
+  readonly steps: readonly RestoreUpgradeStep[];
 }
 
 export class RestoreRefusedError extends Error {
   readonly name = "RestoreRefusedError" as const;
+}
+
+/**
+ * An upgrade step failed on an older backup's data (K161). The steps run
+ * on a staging copy before anything lands, so the tracker is untouched.
+ */
+export class RestoreUpgradeError extends Error {
+  readonly name = "RestoreUpgradeError" as const;
+  readonly from: string;
+  readonly to: string;
+  constructor(from: string, to: string, cause: unknown) {
+    const why = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `this backup's data couldn't be upgraded from format ${from} to ${to} (${why.replace(/\.$/, "")}). `
+      + `Nothing has been restored.`,
+      { cause },
+    );
+    this.from = from;
+    this.to = to;
+  }
 }
 
 /**
@@ -351,10 +405,63 @@ function toTask(record: BackupRecord & { kind: "task" }): Task {
 }
 
 /**
+ * What restoring a backup taken at `taken` needs (K161): null when it is
+ * the current format, else the known format it stands for and the
+ * upgrade steps from there. A newer, unknown or pre-semver format is
+ * refused before anything is read past the header.
+ */
+function planBackupUpgrade(
+  taken: BackupHeader["schema_version"],
+): { from: string; format: string; path: readonly Migration[] } | null {
+  // K142: a backup written by loctt 0.2.x or earlier records the old
+  // integer. No format reads it, as with a tracker's .schema-version
+  // (K151): the header is edited to 0.1.0, which then upgrades.
+  if (typeof taken === "number") {
+    throw new BackupFormatError(
+      `this backup was taken by loctt 0.2.x or earlier and records its format as ${String(taken)}, `
+      + `which this loctt doesn't read. In its first line, change "schema_version":${String(taken)} `
+      + `to "schema_version":"0.1.0", then restore it again. Nothing has been restored.`,
+    );
+  }
+  if (compareFormatVersions(taken, CURRENT_SCHEMA_VERSION) > 0) {
+    throw new SchemaTooNewError(taken, CURRENT_SCHEMA_VERSION);
+  }
+  let format: string;
+  try {
+    format = formatForRecordedVersion(taken);
+  } catch (err) {
+    if (!(err instanceof SchemaUnmigratableError)) throw err;
+    throw new BackupFormatError(
+      `this backup records format ${taken}, which isn't a LocTT format. Nothing has been restored.`,
+    );
+  }
+  if (compareFormatVersions(format, CURRENT_SCHEMA_VERSION) === 0) return null;
+  const path = findMigrationPath(format, CURRENT_SCHEMA_VERSION);
+  if (path === null || path.length === 0) {
+    throw new BackupFormatError(
+      `this loctt has no upgrade from format ${taken} to ${CURRENT_SCHEMA_VERSION}. Nothing has been restored.`,
+    );
+  }
+  return { from: taken, format, path };
+}
+
+/**
  * Restores a backup into `locttDir`.
  *
- * The whole thing runs inside one `withStateLock` and lands through one
- * `stagedSwap`, so the tracker is never observably half-restored.
+ * A backup at the current format lands through one `withStateLock` and
+ * one `stagedSwap`, so the tracker is never observably half-restored.
+ *
+ * A backup at an older known format is upgraded as part of the restore
+ * (K161), with the steps `loctt migrate` runs (`applyMigrationSteps`,
+ * sentinel and stamp per step). The steps run on a staging copy, not on
+ * the tracker: the backup is restored bare into a temporary `.loctt/`
+ * stamped at the backup's format, upgraded there, written out as a
+ * current-format backup and restored from that in the requested mode.
+ * So an upgrade that fails leaves the tracker untouched
+ * (`RestoreUpgradeError`), the steps see only the backup's own data and
+ * config (its workflow.yaml's `ranked` settings, not the tracker's), and
+ * the tracker's own tasks are never re-ranked. A dry run does the same
+ * in the staging copy and writes nothing to the tracker.
  */
 export async function restoreBackup(
   locttDir: string,
@@ -369,27 +476,7 @@ export async function restoreBackup(
   // Version first: refuse a newer-schema backup after one line rather
   // than after parsing the whole file (BAK-C21).
   const { header } = await resolveBackupSet(paths);
-  // K142: the header records the tracker's format version. A backup
-  // written by loctt 0.2.x or earlier records the old integer (1), which
-  // is older than every format this build reads.
-  const taken = header.schema_version;
-  if (typeof taken === "string" && compareFormatVersions(taken, CURRENT_SCHEMA_VERSION) > 0) {
-    throw new SchemaTooNewError(taken, CURRENT_SCHEMA_VERSION);
-  }
-  // An older backup is refused rather than migrated: the migration
-  // framework operates on a `.loctt/` directory, not on a backup file,
-  // and inventing a second migration path here is how the two drift.
-  // Recorded in decisions.md § 8 with a revert path.
-  if (typeof taken === "number" || compareFormatVersions(taken, CURRENT_SCHEMA_VERSION) < 0) {
-    const takenAt = typeof taken === "number"
-      ? `format ${String(taken)} (loctt 0.2.x or earlier)`
-      : `format ${taken}`;
-    throw new BackupFormatError(
-      `this backup was taken at ${takenAt} and this loctt reads format `
-      + `${CURRENT_SCHEMA_VERSION}. Restore it with the loctt it was taken with, then `
-      + `open the tracker with this loctt to upgrade it. Nothing has been restored.`,
-    );
-  }
+  const upgrade = planBackupUpgrade(header.schema_version);
 
   await assertNotMidOperation(locttDir);
 
@@ -403,6 +490,70 @@ export async function restoreBackup(
     );
   }
 
+  if (upgrade === null) {
+    return landBackup(locttDir, paths, mode, dryRun, onProgress);
+  }
+
+  const parent = await mkdtemp(join(tmpdir(), "loctt-restore-upgrade-"));
+  try {
+    const staging = join(parent, ".loctt");
+    await mkdir(staging, { recursive: true });
+    // The backup's data with its own config and state. A link it left
+    // unranked is ranked at the end of its group by the landing, which
+    // the 0.1.0 -> 0.3.0 step then keeps or re-ranks exactly as it would
+    // on the tracker that took the backup.
+    const staged = await landBackup(staging, paths, "bare", false, onProgress);
+    await writeSchemaVersion(staging, upgrade.from);
+    try {
+      // The sentinel names the backup file: it is the way back, and the
+      // staging copy is discarded either way.
+      await applyMigrationSteps(staging, upgrade.format, upgrade.path, paths.join(", "));
+    } catch (err) {
+      throw new RestoreUpgradeError(upgrade.from, CURRENT_SCHEMA_VERSION, err);
+    }
+    const upgraded = await exportBackup(staging, {
+      outputPath: join(parent, "upgraded.jsonl"),
+      includeHistory: header.includes_history,
+    });
+    const landed = await landBackup(locttDir, upgraded.files, mode, dryRun, undefined);
+    return {
+      ...landed,
+      // The staging restore read the user's file, so its skipped lines
+      // and its renames (collisions inside the backup itself) are
+      // reported with the landing's.
+      badLines: [...staged.badLines, ...landed.badLines],
+      reallocatedKeys: [...staged.reallocatedKeys, ...landed.reallocatedKeys],
+      reassignedPrefixes: [...staged.reassignedPrefixes, ...landed.reassignedPrefixes],
+      reassignedSlugs: [...staged.reassignedSlugs, ...landed.reassignedSlugs],
+      renamedEntities: [...staged.renamedEntities, ...landed.renamedEntities],
+      upgrade: {
+        from: upgrade.from,
+        to: CURRENT_SCHEMA_VERSION,
+        steps: upgrade.path.map(step => ({
+          from: step.from,
+          to: step.to,
+          description: step.description,
+          ...(step.changes !== undefined ? { changes: step.changes } : {}),
+          ...(step.risky !== undefined ? { risky: step.risky } : {}),
+        })),
+      },
+    };
+  } finally {
+    await rm(parent, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Lands a current-format backup set into `locttDir` in `mode`: the
+ * restore itself, under one `withStateLock` and one `stagedSwap`.
+ */
+async function landBackup(
+  locttDir: string,
+  paths: readonly string[],
+  mode: RestoreMode,
+  dryRun: boolean,
+  onProgress: ((id: string) => void) | undefined,
+): Promise<RestoreReport> {
   return withStateLock(locttDir, async () => {
     const loaded = await loadBackup(paths, onProgress);
 

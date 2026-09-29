@@ -354,7 +354,8 @@ both versions named.**
   versions — `SchemaTooNewError` already exists for this shape.
 - Restoring from an **older** schema either migrates or refuses; which
   one is a decision to record, not an implementation detail to leave
-  to whoever writes it first.
+  to whoever writes it first. Decided by K161: it migrates, as part of
+  the restore (BAK-C25).
 - Nothing partial is written in either case.
 
 > The likeliest real-world failure for a file whose whole purpose is
@@ -419,6 +420,38 @@ BAK-C11's equivalent bullet was rewritten:
 > v3 of these cases treated all of it as new work. A second merge
 > implementation would not merely duplicate; it would silently disagree
 > with sync about a rule Ken already settled.
+
+### BAK-C25 · blocker · P4 P6 · CLI MCP UI
+**A backup taken at an older format is restored and upgraded in the
+same restore (K161).** Restore a genuine 0.1.0 backup and a 0.3.0
+backup into a tracker at the current format (0.4.0), on the CLI, over
+MCP and from Settings → Backup & restore.
+
+- Each restores and the tracker is at the current format afterwards:
+  every command, tool and page works without `loctt migrate`, and the
+  tracker's `.schema-version` is unchanged.
+- The data is intact (tasks, titles, bodies, comments), and every link
+  carries a rank, each group listed in the order the backup's own
+  format showed it (for 0.1.0, by the backup's `ranked` settings, not
+  the destination's). The retired `ranked:` setting is gone.
+- The preview (`--dry-run`, MCP `dry_run`, the panel's Preview) says the
+  restored data will be upgraded from X to Y and lists each step with
+  what it changes, as `loctt migrate` does, and writes nothing. The
+  result says it was upgraded.
+- A backup from a newer format is refused, naming the release to
+  install. A format below every LocTT format, or the pre-0.3.0 integer,
+  is refused saying what is wrong. Nothing is written in any refusal,
+  and no message tells the user to open the tracker to upgrade it.
+- An upgrade step that fails leaves the tracker exactly as it was, and
+  the message says the backup's data couldn't be upgraded and nothing
+  was restored (web: 409 attributed to the file, not a 500).
+- Merged into a tracker that has tasks, the tracker's own tasks are
+  not re-ranked or otherwise changed by the upgrade.
+
+> G11 (known-gaps) was this refused: a 0.3.0 backup carries nothing the
+> 0.3.0 → 0.4.0 step changes, yet restore said to restore it with the
+> old release and "open the tracker with this loctt to upgrade it",
+> which K154 had already made untrue.
 
 ## F. Deliberately not covered
 

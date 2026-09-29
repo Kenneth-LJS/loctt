@@ -23,4 +23,7 @@ export {
   type RestoreOptions,
   RestoreRefusedError,
   type RestoreReport,
+  type RestoreUpgrade,
+  RestoreUpgradeError,
+  type RestoreUpgradeStep,
 } from "./restore.js";

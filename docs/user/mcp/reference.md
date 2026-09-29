@@ -595,7 +595,7 @@ web UI (Settings → Sync), or MCP:
 | `init` | Bootstrap a new tracker. An empty `.loctt/` folder is filled in like a missing one. | `prefix`, `project_label`, `no_docs`, `timezone` |
 | `migrate_schema` | Preview (`confirm:false`, the default) or apply (`confirm:true`) a format upgrade: the only way an agent upgrades a tracker. Its description tells the agent not to call it unless the user asked to upgrade the tracker. The preview lists each step, what it changes and `[RISKY]`, and where the backup goes; apply backs up `.loctt/` first and returns `Upgraded this tracker from 0.3.0 to 0.4.0.` and the backup path. From 0.1.0 it runs both steps (0.1.0 → 0.3.0 → 0.4.0). Not refused on an older tracker. | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |
-| `restore` | Restore a backup (`bare`/`merge`/`overwrite`). Requires `confirm` unless `dry_run`. | `files`, `mode`, `dry_run`, `confirm` |
+| `restore` | Restore a backup (`bare`/`merge`/`overwrite`). Requires `confirm` unless `dry_run`. A backup taken at an older format (`0.1.0`, `0.3.0`) is upgraded as part of the restore, with the steps `migrate_schema` runs: the report's `upgrade` gives `from`, `to` and `steps` (`from`, `to`, `description`, `changes`, `risky`), and a `dry_run` shows it before anything is written. If a step fails, nothing is restored. A backup from a newer format is refused. | `files`, `mode`, `dry_run`, `confirm` |
 
 ## Names beside IDs
 

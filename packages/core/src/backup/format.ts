@@ -106,9 +106,11 @@ export const BackupHeaderSchema = z.object({
   format: z.literal(1),
   /**
    * The tracker's `.schema-version` at export time. Recorded, not
-   * restored: the destination keeps its own (BAK-C21). A format version
-   * (semver, K142); a backup written by loctt 0.2.x or earlier holds the
-   * old integer, accepted here only so restore can refuse it by name.
+   * restored: the destination keeps its own (BAK-C21), and a backup at
+   * an older format is upgraded as part of the restore (K161). A format
+   * version (semver, K142); a backup written by loctt 0.2.x or earlier
+   * holds the old integer, accepted here only so restore can refuse it
+   * by name.
    */
   schema_version: z.union([
     z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/),

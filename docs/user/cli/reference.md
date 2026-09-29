@@ -1096,6 +1096,26 @@ Restore from one or more backup files.
 Without `--merge` or `--overwrite`, restore refuses to run against a
 non-empty tracker.
 
+A backup taken at an older format (`0.1.0`, `0.3.0`) is restored and
+upgraded to the current format in the same restore, with the steps
+[`loctt migrate`](#diagnostics) runs. `--dry-run` shows the upgrade and
+each step with what it changes, and the restore lists the steps it ran:
+
+```
+The restored data will be upgraded from format 0.1.0 to 0.4.0:
+  1. 0.1.0 → 0.3.0  Save the order of every task's links
+     Each task's links keep the order they are shown in today, …
+  2. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout
+     Each person's sidebar settings are saved in the one Views section: …
+```
+
+The steps run on a copy of the backup's data before anything is
+written, so if one fails nothing is restored and the tracker is as it
+was. A backup from a newer format is refused (`This tracker needs loctt
+<version> or newer.`). A backup written by `loctt` 0.2.x or earlier
+records its format as `1`: change `"schema_version":1` in its first line
+to `"schema_version":"0.1.0"`, then restore it.
+
 `--overwrite` can replace current tasks, so **take a fresh
 [`loctt backup`](#loctt-backup-file) first** and preview with `--dry-run`
 before running it for real.

@@ -207,57 +207,74 @@ export async function migrateToCurrent(
       if (path === null || path.length === 0) throw noUpgradePathError(after);
 
       const backupPath = await backupLocttDir(locttDir, after);
-      const applied: Migration[] = [];
-      // Steps run from the known format; the last one's stamp rewrites
-      // the file to the canonical version (0.2.1 becomes 0.3.0).
-      let current = format;
-      const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
-
-      for (const migration of path) {
-        if (compareFormatVersions(migration.from, current) !== 0) {
-          // Unreachable through `findMigrationPath`, which BFS-walks
-          // the edge graph and can only return steps that already
-          // chain. Kept anyway, and deliberately: it costs one
-          // comparison per step and it is the only thing standing
-          // between a mis-ordered MIGRATIONS table and a tracker
-          // migrated through the wrong steps.
-          //
-          // The audit filed it as dead code. It is not dead; it is
-          // untriggered, which is what a defensive assertion looks
-          // like when the code around it is correct. Deleting it
-          // would remove the guard exactly when someone edits the
-          // table by hand — the case it exists for.
-          throw new SchemaVersionError(
-            `migration ordering invariant violated: at ${current}, ` +
-            `next migration starts at ${migration.from}`,
-          );
-        }
-        // Drop a sentinel before applying so a mid-step crash leaves a
-        // marker that requireSupportedSchema can refuse to boot against.
-        // The sentinel records the from/to pair plus the backup path
-        // for recovery guidance. Written atomically (temp-file +
-        // rename) so a crash during the write itself can never leave
-        // a truncated sentinel whose recovery instructions are
-        // unreadable — either the full sentinel is present or none.
-        await writeFileAtomically(
-          sentinelPath,
-          `from: ${migration.from}\nto: ${migration.to}\nbackup: ${backupPath}\n`,
-        );
-        await migration.apply(locttDir);
-        current = migration.to;
-        await writeSchemaVersion(locttDir, current);
-        // Clear sentinel after the version stamp lands. If we crash
-        // between writeSchemaVersion and rm, the next boot sees a
-        // version that matches a registered to-version and an orphan
-        // sentinel — requireSupportedSchema treats the sentinel as
-        // authoritative and refuses to boot.
-        await rm(sentinelPath, { force: true });
-        applied.push(migration);
-      }
-
-      return { from: after, to: current, backupPath, steps: applied };
+      const { to, applied } = await applyMigrationSteps(locttDir, format, path, backupPath);
+      return { from: after, to, backupPath, steps: applied };
     }),
   );
+}
+
+/**
+ * Runs `path` over the tracker at `locttDir`, starting from `format`:
+ * for each step, a crash sentinel naming `backupPath`, the step, the
+ * `.schema-version` stamp, then the sentinel cleared. The loop
+ * `migrateToCurrent` runs after its backup, and the one a restore of an
+ * older backup runs over its staging copy (K161), so the two cannot
+ * drift. Takes no lock: the caller holds what it needs.
+ */
+export async function applyMigrationSteps(
+  locttDir: string,
+  format: string,
+  path: readonly Migration[],
+  backupPath: string,
+): Promise<{ to: string; applied: Migration[] }> {
+  const applied: Migration[] = [];
+  // Steps run from the known format; the last one's stamp rewrites
+  // the file to the canonical version (0.2.1 becomes 0.3.0).
+  let current = format;
+  const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
+
+  for (const migration of path) {
+    if (compareFormatVersions(migration.from, current) !== 0) {
+      // Unreachable through `findMigrationPath`, which BFS-walks
+      // the edge graph and can only return steps that already
+      // chain. Kept anyway, and deliberately: it costs one
+      // comparison per step and it is the only thing standing
+      // between a mis-ordered MIGRATIONS table and a tracker
+      // migrated through the wrong steps.
+      //
+      // The audit filed it as dead code. It is not dead; it is
+      // untriggered, which is what a defensive assertion looks
+      // like when the code around it is correct. Deleting it
+      // would remove the guard exactly when someone edits the
+      // table by hand — the case it exists for.
+      throw new SchemaVersionError(
+        `migration ordering invariant violated: at ${current}, ` +
+        `next migration starts at ${migration.from}`,
+      );
+    }
+    // Drop a sentinel before applying so a mid-step crash leaves a
+    // marker that requireSupportedSchema can refuse to boot against.
+    // The sentinel records the from/to pair plus the backup path
+    // for recovery guidance. Written atomically (temp-file +
+    // rename) so a crash during the write itself can never leave
+    // a truncated sentinel whose recovery instructions are
+    // unreadable — either the full sentinel is present or none.
+    await writeFileAtomically(
+      sentinelPath,
+      `from: ${migration.from}\nto: ${migration.to}\nbackup: ${backupPath}\n`,
+    );
+    await migration.apply(locttDir);
+    current = migration.to;
+    await writeSchemaVersion(locttDir, current);
+    // Clear sentinel after the version stamp lands. If we crash
+    // between writeSchemaVersion and rm, the next boot sees a
+    // version that matches a registered to-version and an orphan
+    // sentinel — requireSupportedSchema treats the sentinel as
+    // authoritative and refuses to boot.
+    await rm(sentinelPath, { force: true });
+    applied.push(migration);
+  }
+  return { to: current, applied };
 }
 
 /**

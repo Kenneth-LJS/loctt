@@ -82,7 +82,8 @@ export async function backup(args: string[], root: string): Promise<void> {
  *
  * Bare refuses a non-empty tracker; `--merge` adds only absent ids;
  * `--overwrite` replaces the ids the backup carries and preserves any
- * body it displaces.
+ * body it displaces. A backup taken at an older format is upgraded as
+ * part of the restore (K161), and the report lists the steps.
  */
 export async function restore(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, RESTORE_FLAGS);
@@ -135,5 +136,19 @@ export async function restore(args: string[], root: string): Promise<void> {
   }
   for (const b of report.badLines) {
     console.log(`  skipped malformed line ${String(b.line)} in ${b.file}: ${b.reason}`);
+  }
+  // K161: an older backup is upgraded as part of the restore. The dry
+  // run is the preview, so it lists each step and what it changes, as
+  // `loctt migrate` does.
+  const upgrade = report.upgrade;
+  if (upgrade !== undefined) {
+    console.log(dryRun
+      ? `The restored data will be upgraded from format ${upgrade.from} to ${upgrade.to}:`
+      : `The restored data was upgraded from format ${upgrade.from} to ${upgrade.to}:`);
+    upgrade.steps.forEach((step, i) => {
+      const tag = step.risky === true ? "  [risky]" : "";
+      console.log(`  ${String(i + 1)}. ${step.from} → ${step.to}  ${step.description}${tag}`);
+      if (dryRun && step.changes !== undefined) console.log(`     ${step.changes}`);
+    });
   }
 }

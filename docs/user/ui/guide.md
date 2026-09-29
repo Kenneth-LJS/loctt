@@ -333,6 +333,12 @@ A **dry run** predicts the counts and writes nothing, in any mode, and the
 restore reports per-outcome counts plus any key reallocations, renamed
 entities, or skipped lines.
 
+A backup taken at an older format is upgraded as part of the restore. The
+dry run says "The restored data will be upgraded from format 0.1.0 to
+0.4.0." and lists each step with what it changes, and the result says it
+was upgraded. If a step fails, nothing is restored. See
+[Upgrading](../common/upgrading.md#restoring-a-backup-taken-at-an-older-format).
+
 A backup taken in split parts is restored here too: select every part
 together in the file picker. The panel reads each file's header and shows
 which part it is and how many the set expects, so a missing one is visible

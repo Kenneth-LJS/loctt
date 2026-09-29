@@ -10,6 +10,8 @@ export type {
   RestoreMode,
   RestoreOptions,
   RestoreReport,
+  RestoreUpgrade,
+  RestoreUpgradeStep,
 } from "./backup/index.js";
 export {
   BackupFormatError,
@@ -21,6 +23,7 @@ export {
   resolveBackupSet,
   restoreBackup,
   RestoreRefusedError,
+  RestoreUpgradeError,
 } from "./backup/index.js";
 export type { BoardColumn, ColumnKind, ColumnTask } from "./board/index.js";
 export {

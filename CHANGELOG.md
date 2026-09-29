@@ -26,8 +26,14 @@ See [Upgrading](docs/user/common/upgrading.md).
   (Settings → Customize sidebar → Reset to default, or
   `loctt user sidebar-groups --reset`). A `sidebar_pins` line is likewise
   ignored and reported, and goes the next time the settings are saved.
-- A backup taken at format 0.3.0 can't be restored by 0.4.0; restore it
-  with the release that took it, then upgrade the tracker.
+- Restoring a backup taken at an older format (0.1.0 or 0.3.0) upgrades
+  the restored data as part of the restore, with the steps
+  `loctt migrate` runs, on the CLI, over MCP and in the web UI. The
+  preview (`--dry-run`, `dry_run`, **Preview (dry run)**) lists the steps
+  and what each changes, and the result says the data was upgraded. The
+  steps run on a copy of the backup's data first, so if one fails nothing
+  is restored. A backup from a newer format is still refused. See
+  [Upgrading](docs/user/common/upgrading.md#restoring-a-backup-taken-at-an-older-format).
 
 ### Format 0.3.0 (ordered links)
 
@@ -51,9 +57,10 @@ See [Upgrading](docs/user/common/upgrading.md).
   `edit_workflow_entity` ignores `fields.ranked`, and the setting is gone
   from Settings → Relationships. A `ranked:` line left in
   `workflow.yaml` is ignored and reported by `loctt doctor`.
-- A backup written by `loctt` 0.2.x or earlier can't be restored by this
-  release; restore it with the release that wrote it, then open the
-  tracker with this one.
+- A backup written by `loctt` 0.2.x or earlier records its format as `1`,
+  which this release doesn't read. Change `"schema_version":1` in the
+  backup's first line to `"schema_version":"0.1.0"`, then restore it: it
+  is upgraded as part of the restore.
 
 ### Fixed
 

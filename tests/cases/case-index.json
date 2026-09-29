@@ -1,9 +1,9 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1102,
+    "total": 1103,
     "ui": 968,
-    "surface": 134,
+    "surface": 135,
     "resolved": 4
   },
   "cases": [
@@ -1385,7 +1385,7 @@
       "id": "BAK-C22",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-backup-restore.md",
-      "line": 363,
+      "line": 364,
       "title": "Restoring into a tracker that is itself mid-operation refuses.",
       "severity": "major",
       "principles": [
@@ -1402,7 +1402,7 @@
       "id": "BAK-C23",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-backup-restore.md",
-      "line": 373,
+      "line": 374,
       "title": "The four merge hazards, together.",
       "severity": "blocker",
       "principles": [
@@ -1418,7 +1418,7 @@
       "id": "BAK-C24",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-backup-restore.md",
-      "line": 387,
+      "line": 388,
       "title": "Restore's merge is sync's merge, not a second implementation.",
       "severity": "blocker",
       "principles": [
@@ -1428,6 +1428,24 @@
       "surfaces": [
         "CLI",
         "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C25",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-backup-restore.md",
+      "line": 424,
+      "title": "A backup taken at an older format is restored and upgraded in the same restore (K161).",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P6"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
       ],
       "resolved": false
     },

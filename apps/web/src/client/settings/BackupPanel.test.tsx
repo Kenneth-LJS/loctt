@@ -184,6 +184,71 @@ describe("BackupPanel", () => {
 });
 
 /**
+ * An older backup is upgraded as part of the restore (K161, B55). The
+ * preview names the upgrade and each step with what it changes; the
+ * result says it was upgraded.
+ */
+describe("BackupPanel: an older backup", () => {
+  const upgrade = {
+    from: "0.1.0",
+    to: "0.4.0",
+    steps: [
+      { from: "0.1.0", to: "0.3.0", description: "Save the order of every task's links", changes: "Links keep their order." },
+      { from: "0.3.0", to: "0.4.0", description: "Move sidebar settings to the Views layout", changes: "Settings move." },
+    ],
+  };
+
+  // @verifies BAK-C25
+  it("the preview says the restored data will be upgraded and lists the steps", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      mode: "merge", dryRun: true, created: 3, skipped: 0, overwritten: 0,
+      reallocatedKeys: [], renamedEntities: [], displacedBodies: [], badLines: [], upgrade,
+    }));
+    render(<BackupPanel />);
+    pickFile();
+    fireEvent.click(screen.getByTestId("backup-restore-dryrun"));
+
+    const block = await screen.findByTestId("backup-restore-upgrade");
+    expect(block.textContent).toContain("The restored data will be upgraded from format 0.1.0 to 0.4.0.");
+    const steps = screen.getAllByTestId("backup-restore-upgrade-step").map(li => li.textContent);
+    expect(steps).toEqual([
+      "Save the order of every task's linksLinks keep their order.",
+      "Move sidebar settings to the Views layoutSettings move.",
+    ]);
+  });
+
+  // @verifies BAK-C25
+  it("the result says the restored data was upgraded", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      mode: "merge", dryRun: false, created: 3, skipped: 0, overwritten: 0,
+      reallocatedKeys: [], renamedEntities: [], displacedBodies: [], badLines: [], upgrade,
+    }));
+    render(<BackupPanel />);
+    pickFile();
+    fireEvent.click(screen.getByTestId("backup-restore-submit"));
+
+    const block = await screen.findByTestId("backup-restore-upgrade");
+    expect(block.textContent).toContain("The restored data was upgraded from format 0.1.0 to 0.4.0.");
+    expect(screen.getAllByTestId("backup-restore-upgrade-step").map(li => li.textContent)).toEqual([
+      "Save the order of every task's links",
+      "Move sidebar settings to the Views layout",
+    ]);
+  });
+
+  it("a current backup shows no upgrade", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      mode: "merge", dryRun: true, created: 3, skipped: 0, overwritten: 0,
+      reallocatedKeys: [], renamedEntities: [], displacedBodies: [], badLines: [],
+    }));
+    render(<BackupPanel />);
+    pickFile();
+    fireEvent.click(screen.getByTestId("backup-restore-dryrun"));
+    await screen.findByTestId("backup-restore-report");
+    expect(screen.queryByTestId("backup-restore-upgrade")).toBeNull();
+  });
+});
+
+/**
  * Selecting every part of a split backup (Ken, 2026-09-23).
  *
  * The panel used to accept one file and point the user at the CLI.

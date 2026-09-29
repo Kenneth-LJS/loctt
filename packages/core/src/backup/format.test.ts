@@ -208,24 +208,33 @@ describe("schema version", () => {
     expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
   });
 
-  // @verifies BAK-C21
-  it("refuses an older-schema backup rather than migrating it", async () => {
-    await seed(srcDir, "A");
+  // @verifies BAK-C21 BAK-C25
+  it("restores an older-schema backup and upgrades it (K161, G11's reproduction)", async () => {
+    // G11: a 0.4.0 backup with its header edited to 0.3.0 was refused,
+    // "taken at format 0.3.0 and this loctt reads format 0.4.0".
+    // Rewritten for K161, which reversed that call: this test asserted
+    // the refusal.
+    const a = await seed(srcDir, "A");
     await exportBackup(srcDir, { outputPath: out });
     const lines = (await readFile(out, "utf-8")).split("\n");
     const header = JSON.parse(lines[0] as string) as Record<string, unknown>;
-    header["schema_version"] = "0.1.0";
+    header["schema_version"] = "0.3.0";
     lines[0] = JSON.stringify(header);
     await writeFile(out, lines.join("\n"), "utf-8");
 
     await emptyTasks(dstDir);
-    await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
-      .rejects.toThrow(/taken at format 0\.1\.0 and this loctt reads format 0\.4\.0/);
-    expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
+    const report = await restoreBackup(dstDir, [out], { mode: "bare" });
+    expect(report.created).toBe(1);
+    expect(report.upgrade?.from).toBe("0.3.0");
+    expect(report.upgrade?.to).toBe(CURRENT_SCHEMA_VERSION);
+    expect(report.upgrade?.steps.map(s => s.description)).toEqual(["Move sidebar settings to the Views layout"]);
+    expect((await lookupTask(dstDir, a)).frontmatter.title).toBe("A");
+    // The destination keeps its own format (recorded, not restored).
+    expect((await readFile(join(dstDir, ".schema-version"), "utf-8")).trim()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   // @verifies BAK-C21
-  it("refuses a backup written by loctt 0.2.x (the old integer), by name", async () => {
+  it("refuses a backup written by loctt 0.2.x (the old integer), saying what to change", async () => {
     await seed(srcDir, "A");
     await exportBackup(srcDir, { outputPath: out });
     const lines = (await readFile(out, "utf-8")).split("\n");
@@ -235,9 +244,19 @@ describe("schema version", () => {
     await writeFile(out, lines.join("\n"), "utf-8");
 
     await emptyTasks(dstDir);
-    await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
-      .rejects.toThrow(/taken at format 1 \(loctt 0\.2\.x or earlier\)/);
+    await expect(restoreBackup(dstDir, [out], { mode: "bare" })).rejects.toThrow(
+      'this backup was taken by loctt 0.2.x or earlier and records its format as 1, which this loctt '
+      + 'doesn\'t read. In its first line, change "schema_version":1 to "schema_version":"0.1.0", then '
+      + "restore it again. Nothing has been restored.",
+    );
     expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
+
+    // The remedy works: the edited backup restores, upgraded from 0.1.0.
+    lines[0] = lines[0].replace('"schema_version":1', '"schema_version":"0.1.0"');
+    await writeFile(out, lines.join("\n"), "utf-8");
+    const report = await restoreBackup(dstDir, [out], { mode: "bare" });
+    expect(report.created).toBe(1);
+    expect(report.upgrade?.from).toBe("0.1.0");
   });
 });
 

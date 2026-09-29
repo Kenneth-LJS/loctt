@@ -203,6 +203,7 @@ import {
   restoreBackup,
   type RestoreMode,
   RestoreRefusedError,
+  RestoreUpgradeError,
   runDoctorStream,
   saveCalendarConfig,
   saveListViewConfig,
@@ -4493,9 +4494,12 @@ export function createWebApp(options: WebAppOptions) {
    * under `bare`, a half-finished operation, and the NEW path-traversal
    * refusals from the SEC-1/SEC-2 fix (a crafted backup with a `../`
    * name/path) — is the user's or the file's fault, not the server's, so
-   * it is a 409, never a 500. A malformed/older/newer backup
+   * it is a 409, never a 500. A malformed or newer backup
    * (`BackupFormatError`, `SchemaTooNewError`) is a 400/409 attributed to
-   * the file.
+   * the file. An older backup is upgraded as part of the restore (K161),
+   * and the report carries `upgrade`; one whose upgrade step fails
+   * (`RestoreUpgradeError`) is a 409 attributed to the file, with nothing
+   * restored.
    */
   const handleRestoreBackup: RouteHandler = async ({ req, res, url, locttDir }) => {
     const contentType = req.headers["content-type"] ?? "";
@@ -4586,10 +4590,23 @@ export function createWebApp(options: WebAppOptions) {
           });
           return;
         }
-        // A backup this LocTT cannot read: malformed, or taken at an
-        // older schema. The file itself is the problem, so it is a 400
-        // attributed to the upload, and retrying the same file cannot
-        // help (ERR-15).
+        // An older backup whose upgrade step failed (K161). The steps
+        // ran on a staging copy, so nothing reached the tracker. The
+        // file's data is what could not be upgraded, and sending it again
+        // repeats the failure.
+        if (err instanceof RestoreUpgradeError) {
+          error(res, err.message, 409, {
+            code: "schema_mismatch",
+            data_state: "not_saved",
+            recovery: { kind: "none" },
+            field: "file",
+          });
+          return;
+        }
+        // A backup this LocTT cannot read: malformed, or a format it
+        // doesn't know (the old integer, below 0.1.0). The file itself is
+        // the problem, so it is a 400 attributed to the upload, and
+        // retrying the same file cannot help (ERR-15).
         if (err instanceof BackupFormatError) {
           error(res, err.message, 400, { ...REJECTED_WRITE_NO_RETRY, field: "file" });
           return;

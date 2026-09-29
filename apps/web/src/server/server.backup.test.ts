@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { exportBackup, initLoctt } from "@loctt/core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createWebApp } from "./server.js";
 
@@ -260,6 +260,57 @@ describe("web backup/restore surface (F3/K30)", () => {
     }
   });
 
+  /** The source backup with its header's recorded format replaced. */
+  async function exportAt(version: string): Promise<Buffer> {
+    const lines = (await exportBytes()).toString("utf-8").split("\n");
+    const header = JSON.parse(lines[0] ?? "{}") as Record<string, unknown>;
+    header["schema_version"] = version;
+    lines[0] = JSON.stringify(header);
+    return Buffer.from(lines.join("\n"), "utf-8");
+  }
+
+  // @verifies BAK-C25
+  it("restores an older backup and reports the upgrade (K161)", async () => {
+    const dst = await startApp("loctt-web-backup-older-");
+    try {
+      const preview = await restore(dst.base, await exportAt("0.3.0"), "?dry_run=true");
+      expect(preview.status).toBe(200);
+      const planned = await preview.json() as { upgrade?: { from: string; to: string; steps: { description: string }[] } };
+      expect(planned.upgrade?.from).toBe("0.3.0");
+      expect(planned.upgrade?.to).toBe("0.4.0");
+      expect(planned.upgrade?.steps.map(st => st.description)).toEqual(["Move sidebar settings to the Views layout"]);
+      expect(await readdir(join(dst.root, ".loctt", "tasks"))).toEqual([]);
+
+      const res = await restore(dst.base, await exportAt("0.3.0"), "");
+      expect(res.status).toBe(200);
+      const report = await res.json() as { created: number; upgrade?: { from: string } };
+      expect(report.created).toBe(2);
+      expect(report.upgrade?.from).toBe("0.3.0");
+      // The tracker opens: no upgrade asked for, its format unchanged.
+      expect((await readFile(join(dst.root, ".loctt", ".schema-version"), "utf-8")).trim()).toBe("0.4.0");
+      expect((await fetch(`${dst.base}/api/tasks`)).status).toBe(200);
+    } finally {
+      await dst.app.stop();
+      await rm(dst.root, { recursive: true, force: true });
+    }
+  });
+
+  // @verifies BAK-C25
+  it("refuses a newer backup as 409 schema_mismatch, writing nothing", async () => {
+    const dst = await startApp("loctt-web-backup-newer-");
+    try {
+      const res = await restore(dst.base, await exportAt("0.5.0"), "");
+      expect(res.status).toBe(409);
+      const body = await res.json() as { code: string; message: string };
+      expect(body.code).toBe("schema_mismatch");
+      expect(body.message).toBe("This tracker needs loctt 0.5.0 or newer.");
+      expect(await readdir(join(dst.root, ".loctt", "tasks"))).toEqual([]);
+    } finally {
+      await dst.app.stop();
+      await rm(dst.root, { recursive: true, force: true });
+    }
+  });
+
   it("dry_run predicts without writing and needs no confirm for overwrite", async () => {
     const backup = await exportBytes();
     const dst = await startApp("loctt-web-backup-dry-");
@@ -491,6 +542,53 @@ describe("web restore of a SPLIT backup (Ken 2026-09-23)", () => {
     } finally {
       await dst.app.stop();
       await rm(dst.root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * An older backup whose upgrade step fails (K161): core throws
+ * `RestoreUpgradeError` with nothing restored, and the route attributes
+ * it to the file (409, `schema_mismatch`, no retry) instead of a 500.
+ * Core is stubbed to throw it: a real step failure needs a broken disk.
+ */
+describe("web restore: an upgrade step that fails (K161)", () => {
+  afterEach(() => {
+    vi.doUnmock("@loctt/core");
+    vi.resetModules();
+  });
+
+  // @verifies BAK-C25
+  it("is a 409 naming the upgrade, not a 500", async () => {
+    vi.resetModules();
+    vi.doMock("@loctt/core", async (orig) => {
+      const real = await orig<typeof import("@loctt/core")>();
+      return {
+        ...real,
+        restoreBackup: () => Promise.reject(new real.RestoreUpgradeError("0.1.0", "0.4.0", new Error("disk full"))),
+      };
+    });
+    const { createWebApp: createFresh } = await import("./server.js");
+    const { initLoctt: initFresh } = await import("@loctt/core");
+    const root = await mkdtemp(join(tmpdir(), "loctt-web-backup-upfail-"));
+    await initFresh(root);
+    const app = createFresh({ root, port: 0 });
+    await app.start();
+    try {
+      const addr = app.server.address();
+      const port = typeof addr === "object" && addr ? addr.port : app.port;
+      const res = await restore(`http://127.0.0.1:${String(port)}`, Buffer.from("{}\n"), "");
+      expect(res.status).toBe(409);
+      const body = await res.json() as { code: string; message: string; data_state: string; field?: string };
+      expect(body.code).toBe("schema_mismatch");
+      expect(body.data_state).toBe("not_saved");
+      expect(body.field).toBe("file");
+      expect(body.message).toBe(
+        "this backup's data couldn't be upgraded from format 0.1.0 to 0.4.0 (disk full). Nothing has been restored.",
+      );
+    } finally {
+      await app.stop();
+      await rm(root, { recursive: true, force: true });
     }
   });
 });
