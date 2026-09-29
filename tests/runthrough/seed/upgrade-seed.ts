@@ -4,9 +4,11 @@
  * (`loctt migrate`), never by regenerating it: the seed's history,
  * ids and timestamps survive, exactly as a user's tracker would.
  *
- * B41 ran it for the first real step, 0.1.0 → 0.3.0 (K142, K143). The
- * 0.1.0 seed is kept frozen at tests/fixtures/trackers/seed-0.1.0/ for
- * the upgrade tests.
+ * B41 ran it for the first real step, 0.1.0 → 0.3.0 (K142, K143), and
+ * B54 for 0.3.0 → 0.4.0 (K160). The 0.1.0 and 0.3.0 seeds are kept
+ * frozen at tests/fixtures/trackers/seed-0.1.0/ and seed-0.3.0/ for the
+ * upgrade tests (seed-0.3.0 also carries pre-K158 user settings beside
+ * its .loctt/, in user-settings/).
  *
  * Works on a temp copy and replaces the seed only when the upgraded copy
  * is doctor-clean, so a failed upgrade never leaves a half-written seed.

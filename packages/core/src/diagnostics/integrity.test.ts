@@ -384,7 +384,7 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
       // sidebar still renders, but doctor must still name the drop.
       await writeFile(
         join(locttDir, "users", userId, "settings.yaml"),
-        "theme: dark\nsidebar_groups:\n  order: [labels, bogus, projects]\n",
+        "theme: dark\nsidebar_groups:\n  version: 2\n  order: [labels, bogus, projects]\n",
         "utf-8",
       );
 
@@ -402,8 +402,9 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
   });
 
   // @verifies SHL-54 — K158: in the K158 format, a malformed saved-view id
-  // is named; a clean pre-K158 value (migrated on read) is not a finding.
-  it("K158: names a malformed id in a version-2 sidebar_groups, and says nothing about a clean pre-K158 value", async () => {
+  // is named. K160: a pre-K158 value is no longer migrated on read, so it
+  // is a finding too, with the remedy that fits the tracker's format.
+  it("K158/K160: names a malformed id in a version-2 value, and a pre-K158 value as the older layout", async () => {
     const { initLoctt } = await import("../init/init.js");
     const { resolveLocttDir } = await import("../paths/index.js");
     const { mkdir: mkDir } = await import("node:fs/promises");
@@ -423,10 +424,79 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
       }
 
       const findings = await checkDataIntegrity(locttDir);
-      const sg = findings.filter(f => /sidebar_groups/.test(f.message));
-      expect(sg.map(f => f.path.includes(bad))).toEqual([true]);
-      expect(sg[0]?.message).toMatch(/unknown sidebar id "view:"/);
-      expect(sg[0]?.severity).toBe("malformed");
+      const badFinding = findings.find(f => f.path.includes(bad) && /sidebar_groups/.test(f.message));
+      expect(badFinding?.message).toMatch(/unknown sidebar id "view:"/);
+      expect(badFinding?.severity).toBe("malformed");
+      const oldFindings = findings.filter(f => f.path.includes(old) && f.path.endsWith("settings.yaml"));
+      expect(oldFindings).toHaveLength(1);
+      expect(oldFindings[0]?.path).toBe(join(locttDir, "users", old, "settings.yaml"));
+      expect(oldFindings[0]?.severity).toBe("malformed");
+      expect(oldFindings[0]?.message).toMatch(/before 0\.4\.0/);
+      // The tracker is at this build's format: `loctt migrate` would do
+      // nothing, so the remedy is a reset.
+      expect(oldFindings[0]?.message).toMatch(/sidebar-groups --reset/);
+      expect(oldFindings[0]?.message).not.toMatch(/loctt migrate/);
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // @verifies SHL-54 — K160: on a tracker still older than this build, the
+  // same leftovers point at `loctt migrate`, which converts them.
+  it("K160: on a tracker that needs upgrading, an older layout and stray pins name loctt migrate", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-sbgroups-k160-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      await writeFile(join(locttDir, ".schema-version"), "0.3.0\n", "utf-8");
+      const userId = "01HVVVVVVVVVVVVVVVVVVVVVVV";
+      await mkDir(join(locttDir, "users", userId), { recursive: true });
+      await writeFile(join(locttDir, "users", userId, "profile.yaml"), `id: ${userId}\nname: Ken\n`, "utf-8");
+      await writeFile(
+        join(locttDir, "users", userId, "settings.yaml"),
+        "sidebar_pins: [v1]\nsidebar_groups:\n  order: [filters]\n",
+        "utf-8",
+      );
+      const findings = (await checkDataIntegrity(locttDir)).filter(f => f.path.includes(userId) && f.path.endsWith("settings.yaml"));
+      expect(findings.map(f => /sidebar_groups|sidebar_pins/.exec(f.message)?.[0])).toEqual(["sidebar_groups", "sidebar_pins"]);
+      for (const f of findings) expect(f.message).toMatch(/Run loctt migrate/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // @verifies SHL-54 — K160: a stray sidebar_pins on a current tracker, and
+  // a settings file that does not parse (which the step leaves as it is).
+  it("K160: names a stray sidebar_pins and an unparseable settings file, non-blocking", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-sbgroups-pins-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      const pins = "01HTTTTTTTTTTTTTTTTTTTTTTT";
+      const broken = "01HSSSSSSSSSSSSSSSSSSSSSSS";
+      for (const [userId, settings] of [
+        [pins, "theme: dark\nsidebar_pins: [v1]\n"],
+        [broken, "theme: [dark\n"],
+      ] as const) {
+        await mkDir(join(locttDir, "users", userId), { recursive: true });
+        await writeFile(join(locttDir, "users", userId, "profile.yaml"), `id: ${userId}\nname: Ken\n`, "utf-8");
+        await writeFile(join(locttDir, "users", userId, "settings.yaml"), settings, "utf-8");
+      }
+      const findings = await checkDataIntegrity(locttDir);
+      const pinFinding = findings.find(f => f.path.includes(pins) && f.path.endsWith("settings.yaml"));
+      expect(pinFinding?.message).toMatch(/"sidebar_pins" is no longer used/);
+      expect(pinFinding?.message).toMatch(/sidebar-groups --reset/);
+      const brokenFinding = findings.find(f => f.path.includes(broken) && f.path.endsWith("settings.yaml"));
+      expect(brokenFinding?.path).toBe(join(locttDir, "users", broken, "settings.yaml"));
+      expect(brokenFinding?.message).toMatch(/could not be read/);
+      expect(blockingFindings(findings)).toHaveLength(0);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -454,7 +524,7 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
       // fix this dropped silently and doctor called the file clean.
       await writeFile(
         join(locttDir, "users", userId, "settings.yaml"),
-        "sidebar_groups:\n  order: [labels]\n  hidden: sprints\n",
+        "sidebar_groups:\n  version: 2\n  order: [labels]\n  hidden: sprints\n",
         "utf-8",
       );
 

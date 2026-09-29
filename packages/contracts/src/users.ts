@@ -162,8 +162,9 @@ export type ThemePreference = z.infer<typeof ThemePreferenceSchema>;
  * Board / Timeline)" so it is not confused with Views).
  *
  * The pre-K158 ids (`views` meaning the switcher, `saved-filters`,
- * `filters`) live on only in `LEGACY_SIDEBAR_*` below, for reading a
- * setting written before K158 (see `LegacySidebarGroupsSchema`).
+ * `filters`) are known only to the 0.3.0 → 0.4.0 upgrade step
+ * (`core/schema/steps/sidebar-views-layout.ts`, K160), which converts a
+ * setting written before K158. Nothing reads them after it.
  */
 export const SIDEBAR_GROUP_IDS = [
   "layouts",
@@ -260,9 +261,10 @@ export const SIDEBAR_GROUPS_VERSION = 2;
  * position", which reorder-then-hide-then-show needs; two lists can.
  *
  * `version` marks the K158 id set. A value without it was written before
- * K158, where `views` meant the List / Board / Timeline switcher; it is
- * read with `LegacySidebarGroupsSchema` and migrated on read
- * (`core/users/sidebarGroups.ts`, `migrateLegacySidebarGroups`).
+ * K158, where `views` meant the List / Board / Timeline switcher; the
+ * 0.3.0 → 0.4.0 upgrade step converts it (K160). After that step a value
+ * without `version: 2` is corrupt: the reader ignores it (the default
+ * layout) and doctor names the file.
  *
  * ## Degradation (per corruption-handling-guide)
  *
@@ -295,51 +297,6 @@ export const SidebarGroupsSchema = z
 export type SidebarGroups = z.infer<typeof SidebarGroupsSchema>;
 
 /**
- * The pre-K158 group ids (SHL-45, K125): `views` was the List / Board /
- * Timeline switcher, and the built-ins and saved views were two groups,
- * `filters` and `saved-filters`. Read-only: nothing writes these any more.
- */
-export const LEGACY_SIDEBAR_GROUP_IDS = [
-  "views",
-  "projects",
-  "saved-filters",
-  "filters",
-  "milestones",
-  "sprints",
-  "labels",
-  "recents",
-] as const;
-export type LegacySidebarGroupId = (typeof LEGACY_SIDEBAR_GROUP_IDS)[number];
-export const LEGACY_SIDEBAR_ITEM_IDS = [
-  ...LEGACY_SIDEBAR_GROUP_IDS,
-  ...SIDEBAR_BUILTIN_VIEW_IDS,
-] as const;
-export type LegacySidebarItemId = (typeof LEGACY_SIDEBAR_ITEM_IDS)[number];
-
-/** A `sidebar_groups` value written before K158 (no `version`). */
-export const LegacySidebarGroupsSchema = z
-  .object({
-    order: z
-      .array(z.enum(LEGACY_SIDEBAR_ITEM_IDS))
-      .refine(ids => new Set(ids).size === ids.length, {
-        message: "sidebar_groups.order must not repeat an id",
-      })
-      .optional(),
-    hidden: z
-      .array(z.enum(LEGACY_SIDEBAR_ITEM_IDS))
-      .refine(ids => new Set(ids).size === ids.length, {
-        message: "sidebar_groups.hidden must not repeat an id",
-      })
-      .optional(),
-  })
-  .strict();
-export type LegacySidebarGroups = z.infer<typeof LegacySidebarGroupsSchema>;
-
-/** What `settings.yaml` may hold: the K158 shape, or a pre-K158 value still to migrate. */
-export const StoredSidebarGroupsSchema = z.union([SidebarGroupsSchema, LegacySidebarGroupsSchema]);
-export type StoredSidebarGroups = z.infer<typeof StoredSidebarGroupsSchema>;
-
-/**
  * `.passthrough()`, unlike its `.strict()` siblings above, and
  * deliberately so.
  *
@@ -359,7 +316,7 @@ export const UserSettingsSchema = z.object({
   card_layout: CardLayoutSchema.optional(),
   editor_mode: EditorModeSchema.optional(),
   theme: ThemePreferenceSchema.optional(),
-  sidebar_groups: StoredSidebarGroupsSchema.optional(),
+  sidebar_groups: SidebarGroupsSchema.optional(),
   // K133: the single-key shortcut switches. See `shortcuts.ts`.
   keyboard_shortcuts: KeyboardShortcutsSchema.optional(),
 }).passthrough();

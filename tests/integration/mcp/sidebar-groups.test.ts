@@ -110,7 +110,7 @@ describe("MCP sidebar_groups (stdio)", () => {
     await withTmpLoctt(async ({ root }) => {
       await writeFile(
         await settingsPath(root),
-        "theme: dark\nsidebar_groups:\n  hidden: [labels]\n",
+        "theme: dark\nsidebar_groups:\n  version: 2\n  hidden: [labels]\n",
         "utf8",
       );
       const client = await startMcpClient(root);
@@ -126,33 +126,71 @@ describe("MCP sidebar_groups (stdio)", () => {
     });
   });
 
-  // @verifies SHL-54 — K158 (was A346's pre-K125 case): a setting written
-  // before K158 is migrated on read, and `stored` shows it migrated (the
-  // pre-K158 ids mean something else now: `views` was the switcher).
-  it("K158: resolves a pre-K158 stored order the way the sidebar renders it", async () => {
+  // @verifies ONB-C23
+  // @verifies SHL-54 — K160 (was B52's read-time migration test): on a
+  // tracker still at 0.3.0 the tools are refused until migrate_schema runs
+  // (confirmed); after it, get_sidebar_groups reads the converted layout,
+  // the retired pins leading the saved views, and `stored` is version 2.
+  it("K160: after migrate_schema, get_sidebar_groups reads the converted layout with the pinned view first", async () => {
     await withTmpLoctt(async ({ root }) => {
       const client = await startMcpClient(root);
       try {
         const created = await client.callTool("create_view", { name: "Open bugs", filters: [] });
         const viewId = (JSON.parse(String(created.content[0]?.text)) as { id: string }).id;
+        const file = await settingsPath(root);
+        await writeFile(path.join(root, ".loctt", ".schema-version"), "0.3.0\n", "utf8");
         await writeFile(
-          await settingsPath(root),
-          "sidebar_groups:\n  order: [overdue, projects, views, saved-filters]\n  hidden: [saved-filters]\n",
+          file,
+          `sidebar_pins: [${viewId}]\nsidebar_groups:\n  order: [overdue, projects, views, saved-filters]\n  hidden: [saved-filters]\n`,
           "utf8",
         );
+        const refused = await client.callTool("get_sidebar_groups", {});
+        expect(refused.isError).toBe(true);
+        expect(String(refused.content[0]?.text)).toContain("This tracker needs upgrading from 0.3.0 to 0.4.0.");
+
+        const plan = await client.callTool("migrate_schema", {});
+        expect(String(plan.content[0]?.text)).toContain("0.3.0→0.4.0: Move sidebar settings to the Views layout");
+        const done = await client.callTool("migrate_schema", { confirm: true });
+        expect(String(done.content[0]?.text)).toContain("Upgraded this tracker from 0.3.0 to 0.4.0.");
+        expect(await readFile(file, "utf8")).not.toContain("sidebar_pins");
+
         const result = await client.callTool("get_sidebar_groups", {});
         expect(result.isError).toBeFalsy();
         const payload = JSON.parse(String(result.content[0]?.text)) as SidebarGroupsPayload;
         const ids = payload.resolved.map(r => r.id);
-        // init seeds one saved view; the one created here follows it.
+        // One Views group where the first built-in sat (A339's rule), the
+        // built-ins first; the pinned view leads init's seed view.
         expect(ids.slice(0, 3)).toEqual(["views", "overdue", "assigned-to-me"]);
-        const seed = ids[7];
-        expect(seed?.startsWith("view:")).toBe(true);
-        expect(ids.slice(8, 11)).toEqual([`view:${viewId}`, "projects", "layouts"]);
+        expect(ids[7]).toBe(`view:${viewId}`);
+        expect(ids[8]?.startsWith("view:")).toBe(true);
+        expect(ids.slice(9, 11)).toEqual(["projects", "layouts"]);
         // The old "Saved views hidden" is kept, on each view itself.
-        expect(payload.resolved[8]).toEqual({ id: `view:${viewId}`, hidden: true, name: "Open bugs" });
+        expect(payload.resolved[7]).toEqual({ id: `view:${viewId}`, hidden: true, name: "Open bugs" });
         expect(payload.stored.version).toBe(2);
-        expect(payload.stored.hidden).toEqual([seed, `view:${viewId}`]);
+        expect(payload.stored.hidden).toEqual([`view:${viewId}`, ids[8]]);
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
+  // @verifies SHL-54 — K160: a pre-K158 value left after the step is not
+  // migrated on read: `stored` and `resolved` are the default layout.
+  it("K160: a pre-K158 stored order is read as the default layout", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await writeFile(
+        await settingsPath(root),
+        "sidebar_groups:\n  order: [overdue, projects, views, saved-filters]\n  hidden: [saved-filters]\n",
+        "utf8",
+      );
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("get_sidebar_groups", {});
+        expect(result.isError).toBeFalsy();
+        const payload = JSON.parse(String(result.content[0]?.text)) as SidebarGroupsPayload;
+        expect(payload.stored).toEqual({ version: 2 });
+        expect(payload.resolved.map(r => r.id).slice(0, 3)).toEqual(["layouts", "projects", "views"]);
+        expect(payload.resolved.every(r => !r.hidden)).toBe(true);
       } finally {
         await client.close();
       }

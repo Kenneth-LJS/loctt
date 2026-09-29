@@ -40,9 +40,8 @@ import { sidebarGroupsFromLayout, type SidebarLayoutRow, type SidebarViewChild }
  *
  * A write recomputes the FULL order and hidden list from what the panel
  * shows (`sidebarGroupsFromLayout`), so the file and the panel never
- * drift, and a pre-K158 setting is written in the K158 shape the first
- * time anything changes. Writes wait for the saved views to load: the
- * layout names each one, and writing without them would drop them.
+ * drift. Writes wait for the saved views to load: the layout names each
+ * one, and writing without them would drop them.
  *
  * ## Show/Hide is a Switch (K125)
  *

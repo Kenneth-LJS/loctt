@@ -601,3 +601,5 @@ orbit instead of rotating on the spot.
 > A370.
 
 > **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. A `sidebar_pins` value stored before this change is read only by this migration, to order the saved views once; the write that stores the K158 shape drops it, and nothing else reads it.
+
+> **Amended (K160, Ken 2026-09-29).** Ken: *"actually can we just do a migration step: migrate old pins into the sidebar? i dont want to support this backward compatibility forever."* The migration above is no longer done on read: the 0.3.0 → 0.4.0 upgrade step converts every user's settings file once by the same rule, the pins seeding the saved views (ONB-C23), and deletes `sidebar_pins`. After it only the `version: 2` shape is read. A value without `version: 2` is corrupt: the sidebar shows the default layout (field-local) and `loctt doctor` names the file, telling the user to run `loctt migrate` if the tracker is older, or to reset the layout; a leftover `sidebar_pins` is ignored and reported the same way. The second bullet's "still loads and renders the way it did" and the fourth bullet's "A pre-K158 value is not reported" hold only until the upgrade.

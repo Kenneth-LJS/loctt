@@ -13,7 +13,9 @@
  * - the version-skew guard: a tracker from a newer LocTT is refused by
  *   the CLI and by `loctt mcp`, naming the release to install;
  * - intentional upgrades (K154): a 0.1.0 tracker is refused, then
- *   upgraded by `loctt migrate --yes`.
+ *   upgraded by `loctt migrate --yes` (through 0.3.0 to 0.4.0), and a
+ *   0.3.0 tracker with pre-K158 sidebar settings the same way, after
+ *   which the sidebar-groups read shows the Views layout (K160).
  *
  * Before A352, `loctt ui` from an installed CLI answered `/` with a 404
  * because the CLI shipped no client. Inside the monorepo it passed.
@@ -42,6 +44,8 @@ const exec = promisify(execFile);
 
 /** The runthrough seed frozen at format 0.1.0 (B41). */
 const FROZEN_SEED = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/trackers/seed-0.1.0/.loctt");
+/** The runthrough seed frozen at format 0.3.0, its user settings beside it (B54, K160). */
+const FROZEN_SEED_030 = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/trackers/seed-0.3.0");
 
 interface Installed { readonly pkgDir: string; readonly project: string }
 let cli: Installed;
@@ -232,18 +236,60 @@ describe("the published `loctt` package installs and runs on its own (RR-B4)", (
     const refused = await run(cliBin(), ["list", "--limit", "1"], old);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain(
-      "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+      "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).",
     );
     expect(await versionOf()).toBe("0.1.0");
     expect((await readdir(old)).filter(n => n.startsWith(".loctt.backup-"))).toEqual([]);
 
     const migrate = await run(cliBin(), ["migrate", "--yes"], old);
     expect(migrate.code, migrate.stderr).toBe(0);
-    expect(migrate.stdout).toContain("Upgraded this tracker from 0.1.0 to 0.3.0.");
-    expect(await versionOf()).toBe("0.3.0");
+    expect(migrate.stdout).toContain("Upgraded this tracker from 0.1.0 to 0.4.0.");
+    expect(await versionOf()).toBe("0.4.0");
     expect((await readdir(old)).filter(n => n.startsWith(".loctt.backup-v0.1.0-"))).toHaveLength(1);
 
     const list = await run(cliBin(), ["list", "--limit", "1"], old);
     expect(list.code, list.stderr).toBe(0);
+  }, 60_000);
+
+  // @verifies ONB-C23
+  // @verifies SHL-54
+  // K160: the installed `loctt` refuses a 0.3.0 tracker until
+  // `loctt migrate --yes`, which moves each user's sidebar settings to the
+  // Views layout.
+  it("refuses a 0.3.0 tracker until `loctt migrate --yes`, then shows the Views layout", async () => {
+    const old = await outsideTmp("loctt-pack-030-");
+    cleanup.push(old);
+    await cp(path.join(FROZEN_SEED_030, ".loctt"), path.join(old, ".loctt"), { recursive: true });
+    const settingsDir = path.join(FROZEN_SEED_030, "user-settings");
+    for (const file of await readdir(settingsDir)) {
+      await cp(path.join(settingsDir, file), path.join(old, ".loctt", "users", file.replace(/\.yaml$/, ""), "settings.yaml"));
+    }
+    const index = JSON.parse(await readFile(path.join(FROZEN_SEED_030, "seed-index.json"), "utf8")) as { current_user: string };
+    await writeFile(path.join(old, ".loctt", ".current-user"), `${index.current_user}\n`, "utf8");
+    const settingsFile = path.join(old, ".loctt", "users", index.current_user, "settings.yaml");
+
+    const refused = await run(cliBin(), ["user", "sidebar-groups"], old);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      "This tracker needs upgrading from 0.3.0 to 0.4.0. Run `loctt migrate` (a backup is made first).",
+    );
+    expect(await readFile(settingsFile, "utf8")).toContain("sidebar_pins");
+
+    const migrate = await run(cliBin(), ["migrate", "--yes"], old);
+    expect(migrate.code, migrate.stderr).toBe(0);
+    expect(migrate.stdout).toContain("1. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout");
+    expect(migrate.stdout).toContain("Upgraded this tracker from 0.3.0 to 0.4.0.");
+    expect(await readFile(settingsFile, "utf8")).not.toContain("sidebar_pins");
+
+    const read = await run(cliBin(), ["user", "sidebar-groups"], old);
+    expect(read.code, read.stderr).toBe(0);
+    const ids = read.stdout.trim().split("\n").map(l => l.split("\t")[0]);
+    // One Views group where Filters sat, the pinned Hot list leading the
+    // saved views; the old switcher id reads as `layouts`.
+    expect(ids.slice(0, 2)).toEqual(["views", "overdue"]);
+    expect(read.stdout).toContain("view:01M3JSKFGY2KVS3DFF1TVEKWWY\thidden\tHot list");
+    expect(ids.indexOf("view:01M3JSKFGY2KVS3DFF1TVEKWWY")).toBe(7);
+    expect(ids).toContain("layouts");
+    expect(ids).not.toContain("saved-filters");
   }, 60_000);
 });

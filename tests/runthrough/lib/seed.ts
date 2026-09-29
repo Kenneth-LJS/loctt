@@ -25,6 +25,11 @@ export function loadSeedIndex(): SeedIndex {
  * pointer the seed cannot carry: `.loctt/.gitignore` ignores
  * `.current-user`, so a checkout of the seed has no current user and
  * every comment would fail. The index records who it should be.
+ *
+ * For the same reason a seed's per-user settings (also gitignored) are
+ * kept beside its `.loctt/` in `user-settings/<user id>.yaml`, and
+ * installed here as `users/<user id>/settings.yaml` (the frozen 0.3.0
+ * seed, K160).
  */
 export async function freshTracker(seed: SeedIndex, label: string, from: string = seedLoctt): Promise<string> {
   await mkdir(workspaceRoot, { recursive: true });
@@ -32,6 +37,15 @@ export async function freshTracker(seed: SeedIndex, label: string, from: string 
   const root = await mkdtemp(path.join(workspaceRoot, `${TEMP_PREFIX}${safe}-`));
   await cp(from, path.join(root, ".loctt"), { recursive: true });
   await writeFile(path.join(root, ".loctt/.current-user"), `${seed.current_user}\n`, "utf-8");
+  const settingsDir = path.join(path.dirname(from), "user-settings");
+  if (existsSync(settingsDir)) {
+    for (const file of await readdir(settingsDir)) {
+      if (!file.endsWith(".yaml")) continue;
+      const userDir = path.join(root, ".loctt/users", file.slice(0, -".yaml".length));
+      await mkdir(userDir, { recursive: true });
+      await cp(path.join(settingsDir, file), path.join(userDir, "settings.yaml"));
+    }
+  }
   return root;
 }
 

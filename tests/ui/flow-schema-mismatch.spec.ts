@@ -99,7 +99,7 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
     await expect(banner).toBeVisible();
     // K142: the release to install, and the format this build reads.
     await expect(banner).toContainText("needs loctt 9.9.9 or newer");
-    await expect(banner).toContainText("0.3.0");
+    await expect(banner).toContainText("0.4.0");
 
     // 2. It is inside the shell, not instead of it.
     await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
@@ -233,7 +233,7 @@ test("A11Y-32: the schema banner is a page-level alert, read before the main con
     // reader traverses; an <img> would contribute nothing to it.
     const text = await banner.innerText();
     expect(text).toContain("9.9.9");
-    expect(text).toContain("0.3.0");
+    expect(text).toContain("0.4.0");
     await expect(banner.locator("img")).toHaveCount(0);
 
     // Fourth bullet: the four kinds read as four different messages.
@@ -291,7 +291,7 @@ test("ONB-C17: a 0.1.0 tracker shows only the Upgrade screen until the user upgr
     const upgrade = page.getByTestId("upgrade-required");
     await expect(upgrade).toBeVisible();
     await expect(upgrade).toHaveRole("alert");
-    await expect(upgrade).toContainText("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+    await expect(upgrade).toContainText("This tracker needs upgrading from 0.1.0 to 0.4.0.");
     await expect(upgrade).toContainText("A backup is made first.");
     await expect(page.getByRole("main")).toHaveCount(0);
     await expect(page.getByLabel("Toggle sidebar")).toHaveCount(0);
@@ -301,9 +301,13 @@ test("ONB-C17: a 0.1.0 tracker shows only the Upgrade screen until the user upgr
 
     // The steps, collapsed until asked for.
     const steps = page.getByTestId("upgrade-required-steps");
-    await expect(steps).toContainText("What changes (1 step)");
+    // K160: from 0.1.0 both steps of the chain are listed.
+    await expect(steps).toContainText("What changes (2 steps)");
     await steps.locator("summary").click();
     await expect(steps).toContainText("Save the order of every task's links");
+    await expect(steps).toContainText("0.1.0 → 0.3.0");
+    await expect(steps).toContainText("Move sidebar settings to the Views layout");
+    await expect(steps).toContainText("0.3.0 → 0.4.0");
     // A screenshot once showed this caret still pointing right while the
     // disclosure was open. `Disclosure`'s `className` prop is additive
     // (`cn("loctt-disclosure", className)`), so UpgradeRequired's own
@@ -323,7 +327,7 @@ test("ONB-C17: a 0.1.0 tracker shows only the Upgrade screen until the user upgr
     await expect(page.getByTestId("relationships-panel")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("upgrade-required")).toHaveCount(0);
     await expect(page.getByLabel("New task")).toBeEnabled();
-    expect((await readFile(path.join(root, ".loctt", ".schema-version"), "utf8")).trim()).toBe("0.3.0");
+    expect((await readFile(path.join(root, ".loctt", ".schema-version"), "utf8")).trim()).toBe("0.4.0");
     expect((await readdir(root)).filter(n => n.startsWith(".loctt.backup-v0.1.0-"))).toHaveLength(1);
 
     // The children list as 0.1.0 showed them: the reranked one first.

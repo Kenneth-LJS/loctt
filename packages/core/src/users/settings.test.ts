@@ -80,13 +80,15 @@ describe("loadUserSettings corruption tolerance (Phase-7B)", () => {
     expect(settings["sidebar_extra"]).toBe("keep-me");
   });
 
-  // K159: pinned views are retired. A stored value must load, must not
-  // surface as a setting, and must be dropped by the next write; only a
-  // pre-K158 sidebar_groups (or none yet) still needs it, to seed the migration.
-  it("loads a legacy sidebar_pins cleanly and the next write drops it (K159)", async () => {
+  // K159 retired pinned views; K160's upgrade step moves them into the
+  // sidebar order and deletes the key. One left after that is corrupt:
+  // ignored on load (nothing reads it), so the next write of the settings
+  // leaves it behind; doctor names the file until then.
+  it("K160: a stray sidebar_pins is ignored on load and the next write leaves it behind", async () => {
     await writeSettings(`theme: dark\nsidebar_pins:\n  - v1\n  - v2\nsidebar_groups:\n  version: 2\n  order: [labels]\n`);
-    const loaded = await loadUserSettings(locttDir, USER_ID);
-    expect(loaded.theme).toBe("dark");
+    const loaded = await loadUserSettings(locttDir, USER_ID) as Record<string, unknown>;
+    expect(loaded["theme"]).toBe("dark");
+    expect(loaded["sidebar_pins"]).toBeUndefined();
     await saveUserSettings(locttDir, USER_ID, { ...loaded, theme: "light" });
     const raw = await readFile(getUserSettingsPath(locttDir, USER_ID), "utf-8");
     expect(raw).not.toContain("sidebar_pins");
@@ -94,15 +96,17 @@ describe("loadUserSettings corruption tolerance (Phase-7B)", () => {
     expect(raw).toContain("labels");
   });
 
-  it("a wrong-typed sidebar_pins does not break loading (K159)", async () => {
-    await writeSettings(`theme: dark\nsidebar_pins: 42\n`);
-    expect((await loadUserSettings(locttDir, USER_ID)).theme).toBe("dark");
-  });
-
-  it("keeps sidebar_pins through a write while sidebar_groups is still pre-K158, so the migration can seed from it (K159)", async () => {
+  it("K160: no exception for a pre-K158 sidebar_groups any more: the pins do not survive a write beside one", async () => {
+    // B53 kept pins through a write while sidebar_groups was pre-K158, so
+    // the read-time migration could seed from them. The step does that now.
     await writeSettings(`sidebar_pins: [v1]\nsidebar_groups:\n  order: [labels]\n`);
     const loaded = await loadUserSettings(locttDir, USER_ID);
     await saveUserSettings(locttDir, USER_ID, { ...loaded, theme: "dark" });
-    expect(await readFile(getUserSettingsPath(locttDir, USER_ID), "utf-8")).toContain("sidebar_pins");
+    expect(await readFile(getUserSettingsPath(locttDir, USER_ID), "utf-8")).not.toContain("sidebar_pins");
+  });
+
+  it("a wrong-typed sidebar_pins does not break loading (K159)", async () => {
+    await writeSettings(`theme: dark\nsidebar_pins: 42\n`);
+    expect((await loadUserSettings(locttDir, USER_ID)).theme).toBe("dark");
   });
 });

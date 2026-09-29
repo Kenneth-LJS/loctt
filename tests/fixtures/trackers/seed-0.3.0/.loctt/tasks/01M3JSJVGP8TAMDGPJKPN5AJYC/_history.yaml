@@ -1,0 +1,22 @@
+- timestamp: 2026-09-28T01:20:32.790Z
+  kind: created
+  after:
+    frontmatter:
+      id: 01M3JSJVGP8TAMDGPJKPN5AJYC
+      key: MOB-5
+      project: 01M3JSJ6ZTZ3MMREPGX5GRGCS2
+      title: Push notifications
+      created_at: 2026-09-28T01:20:32.790Z
+      updated_at: 2026-09-28T01:20:32.790Z
+      status: backlog
+      task_type: story
+      priority: medium
+    body: ""
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3
+- timestamp: 2026-09-28T01:20:38.057Z
+  kind: custom_field_change
+  field: platforms
+  before: null
+  after:
+    - ios
+  actor: 01M3JSJ5SC2X6K2GXCM8DDY4C3

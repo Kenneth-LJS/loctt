@@ -19,7 +19,7 @@ import { Icon } from "../ui/Icon.tsx";
  * bar keeps the brand so the page still reads as LocTT.
  *
  * What it says, per messaging.md: what is happening ("This tracker needs
- * upgrading from 0.1.0 to 0.3.0."), the one consequence ("A backup is
+ * upgrading from 0.1.0 to 0.4.0."), the one consequence ("A backup is
  * made first."), the steps in plain words (collapsed, from
  * `/api/migrate/plan`, a risky step flagged), and one action, Upgrade.
  * On success the app reloads. On failure it says what happened, what it

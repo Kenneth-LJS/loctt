@@ -32,9 +32,9 @@ repeats these tables.
   stack traces.
 - **Format versions and upgrades.** `.loctt/.schema-version` holds the
   tracker's format version, the `loctt` release that introduced it
-  (`0.3.0`). Upgrading a tracker is always deliberate: on a tracker in an
+  (`0.4.0`). Upgrading a tracker is always deliberate: on a tracker in an
   older format every command refuses with `This tracker needs upgrading
-  from 0.1.0 to 0.3.0. Run \`loctt migrate\` (a backup is made first).`
+  from 0.3.0 to 0.4.0. Run \`loctt migrate\` (a backup is made first).`
   (exit 1) and writes nothing, whether or not a step is risky, until you
   run `loctt migrate`. A tracker in a newer format is refused with `This
   tracker needs loctt <version> or newer.`; a file holding anything but a
@@ -794,7 +794,7 @@ Created project "Mobile App" (slug mobile-app, prefix MOB, id 01J…)
 | `create` | `loctt user create <name> [--email] [--timezone] [--avatar <path>] [--switch]` | `--switch` makes the new user current. |
 | `edit` | `loctt user edit <id-or-name> [--name] [--email] [--timezone] [--avatar <path> \| --remove-avatar]` | |
 | `settings` | `loctt user settings` | Print per-user settings. |
-| `sidebar-groups` | `loctt user sidebar-groups [--order <ids> \| --hidden <ids> \| --reset]` | Read or set the sidebar layout. Prints one line per id, tab-separated, in the order the sidebar shows them: the id, then `visible` or `hidden`. Groups: `layouts` (List / Board / Timeline), `projects`, `views`, `milestones`, `sprints`, `labels`, `recents`. The Views group's children follow `views`: the built-in views (`assigned-to-me`, `reported-by-me`, `mentions-me`, `due-this-week`, `overdue`, `high-priority`) and each saved view as `view:<id>`, followed by its name and `broken` when its filters no longer load. Every child reads `hidden` while `views` is hidden. `--order` and `--hidden` take comma-separated ids; a child's place is its position among the other children in `--order`, and anything not listed keeps its default place (a saved view not listed goes last). An unknown id, including `view:<id>` for a view that does not exist, is refused (exit 2). A layout saved by an older version is shown as it was and rewritten in the current form by the next change. |
+| `sidebar-groups` | `loctt user sidebar-groups [--order <ids> \| --hidden <ids> \| --reset]` | Read or set the sidebar layout. Prints one line per id, tab-separated, in the order the sidebar shows them: the id, then `visible` or `hidden`. Groups: `layouts` (List / Board / Timeline), `projects`, `views`, `milestones`, `sprints`, `labels`, `recents`. The Views group's children follow `views`: the built-in views (`assigned-to-me`, `reported-by-me`, `mentions-me`, `due-this-week`, `overdue`, `high-priority`) and each saved view as `view:<id>`, followed by its name and `broken` when its filters no longer load. Every child reads `hidden` while `views` is hidden. `--order` and `--hidden` take comma-separated ids; a child's place is its position among the other children in `--order`, and anything not listed keeps its default place (a saved view not listed goes last). An unknown id, including `view:<id>` for a view that does not exist, is refused (exit 2). A layout saved before 0.4.0 is converted once by `loctt migrate` (the 0.3.0 → 0.4.0 step, pinned views leading the saved views); one found afterwards is ignored (the default layout) and `loctt doctor` names the file, and `--reset` clears it. |
 | `shortcuts` | `loctt user shortcuts [--single-key on\|off] [--off <id>...] [--on <id>...] [--reset]` | Read or set the single-key shortcut switches (the web Settings → Keyboard). Prints `single-key on\|off`, then one line per shortcut: id, keys, `on` or `off`, and what it does. `--off` and `--on` repeat or take comma-separated ids (`new-task`, `focus-search`, `goto`, `toggle-sidebar`, `cycle-theme`, `shortcut-help`); an unknown id is refused, and so is `--single-key`, `--off` or `--on` given without a value (exit 2). `--single-key off` turns them all off and keeps each one's own switch. `--reset` turns everything back on. Keys are fixed. |
 | `archive` / `unarchive` | `loctt user archive <id-or-name>` | |
 | `references` | `loctt user references <id-or-name>` | Count where the user is assignee or reporter. |
@@ -1113,7 +1113,7 @@ loctt restore tracker-backup.jsonl --dry-run
 | `info` | `loctt info` | A prose summary of the tracker. Safe to run before `init`. |
 | `doctor` | `loctt doctor [--rebuild-index] [--repair-relationships] [--fix]` | Run diagnostic checks. `--rebuild-index` rebuilds the key-lookup cache after out-of-band edits. `--repair-relationships` repairs links (below). `--fix` runs every safe repair, then reports what is left. |
 | `schema` | `loctt schema` | Print the workflow config: prefix, statuses, priorities, types, relationships, custom fields. |
-| `migrate` | `loctt migrate [--dry-run] [--yes]` | Upgrade the tracker's format, the only way it is upgraded from the terminal. Shows a preview (from → to, each step and what it changes, `[risky]` on a risky step, where the backup goes), then asks `Upgrade this tracker now? [y/N]`. Backs up `.loctt/` first. `--dry-run` shows the preview only. `--yes` skips the question; without a terminal and without `--yes` it refuses naming the flag (exit 2). Prints `This tracker is already at format 0.3.0. Nothing to do.` when current. |
+| `migrate` | `loctt migrate [--dry-run] [--yes]` | Upgrade the tracker's format, the only way it is upgraded from the terminal. Shows a preview (from → to, each step and what it changes, `[risky]` on a risky step, where the backup goes), then asks `Upgrade this tracker now? [y/N]`. Backs up `.loctt/` first. `--dry-run` shows the preview only. `--yes` skips the question; without a terminal and without `--yes` it refuses naming the flag (exit 2). Prints `This tracker is already at format 0.4.0. Nothing to do.` when current. |
 
 ```bash
 loctt doctor
@@ -1128,12 +1128,12 @@ loctt doctor
 at `0`.
 
 `doctor` never writes to an older tracker; its `schema version` check
-says so (`needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a
+says so (`needs upgrading from 0.3.0 to 0.4.0. Run loctt migrate (a
 backup is made first)`), and any repair you ask for (`--fix`,
 `--rebuild-index`, `--repair-relationships`) is skipped with `skipped.
 This tracker needs upgrading first. Run loctt migrate, then run the
-repair again`. `info` prints `Schema: needs upgrading from 0.1.0 to
-0.3.0. Run \`loctt migrate\` (a backup is made first)`. A `ranked:`
+repair again`. `info` prints `Schema: needs upgrading from 0.3.0 to
+0.4.0. Run \`loctt migrate\` (a backup is made first)`. A `ranked:`
 line left on a relationship in `workflow.yaml` is reported as a warning
 (`workflow.yaml retired settings`): it no longer does anything and can be
 removed.

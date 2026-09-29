@@ -6,6 +6,9 @@
  * only `migrateToCurrent` (behind `loctt migrate`, `migrate_schema` and
  * the web Upgrade button) upgrades.
  *
+ * Since K160 the current format is 0.4.0, so an upgrade from 0.1.0 runs
+ * this step and then 0.3.0 → 0.4.0 (`upgrade-0.4.0.test.ts`) in one go.
+ *
  * Rewritten for K154: this file asserted K143's automatic upgrade
  * (`upgradeIfSafe` upgrading on first open), the superseded rule.
  *
@@ -132,7 +135,7 @@ describe("the guard on an older tracker (K154)", () => {
     const err = await requireSupportedSchema(locttDir).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SchemaUpgradeRequiredError);
     expect((err as Error).message).toBe(
-      "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+      "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).",
     );
     expect(await snapshot(locttDir)).toEqual(original);
     expect(await backups()).toEqual([]);
@@ -151,7 +154,7 @@ describe("the guard on an older tracker (K154)", () => {
     vi.resetModules();
     const fresh = await import("./migrate.js");
     await expect(fresh.requireSupportedSchema(locttDir)).rejects.toThrow(
-      "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+      "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).",
     );
     const plan = await fresh.planMigration(locttDir);
     expect(plan.steps.map(st => st.risky)).toEqual([true]);
@@ -181,7 +184,7 @@ describe("doctor and info on an older tracker (K154: read-only)", () => {
     expect(byName.get("schema version")).toEqual({
       name: "schema version",
       status: "error",
-      message: "needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a backup is made first)",
+      message: "needs upgrading from 0.1.0 to 0.4.0. Run loctt migrate (a backup is made first)",
     });
     expect(byName.get("repairs")?.message).toBe(
       "skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again",
@@ -195,7 +198,7 @@ describe("doctor and info on an older tracker (K154: read-only)", () => {
     const original = await snapshot(locttDir);
     const { getTrackerInfo } = await import("../diagnostics/info.js");
     const info = await getTrackerInfo(root);
-    expect(info.schemaStatus).toEqual({ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" });
+    expect(info.schemaStatus).toEqual({ kind: "outdated", on_disk: "0.1.0", current: "0.4.0" });
     expect(await snapshot(locttDir)).toEqual(original);
   });
 });
@@ -214,8 +217,12 @@ describe("0.1.0 → 0.3.0 on the frozen seed (migrateToCurrent)", () => {
 
     const result = await migrateToCurrent(locttDir);
     expect(result.from).toBe("0.1.0");
-    expect(result.to).toBe("0.3.0");
-    expect(result.steps.map(st => st.changes)).toEqual([expect.stringMatching(/keep the order they are shown in today/)]);
+    // K160: the chain continues to 0.4.0 in the same run.
+    expect(result.to).toBe("0.4.0");
+    expect(result.steps.map(st => st.changes)).toEqual([
+      expect.stringMatching(/keep the order they are shown in today/),
+      expect.stringMatching(/sidebar settings/),
+    ]);
 
     // The backup is the tracker as it was, byte for byte.
     expect(await backups()).toHaveLength(1);
@@ -227,7 +234,7 @@ describe("0.1.0 → 0.3.0 on the frozen seed (migrateToCurrent)", () => {
     }
     expect(await listedOrder030(locttDir)).toEqual(before);
 
-    expect((await readFile(join(locttDir, ".schema-version"), "utf-8")).trim()).toBe("0.3.0");
+    expect((await readFile(join(locttDir, ".schema-version"), "utf-8")).trim()).toBe("0.4.0");
     expect(await readFile(join(locttDir, "config", "workflow.yaml"), "utf-8")).not.toMatch(/ranked:/);
     await expect(requireSupportedSchema(locttDir)).resolves.toBeUndefined();
     // The seed's baseline finding (the key index is not checked in) is
@@ -305,9 +312,9 @@ describe("what the guard refuses, writing nothing", () => {
   });
 
   it.each([
-    ["1\n", /must hold a format version such as 0\.3\.0 \(three whole numbers separated by dots\)\. Got: 1\./],
-    ["garbage\n", /must hold a format version such as 0\.3\.0 .* Got: garbage\./],
-    ["", /\.schema-version is empty\. It must hold a format version such as 0\.3\.0\./],
+    ["1\n", /must hold a format version such as 0\.4\.0 \(three whole numbers separated by dots\)\. Got: 1\./],
+    ["garbage\n", /must hold a format version such as 0\.4\.0 .* Got: garbage\./],
+    ["", /\.schema-version is empty\. It must hold a format version such as 0\.4\.0\./],
   ])("%j, saying what the file must hold", async (content, message) => {
     await write(content);
     const original = await snapshot(locttDir);
@@ -328,21 +335,21 @@ describe("a recorded version between known formats (M1)", () => {
     await writeFile(join(locttDir, ".schema-version"), content, "utf-8");
   };
 
-  it.each(["0.2.1", "0.2.0"])("%s is format 0.1.0: upgraded like it, and the file rewritten to 0.3.0", async (recorded) => {
+  it.each(["0.2.1", "0.2.0"])("%s is format 0.1.0: upgraded like it, and the file rewritten to 0.4.0", async (recorded) => {
     await write(`${recorded}\n`);
     const before = await shownOrder010(locttDir);
 
     const result = await migrateToCurrent(locttDir);
     expect(result.from).toBe(recorded);
-    expect(result.to).toBe("0.3.0");
-    expect(result.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0"]);
+    expect(result.to).toBe("0.4.0");
+    expect(result.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0", "0.3.0->0.4.0"]);
     expect((await readdir(root)).filter(n => n.startsWith(`.loctt.backup-v${recorded}-`))).toHaveLength(1);
 
     for (const edges of (await edgesByTask(locttDir)).values()) {
       for (const e of edges) expect(e.rank, JSON.stringify(e)).toBeDefined();
     }
     expect(await listedOrder030(locttDir)).toEqual(before);
-    expect((await readFile(join(locttDir, ".schema-version"), "utf-8")).trim()).toBe("0.3.0");
+    expect((await readFile(join(locttDir, ".schema-version"), "utf-8")).trim()).toBe("0.4.0");
     await expect(requireSupportedSchema(locttDir)).resolves.toBeUndefined();
   });
 
@@ -350,9 +357,9 @@ describe("a recorded version between known formats (M1)", () => {
     await write("0.2.1\n");
     const plan = await planMigration(locttDir);
     expect(plan.from).toBe("0.2.1");
-    expect(plan.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0"]);
+    expect(plan.steps.map(s => `${s.from}->${s.to}`)).toEqual(["0.1.0->0.3.0", "0.3.0->0.4.0"]);
     await expect(requireSupportedSchema(locttDir)).rejects.toThrow(
-      "This tracker needs upgrading from 0.2.1 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+      "This tracker needs upgrading from 0.2.1 to 0.4.0. Run `loctt migrate` (a backup is made first).",
     );
   });
 
@@ -369,11 +376,11 @@ describe("a recorded version between known formats (M1)", () => {
   });
 
   // A build writes the format it knows, never its own release, so a
-  // version above 0.3.0 was written by a build with a newer format, even
-  // 0.3.1 (A366 call 1).
-  it("0.3.1 is above this build's format: refused, naming the release", async () => {
-    await write("0.3.1\n");
-    await expect(requireSupportedSchema(locttDir)).rejects.toThrow("This tracker needs loctt 0.3.1 or newer.");
+  // version above 0.4.0 was written by a build with a newer format, even
+  // 0.4.1 (A366 call 1).
+  it("0.4.1 is above this build's format: refused, naming the release", async () => {
+    await write("0.4.1\n");
+    await expect(requireSupportedSchema(locttDir)).rejects.toThrow("This tracker needs loctt 0.4.1 or newer.");
   });
 });
 
@@ -381,15 +388,17 @@ describe("formatForRecordedVersion", () => {
   it("maps to the highest known format at or below, and refuses outside them", async () => {
     const { formatForRecordedVersion, knownFormats } = await import("./migrations.js");
     const { SchemaTooNewError, SchemaUnmigratableError: Unmigratable } = await import("./version.js");
-    expect(knownFormats()).toEqual(["0.1.0", "0.3.0"]);
+    expect(knownFormats()).toEqual(["0.1.0", "0.3.0", "0.4.0"]);
     expect(formatForRecordedVersion("0.1.0")).toBe("0.1.0");
     expect(formatForRecordedVersion("0.2.99")).toBe("0.1.0");
     expect(formatForRecordedVersion("0.3.0")).toBe("0.3.0");
+    expect(formatForRecordedVersion("0.3.1")).toBe("0.3.0");
+    expect(formatForRecordedVersion("0.4.0")).toBe("0.4.0");
     // With a later format registered, a release between them maps down.
     const later = [{ from: "0.1.0", to: "0.2.5", description: "", apply: () => Promise.resolve() }];
     expect(formatForRecordedVersion("0.2.9", later)).toBe("0.2.5");
     expect(formatForRecordedVersion("0.2.4", later)).toBe("0.1.0");
     expect(() => formatForRecordedVersion("0.0.9")).toThrow(Unmigratable);
-    expect(() => formatForRecordedVersion("0.3.1")).toThrow(SchemaTooNewError);
+    expect(() => formatForRecordedVersion("0.4.1")).toThrow(SchemaTooNewError);
   });
 });

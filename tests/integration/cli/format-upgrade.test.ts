@@ -33,7 +33,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const FROZEN = path.join(repoRoot, "tests/fixtures/trackers/seed-0.1.0/.loctt");
 
 const REFUSAL =
-  "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).";
+  "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).";
 
 async function frozenSeed(root: string): Promise<void> {
   await cp(FROZEN, path.join(root, ".loctt"), { recursive: true });
@@ -98,14 +98,14 @@ describe("an older tracker is refused until the user upgrades it (K154)", () => 
       const before = await fingerprint(root);
       const doctor = await runCli(["doctor", "--fix", "--rebuild-index"], { cwd: root });
       expect(doctor.stdout).toContain(
-        "✗ schema version: needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a backup is made first)",
+        "✗ schema version: needs upgrading from 0.1.0 to 0.4.0. Run loctt migrate (a backup is made first)",
       );
       expect(doctor.stdout).toContain(
         "✗ repairs: skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again",
       );
       expect(doctor.stdout).toContain("! workflow.yaml retired settings: 'ranked' on blocks, 'ranked' on parent no longer does anything");
       const info = await runCli(["info"], { cwd: root });
-      expect(info.stdout).toContain("Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)");
+      expect(info.stdout).toContain("Schema: needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first)");
       expect(await fingerprint(root)).toEqual(before);
     }, { init: false });
   });
@@ -117,8 +117,10 @@ describe("an older tracker is refused until the user upgrades it (K154)", () => 
 
       const dry = await runCli(["migrate", "--dry-run"], { cwd: root });
       expect(dry.exitCode, dry.stderr).toBe(0);
-      expect(dry.stdout).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+      expect(dry.stdout).toContain("This tracker needs upgrading from 0.1.0 to 0.4.0.");
       expect(dry.stdout).toContain("1. 0.1.0 → 0.3.0  Save the order of every task's links");
+      // K160: the chain continues in the same run.
+      expect(dry.stdout).toContain("2. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout");
       expect(dry.stdout).toContain(".loctt.backup-v0.1.0-<date and time>");
       expect(dry.stdout).toContain("Dry run. Nothing was changed.");
 
@@ -129,11 +131,11 @@ describe("an older tracker is refused until the user upgrades it (K154)", () => 
 
       const yes = await runCli(["migrate", "--yes"], { cwd: root });
       expect(yes.exitCode, yes.stderr).toBe(0);
-      expect(yes.stdout).toContain("Upgraded this tracker from 0.1.0 to 0.3.0.");
+      expect(yes.stdout).toContain("Upgraded this tracker from 0.1.0 to 0.4.0.");
       const backup = /Backup written to (.+)/.exec(yes.stdout)?.[1] ?? "";
       expect(await backupsIn(root)).toEqual([path.basename(backup)]);
       expect((await readFile(path.join(backup, ".schema-version"), "utf8")).trim()).toBe("0.1.0");
-      expect(await versionOf(root)).toBe("0.3.0");
+      expect(await versionOf(root)).toBe("0.4.0");
 
       const list = await runCli(["list", "--limit", "1"], { cwd: root });
       expect(list.exitCode, list.stderr).toBe(0);
@@ -152,15 +154,15 @@ describe("an older tracker is refused until the user upgrades it (K154)", () => 
         runCli(["migrate", "--yes"], { cwd: root, timeout: 60_000 }),
         runCli(["migrate", "--yes"], { cwd: root, timeout: 60_000 }),
       ]);
-      expect(results.filter(r => r.exitCode === 0 && r.stdout.includes("Upgraded this tracker from 0.1.0 to 0.3.0."))).toHaveLength(1);
+      expect(results.filter(r => r.exitCode === 0 && r.stdout.includes("Upgraded this tracker from 0.1.0 to 0.4.0."))).toHaveLength(1);
       // The other found it done, or found it mid-upgrade and said so
       // (never "interrupted", never a second run).
       const other = results.find(r => !r.stdout.includes("Upgraded this tracker"));
       expect(`${other?.stdout ?? ""}${other?.stderr ?? ""}`).toMatch(
-        /already at format 0\.3\.0|being upgraded by another loctt process/,
+        /already at format 0\.4\.0|being upgraded by another loctt process/,
       );
       expect(await backupsIn(root)).toHaveLength(1);
-      expect(await versionOf(root)).toBe("0.3.0");
+      expect(await versionOf(root)).toBe("0.4.0");
     }, { init: false });
   });
 });
@@ -168,9 +170,9 @@ describe("an older tracker is refused until the user upgrades it (K154)", () => 
 describe("what every surface refuses", () => {
   it.each([
     ["9.9.9\n", "This tracker needs loctt 9.9.9 or newer."],
-    ["1\n", ".schema-version must hold a format version such as 0.3.0 (three whole numbers separated by dots). Got: 1."],
-    ["garbage\n", ".schema-version must hold a format version such as 0.3.0 (three whole numbers separated by dots). Got: garbage."],
-    ["", ".schema-version is empty. It must hold a format version such as 0.3.0."],
+    ["1\n", ".schema-version must hold a format version such as 0.4.0 (three whole numbers separated by dots). Got: 1."],
+    ["garbage\n", ".schema-version must hold a format version such as 0.4.0 (three whole numbers separated by dots). Got: garbage."],
+    ["", ".schema-version is empty. It must hold a format version such as 0.4.0."],
   ])("%j: CLI and MCP refuse with the message, and nothing is written", async (content, message) => {
     await withTmpLoctt(async ({ root }) => {
       await writeFile(path.join(root, ".loctt/.schema-version"), content, "utf8");

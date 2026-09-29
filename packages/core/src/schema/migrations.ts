@@ -5,7 +5,7 @@
  * a tracker from format version `from` to format version `to`. Format
  * versions are the semver of the `loctt` release that introduced the
  * format (K142), compared as semver, so consecutive formats are not
- * consecutive numbers (0.1.0 → 0.3.0). Longer jumps are supported so a
+ * consecutive numbers (0.1.0 → 0.3.0 → 0.4.0). Longer jumps are supported so a
  * future fast path can be added without removing the original edges.
  *
  * The framework finds the shortest path through registered edges
@@ -26,6 +26,7 @@
  */
 
 import { rankEveryLink } from "./steps/rank-every-link.js";
+import { moveSidebarSettingsToViewsLayout } from "./steps/sidebar-views-layout.js";
 import {
   compareFormatVersions,
   CURRENT_SCHEMA_VERSION,
@@ -71,6 +72,18 @@ const MIGRATIONS: readonly Migration[] = [
       + "so you can rearrange them. Task files and workflow.yaml are rewritten. "
       + "Titles, descriptions, dates and history don't change.",
     apply: rankEveryLink,
+  },
+  {
+    // K160: B52/B53 converted old sidebar settings on every read; this
+    // step converts them once and the readers know only the new shape.
+    from: "0.3.0",
+    to: "0.4.0",
+    description: "Move sidebar settings to the Views layout",
+    changes: "Each person's sidebar settings are saved in the one Views section: built-in and saved views "
+      + "keep the order and hidden choices they have today, and pinned views lead the saved views. "
+      + "The old pinned-views setting is removed. Only users' settings files are rewritten; "
+      + "tasks and config don't change.",
+    apply: moveSidebarSettingsToViewsLayout,
   },
 ];
 

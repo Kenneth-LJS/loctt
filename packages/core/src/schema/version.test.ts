@@ -42,7 +42,7 @@ describe("readSchemaVersion (K142: a format version is semver)", () => {
 
   it("refuses an empty file, saying what it must hold", async () => {
     await writeFile(join(dir, ".schema-version"), "", "utf-8");
-    await expect(readSchemaVersion(dir)).rejects.toThrow(/is empty\. It must hold a format version such as 0\.3\.0/);
+    await expect(readSchemaVersion(dir)).rejects.toThrow(/is empty\. It must hold a format version such as 0\.4\.0/);
   });
 
   // No compatibility for the old integer (K142): Ken edits `1` to `0.1.0`.
@@ -51,7 +51,7 @@ describe("readSchemaVersion (K142: a format version is semver)", () => {
     const err = await readSchemaVersion(dir).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SchemaUnmigratableError);
     expect((err as Error).message).toBe(
-      ".schema-version must hold a format version such as 0.3.0 (three whole numbers separated by dots). Got: 1.",
+      ".schema-version must hold a format version such as 0.4.0 (three whole numbers separated by dots). Got: 1.",
     );
     expect((err as SchemaUnmigratableError).remedy).toMatch(/0\.1\.0 for a tracker made by loctt 0\.2\.x or earlier \(which wrote 1\)/);
   });

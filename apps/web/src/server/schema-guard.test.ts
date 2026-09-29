@@ -177,7 +177,7 @@ describe("the guard names which schema state it refused for", () => {
     expect(body.schema_status?.kind).toBe("future");
     // Newer only when compared as semver (K142).
     expect(body.schema_status?.on_disk).toBe("0.10.0");
-    expect(body.schema_status?.current).toBe("0.3.0");
+    expect(body.schema_status?.current).toBe("0.4.0");
     // Migration cannot help, so no command is offered.
     expect(body.recovery?.kind).toBe("none");
   });
@@ -223,9 +223,9 @@ describe("the guard names which schema state it refused for", () => {
       const res = await fetch(`${base}${path}`, init);
       expect(res.status, path).toBe(409);
       const body = await res.json() as Envelope & { schema_status?: { on_disk?: string; current?: string } };
-      expect(body.schema_status, path).toEqual({ kind: "outdated", on_disk: "0.1.0", current: "0.3.0" });
+      expect(body.schema_status, path).toEqual({ kind: "outdated", on_disk: "0.1.0", current: "0.4.0" });
       expect(body.message, path).toBe(
-        "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+        "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).",
       );
       expect(body.recovery, path).toEqual({ kind: "command", command: "loctt migrate" });
     }

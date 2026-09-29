@@ -25,7 +25,7 @@ import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
 import { ProjectEditDialog } from "../settings/ProjectEditDialog.tsx";
 import { type RowAction, RowActions } from "../settings/RowActions.tsx";
 import { DEFAULT_SECTION } from "../settings/sections.ts";
-import { forgetSavedViewInSidebar, isLegacySidebarGroups, setSidebarItemHidden } from "../settings/sidebarGroups.ts";
+import { forgetSavedViewInSidebar, setSidebarItemHidden } from "../settings/sidebarGroups.ts";
 import { SidebarGroupsPanel } from "../settings/SidebarGroupsPanel.tsx";
 import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
 import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "../settings/ViewFormDialog.tsx";
@@ -1748,13 +1748,11 @@ function ViewsGroup({
         onSuccess: () => {
           dismiss(view.id);
           // One settings write drops the view's place and flag in the
-          // sidebar order (a pre-K158 value never names a view, so it is
-          // left as it is).
+          // sidebar order.
           const stored = layout.settings.data?.settings;
           if (stored !== undefined) {
             const sidebarId = savedViewSidebarId(view.id);
-            const placed = !isLegacySidebarGroups(stored)
-              && [...(groups.order ?? []), ...(groups.hidden ?? [])].includes(sidebarId);
+            const placed = [...(groups.order ?? []), ...(groups.hidden ?? [])].includes(sidebarId);
             if (placed) {
               saveSettings.mutate({
                 ...stored,

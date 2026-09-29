@@ -40,6 +40,17 @@ const KNOWN_SETTINGS_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Settings loctt wrote once and retired: `sidebar_pins` (K159). Not
+ * unknown keys a newer client wrote, so passthrough does not protect
+ * them. The 0.3.0 → 0.4.0 upgrade step moves pins into the sidebar's
+ * Views order and deletes the key (K160); one left on disk after that is
+ * corrupt. The loader lifts it out (nothing reads it), so the next write
+ * of the settings leaves it behind, and doctor names the file until then
+ * (`collectSidebarGroupsDrops`, `retiredPins`).
+ */
+const RETIRED_SETTINGS_KEYS: readonly string[] = ["sidebar_pins"];
+
+/**
  * Parses a settings payload **tolerantly** (Phase-7B).
  *
  * `UserSettings` is `.passthrough()` by design, so unknown keys are not
@@ -147,7 +158,7 @@ export async function loadUserSettings(
   // Coerce non-object payloads to empty rather than crashing — matches
   // the previous behaviour for malformed-but-not-invalid YAML (e.g. a
   // bare list). A wrong-typed KNOWN key degrades to default below.
-  const candidate = isPlainObject(parsed) ? parsed : {};
+  const candidate = isPlainObject(parsed) ? withoutRetiredKeys(parsed) : {};
   return parseSettingsTolerant(candidate);
 }
 
@@ -164,51 +175,54 @@ export async function saveUserSettings(
   userId: string,
   settings: UserSettings,
 ): Promise<UserSettings> {
-  const safe = withoutRetiredSettings(UserSettingsSchema.parse(settings));
+  const safe = UserSettingsSchema.parse(settings);
   await writeYamlAtomically(getUserSettingsPath(locttDir, userId), safe);
   return safe;
 }
 
-/**
- * Drops the retired `sidebar_pins` key (K159) from a value about to be
- * written. The one thing it still does is seed the K158 migration of a
- * pre-K158 `sidebar_groups`, so it stays while `sidebar_groups` is absent
- * or still that old shape, and goes with the write that stores the K158
- * shape. Doctor does not report it: loctt removes it itself.
- */
-function withoutRetiredSettings(settings: UserSettings): UserSettings {
-  const { sidebar_pins: _retired, ...rest } = settings as UserSettings & { sidebar_pins?: unknown };
-  const groups = settings.sidebar_groups;
-  const stillNeeded = "sidebar_pins" in settings && (groups === undefined || !("version" in groups));
-  return stillNeeded ? settings : (rest as UserSettings);
+/** `settings` without the retired keys (`RETIRED_SETTINGS_KEYS`). */
+function withoutRetiredKeys(settings: Record<string, unknown>): Record<string, unknown> {
+  if (!RETIRED_SETTINGS_KEYS.some(k => k in settings)) return settings;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(settings)) {
+    if (!RETIRED_SETTINGS_KEYS.includes(k)) out[k] = v;
+  }
+  return out;
 }
 
 /**
- * A user whose `sidebar_groups` setting had ids salvaged out on load.
+ * A user whose `sidebar_groups` setting had ids salvaged out on load, or
+ * whose settings still hold what the 0.3.0 → 0.4.0 upgrade converts.
  *
  * The loader keeps the valid ids and lifts out the bad ones silently
  * (P7 — the sidebar must render); this is how doctor learns what was
  * dropped so it can report it (corruption-handling-guide § "what to add
  * to doctor"). `wholeValueDropped` is true when the value was not a
  * shaped object at all and degraded to "no customization" entirely.
+ * `olderLayout` is a pre-K158 value (no `version`), ignored for the
+ * default layout; `retiredPins` a `sidebar_pins` key, ignored (K160).
  */
 export interface SidebarGroupsDropReport {
   readonly userId: string;
   readonly path: string;
   readonly dropped: readonly SidebarGroupsDrop[];
   readonly wholeValueDropped: boolean;
+  readonly olderLayout: boolean;
+  readonly retiredPins: boolean;
 }
 
 /**
  * Scans every user's `settings.yaml` for a corrupt `sidebar_groups`
- * value and reports what salvage lifted out (SHL-45). Read-only.
+ * value and reports what salvage lifted out (SHL-45), and for what the
+ * 0.3.0 → 0.4.0 upgrade converts (a pre-K158 value, a `sidebar_pins`
+ * key; K160). Read-only.
  *
  * Reads the raw YAML rather than the loaded settings: by the time
  * `loadUserSettings` has run, the salvage has already happened and the
  * dropped ids are gone. A user with a clean (or absent) setting produces
- * no report. A settings file that will not parse as YAML, or is not an
- * object, is skipped silently — doctor's own users/ scan owns that, and
- * a non-object settings file is not specifically a `sidebar_groups` fault.
+ * no report. A settings file that will not parse as YAML is skipped here
+ * and reported by `collectUnreadableSettings`; one that is not an object
+ * is not specifically a `sidebar_groups` fault.
  */
 export async function collectSidebarGroupsDrops(
   locttDir: string,
@@ -230,14 +244,18 @@ export async function collectSidebarGroupsDrops(
       // Unparseable settings — not attributable to sidebar_groups.
       continue;
     }
-    if (!isPlainObject(parsed) || !("sidebar_groups" in parsed)) continue;
+    if (!isPlainObject(parsed)) continue;
+    const retiredPins = "sidebar_pins" in parsed;
+    if (!("sidebar_groups" in parsed) && !retiredPins) continue;
     const salvaged = salvageSidebarGroups(parsed["sidebar_groups"]);
-    if (salvaged.dropped.length === 0 && !salvaged.wholeValueDropped) continue;
+    if (salvaged.dropped.length === 0 && !salvaged.wholeValueDropped && !salvaged.olderLayout && !retiredPins) continue;
     reports.push({
       userId: entry.name,
       path,
       dropped: salvaged.dropped,
       wholeValueDropped: salvaged.wholeValueDropped,
+      olderLayout: salvaged.olderLayout,
+      retiredPins,
     });
   }
   return reports;
@@ -291,4 +309,45 @@ export async function collectKeyboardShortcutsDrops(
     });
   }
   return reports;
+}
+
+/** A user's `settings.yaml` that cannot be read or parsed as YAML. */
+export interface UnreadableSettingsReport {
+  readonly userId: string;
+  readonly path: string;
+  readonly error: string;
+}
+
+/**
+ * Scans every user's `settings.yaml` for a file that cannot be read or
+ * does not parse as YAML. Read-only. `loadUserSettings` throws on such a
+ * file, and the 0.3.0 → 0.4.0 upgrade step leaves it as it is (K160), so
+ * doctor names it (corruption-handling-guide rule 4). An empty file is
+ * not a fault: it loads as no settings.
+ */
+export async function collectUnreadableSettings(
+  locttDir: string,
+): Promise<UnreadableSettingsReport[]> {
+  const dir = getUsersDir(locttDir);
+  if (!(await fileExists(dir))) return [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  const reports: UnreadableSettingsReport[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const path = getUserSettingsPath(locttDir, entry.name);
+    if (!(await fileExists(path))) continue;
+    try {
+      const raw = await readFile(path, "utf-8");
+      if (raw.trim() === "") continue;
+      parseYaml(raw);
+    } catch (err) {
+      reports.push({ userId: entry.name, path, error: firstLine(err) });
+    }
+  }
+  return reports;
+}
+
+function firstLine(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (msg.split("\n")[0] ?? msg).trim();
 }

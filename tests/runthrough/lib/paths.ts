@@ -20,6 +20,14 @@ export const seedIndexPath = path.join(seedRoot, "seed-index.json");
 /** The seed frozen at format 0.1.0, for the upgrade cases (B41). */
 export const frozenSeedLoctt = path.join(repoRoot, "tests/fixtures/trackers/seed-0.1.0/.loctt");
 
+/**
+ * The seed frozen at format 0.3.0, for the 0.3.0 → 0.4.0 cases (B54,
+ * K160). Its users' pre-K158 settings live beside it in `user-settings/`
+ * (a tracker's `.gitignore` keeps `users/*\/settings.yaml` out of git);
+ * `freshTracker` installs them.
+ */
+export const frozenSeed030Loctt = path.join(repoRoot, "tests/fixtures/trackers/seed-0.3.0/.loctt");
+
 export const casesRoot = path.join(repoRoot, "tests/runthrough/cases");
 
 /** Per-test temp trackers are created here (gitignored). */

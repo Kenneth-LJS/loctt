@@ -10,7 +10,6 @@ import { getUserSettingsPath } from "../paths/index.js";
 import { loadUserSettings, saveUserSettings } from "./settings.js";
 import {
   forgetSavedViewInSidebar,
-  migrateLegacySidebarGroups,
   readSidebarGroups,
   resolveRenderedSidebarItems,
   resolveSidebarLayout,
@@ -48,13 +47,13 @@ function topIds(groups: SidebarOrderInput, views = VIEWS): string[] {
 
 describe("readSidebarGroups (K158 shape)", () => {
   it("returns the default (version only) when the setting is absent", () => {
-    expect(readSidebarGroups(undefined, VIEWS)).toEqual({ version: 2 });
-    expect(readSidebarGroups({}, VIEWS)).toEqual({ version: 2 });
+    expect(readSidebarGroups(undefined)).toEqual({ version: 2 });
+    expect(readSidebarGroups({})).toEqual({ version: 2 });
   });
 
   it("returns a clean K158 value unchanged", () => {
     const stored = withGroups({ version: 2, order: ["labels", "views", "view:bugs", "overdue"], hidden: ["view:mine"] });
-    expect(readSidebarGroups(stored, VIEWS)).toEqual({
+    expect(readSidebarGroups(stored)).toEqual({
       version: 2,
       order: ["labels", "views", "view:bugs", "overdue"],
       hidden: ["view:mine"],
@@ -64,17 +63,17 @@ describe("readSidebarGroups (K158 shape)", () => {
   it("drops an unknown id rather than discarding the whole setting", () => {
     // @verifies SHL-45 — degrade on an unknown group id
     const stored = withGroups({ version: 2, order: ["labels", "not-a-group", "projects"] });
-    expect(readSidebarGroups(stored, VIEWS)).toEqual({ version: 2, order: ["labels", "projects"] });
+    expect(readSidebarGroups(stored)).toEqual({ version: 2, order: ["labels", "projects"] });
   });
 
   it("de-dups a repeated id rather than failing", () => {
     // @verifies SHL-45 — degrade on a duplicate group id
     const stored = withGroups({ version: 2, order: ["labels", "labels", "projects"] });
-    expect(readSidebarGroups(stored, VIEWS)).toEqual({ version: 2, order: ["labels", "projects"] });
+    expect(readSidebarGroups(stored)).toEqual({ version: 2, order: ["labels", "projects"] });
   });
 
   it("treats a wrong-shaped value as no customization", () => {
-    const bad = (v: unknown) => readSidebarGroups(withGroups(v), VIEWS);
+    const bad = (v: unknown) => readSidebarGroups(withGroups(v));
     expect(bad("banana")).toEqual({ version: 2 });
     expect(bad(42)).toEqual({ version: 2 });
     expect(bad(["a", "b"])).toEqual({ version: 2 });
@@ -117,11 +116,19 @@ describe("salvageSidebarGroups records every drop so doctor can name it", () => 
     expect(r.dropped).toContainEqual({ list: "order", id: "version 9", reason: "malformed" });
   });
 
-  it("K158: a clean pre-K158 value is not a drop (it is migrated, not corrupt)", () => {
-    // @verifies SHL-54
-    const r = salvageSidebarGroups({ order: ["saved-filters", "filters"], hidden: ["views"] });
-    expect(r.dropped).toEqual([]);
+  it("K160: a value without `version` (the pre-K158 layout) is ignored whole and flagged, not salvaged per id", () => {
+    // @verifies SHL-54 — after the 0.3.0 → 0.4.0 step the reader knows
+    // only the K158 shape; an old one reads as the default layout.
+    const r = salvageSidebarGroups({ order: ["saved-filters", "filters", "labels"], hidden: ["views"] });
+    expect(r.groups).toEqual({ version: 2 });
+    expect(r.olderLayout).toBe(true);
     expect(r.wholeValueDropped).toBe(false);
+    expect(r.dropped).toEqual([]);
+    // Even one made only of K158 ids: without `version: 2` it is not K158.
+    expect(salvageSidebarGroups({ order: ["labels"] })).toMatchObject({ groups: { version: 2 }, olderLayout: true });
+    expect(salvageSidebarGroups({})).toMatchObject({ groups: { version: 2 }, olderLayout: true });
+    // A K158 value is not flagged.
+    expect(salvageSidebarGroups({ version: 2, order: ["labels"] }).olderLayout).toBe(false);
   });
 });
 
@@ -209,82 +216,6 @@ describe("sidebarSavedViews (the default order a saved view takes)", () => {
   });
 });
 
-/** @verifies SHL-54 (K158: pre-K158 settings migrate on read, keeping order and hidden flags) */
-describe("migrateLegacySidebarGroups (K158)", () => {
-  const migrate = (legacy: unknown, views = VIEWS) => readSidebarGroups(withGroups(legacy), views);
-
-  it("an empty legacy value: Views takes the Saved views slot, and the saved views lead (they rendered above Filters)", () => {
-    // Default pre-K158 order was views, projects, saved-filters, filters, ...:
-    // Saved views rendered ABOVE Filters, so saved views lead the children.
-    const g = migrate({});
-    expect(topIds(g)).toEqual(["layouts", "projects", "views", "milestones", "sprints", "labels", "recents"]);
-    expect(childIds(g)).toEqual(["view:bugs", "view:mine", ...BUILTINS]);
-  });
-
-  it("renames the switcher: legacy `views` (List/Board/Timeline) becomes `layouts`, same place, same hidden flag", () => {
-    const g = migrate({ order: ["labels", "views"], hidden: ["views"] });
-    expect(topIds(g).slice(0, 2)).toEqual(["labels", "layouts"]);
-    expect(g.hidden).toContain("layouts");
-    expect(g.hidden).not.toContain("views");
-  });
-
-  it("places Views where the EARLIER of Filters and Saved views sat, built-ins leading when Filters came first", () => {
-    const g = migrate({ order: ["filters", "projects", "saved-filters"] });
-    expect(topIds(g).slice(0, 2)).toEqual(["views", "projects"]);
-    expect(childIds(g)).toEqual([...BUILTINS, "view:bugs", "view:mine"]);
-  });
-
-  it("keeps the built-ins' own stored order and hidden flags", () => {
-    const g = migrate({ order: ["overdue", "assigned-to-me", "filters"], hidden: ["high-priority"] });
-    expect(childIds(g).slice(0, 2)).toEqual(["overdue", "assigned-to-me"]);
-    expect(g.hidden).toEqual(["high-priority"]);
-  });
-
-  it("a retired sidebar_pins value seeds the saved views' order once (K159)", () => {
-    const withPins = (v: unknown, pins: unknown): UserSettings =>
-      ({ sidebar_groups: v, sidebar_pins: pins } as unknown as UserSettings);
-    const legacy = { order: ["filters", "saved-filters"] };
-    const g = readSidebarGroups(withPins(legacy, ["mine", "gone"]), VIEWS);
-    expect(childIds(g).slice(-2)).toEqual(["view:mine", "view:bugs"]);
-    // No pins, or a value that is not a list of ids: queries.yaml order.
-    expect(childIds(readSidebarGroups(withPins(legacy, undefined), VIEWS)).slice(-2)).toEqual(["view:bugs", "view:mine"]);
-    expect(childIds(readSidebarGroups(withPins(legacy, "mine"), VIEWS)).slice(-2)).toEqual(["view:bugs", "view:mine"]);
-    // A K158 value ignores pins.
-    const v2 = { version: 2, order: ["views", "view:bugs", "view:mine"] };
-    expect(childIds(readSidebarGroups(withPins(v2, ["mine"]), VIEWS)).slice(0, 2)).toEqual(["view:bugs", "view:mine"]);
-  });
-
-  it("a hidden Filters group hides each built-in, and the saved views stay visible", () => {
-    const g = migrate({ hidden: ["filters"] });
-    const items = resolveRenderedSidebarItems(g, VIEWS);
-    expect(items.find(i => i.id === "views")?.hidden).toBe(false);
-    expect(items.filter(i => i.hidden).map(i => i.id).sort()).toEqual([...BUILTINS].sort());
-  });
-
-  it("a hidden Saved views group hides each saved view, and the built-ins stay visible", () => {
-    const g = migrate({ hidden: ["saved-filters"] });
-    const items = resolveRenderedSidebarItems(g, VIEWS);
-    expect(items.filter(i => i.hidden).map(i => i.id)).toEqual(["view:bugs", "view:mine"]);
-  });
-
-  it("both hidden: the Views group is hidden, and each built-in keeps only its own flag", () => {
-    const g = migrate({ hidden: ["filters", "saved-filters", "overdue"] });
-    expect(g.hidden).toEqual(["views", "overdue"]);
-  });
-
-  it("the pre-K125 flat order (a built-in id at the top level, no `filters`) still places Views there (A339)", () => {
-    const g = migrate({ order: ["overdue", "projects", "labels", "saved-filters"] });
-    expect(topIds(g).slice(0, 3)).toEqual(["views", "projects", "labels"]);
-    expect(childIds(g)[0]).toBe("overdue");
-  });
-
-  it("is written in the K158 shape and reads back unchanged (the migration runs once)", () => {
-    const g = migrateLegacySidebarGroups({ order: ["saved-filters", "filters"] }, VIEWS);
-    expect(g.version).toBe(2);
-    expect(readSidebarGroups(withGroups(g), [])).toEqual(g);
-  });
-});
-
 describe("validateSidebarIds (write paths)", () => {
   it("accepts group, built-in and existing saved-view ids; refuses the rest, naming them", () => {
     const r = validateSidebarIds(["views", "overdue", "view:bugs", "view:nope", "saved-filters", "layouts", "layouts"], VIEWS);
@@ -333,23 +264,24 @@ describe("sidebar_groups round-trips through settings.yaml", () => {
       sidebar_groups: { version: 2, order: ["labels", "view:bugs"], hidden: ["sprints"] },
     } as UserSettings);
     const reloaded = await loadUserSettings(locttDir, USER_ID);
-    expect(readSidebarGroups(reloaded, VIEWS)).toEqual({
+    expect(readSidebarGroups(reloaded)).toEqual({
       version: 2,
       order: ["labels", "view:bugs"],
       hidden: ["sprints"],
     });
   });
 
-  it("K158: a pre-K158 value on disk still loads, untouched, and is migrated when read", async () => {
-    // @verifies SHL-54
+  it("K160: a pre-K158 value on disk loads as the default layout, and the other settings still load", async () => {
+    // @verifies SHL-54 — the upgrade step converts it; one left after
+    // that is corrupt (field-local: only the layout falls back).
     const path = getUserSettingsPath(locttDir, USER_ID);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "theme: dark\nsidebar_groups:\n  order: [filters, saved-filters]\n  hidden: [views]\n", "utf-8");
     const settings = await loadUserSettings(locttDir, USER_ID);
-    expect(settings.sidebar_groups).toEqual({ order: ["filters", "saved-filters"], hidden: ["views"] });
-    const g = readSidebarGroups(settings, VIEWS);
-    expect(g.hidden).toEqual(["layouts"]);
-    expect(childIds(g)[0]).toBe("assigned-to-me");
+    expect(settings.theme).toBe("dark");
+    expect(settings.sidebar_groups).toBeUndefined();
+    expect(readSidebarGroups(settings)).toEqual({ version: 2 });
+    expect(topIds(readSidebarGroups(settings))).toEqual([...SIDEBAR_GROUP_IDS]);
   });
 
   it("salvages a hand-corrupted sidebar_groups per-field without locking the file", async () => {
@@ -364,7 +296,7 @@ describe("sidebar_groups round-trips through settings.yaml", () => {
     );
     const settings = await loadUserSettings(locttDir, USER_ID);
     expect(settings.theme).toBe("dark");
-    expect(readSidebarGroups(settings, VIEWS)).toEqual({ version: 2, order: ["labels", "projects"] });
+    expect(readSidebarGroups(settings)).toEqual({ version: 2, order: ["labels", "projects"] });
   });
 
   it("degrades a wholly-unshaped sidebar_groups to default (nothing to salvage)", async () => {
@@ -374,7 +306,7 @@ describe("sidebar_groups round-trips through settings.yaml", () => {
     await writeFile(path, "theme: dark\nsidebar_groups: banana\n", "utf-8");
     const settings = await loadUserSettings(locttDir, USER_ID);
     expect(settings.theme).toBe("dark");
-    expect(readSidebarGroups(settings, VIEWS)).toEqual({ version: 2 });
+    expect(readSidebarGroups(settings)).toEqual({ version: 2 });
   });
 });
 

@@ -12,7 +12,7 @@ import { parse as parseYaml } from "yaml";
 
 import type { McpClient } from "../../integration/adapters/mcp-stdio.ts";
 import { bilateralViolations, describeCheck, gitRev, runCheck, touchedLinkTaskIds } from "./checks.ts";
-import { frozenSeedLoctt } from "./paths.ts";
+import { frozenSeed030Loctt, frozenSeedLoctt } from "./paths.ts";
 import type { Capture, Case, Check, McpCall, Step, SurfaceName } from "./schema.ts";
 import { blankTracker, freshTracker } from "./seed.ts";
 import { type Snapshot,snapshot } from "./snapshot.ts";
@@ -90,7 +90,8 @@ async function prepare(c: Case, seed: SeedIndex, surface: SurfaceName): Promise<
     root = blank.root;
     if (blank.remote !== undefined) vars["remote"] = blank.remote;
   } else {
-    root = await freshTracker(seed, `${c.id}-${surface}`, c.seed === "0.1.0" ? frozenSeedLoctt : undefined);
+    const from = c.seed === "0.1.0" ? frozenSeedLoctt : c.seed === "0.3.0" ? frozenSeed030Loctt : undefined;
+    root = await freshTracker(seed, `${c.id}-${surface}`, from);
     if (c.git !== undefined) {
       return { state: { root, vars, knownSeen: [] }, failures: [{ caseId: c.id, surface, step: "setup", check: "git", message: "`git` is supported with seed `empty` or `none` only" }] };
     }
@@ -255,7 +256,7 @@ async function verifyStep(
       // An error step that changed nothing cannot have added a doctor
       // finding: the tracker is the one the previous step (or the seed)
       // left, which doctor already judged. Skipping the run matters for
-      // the 0.1.0 seed (K154): a refused command leaves it at 0.1.0,
+      // the 0.1.0 and 0.3.0 seeds (K154): a refused command leaves it older,
       // whose findings (the pending upgrade) the current seed's baseline
       // does not have.
       if (unchanged.length === 0) skipDoctor = true;

@@ -1081,7 +1081,7 @@ describe("Sidebar groups customization (SHL-45)", () => {
   it("renders groups in the configured order", async () => {
     // @verifies SHL-45
     // Default order has Projects before Labels; a custom order flips them.
-    SETTINGS = { sidebar_groups: { order: ["labels", "projects"] } };
+    SETTINGS = { sidebar_groups: { version: 2, order: ["labels", "projects"] } };
     await renderSidebarAt("/list");
     // The settings query settles after the first (default-order) render,
     // so wait until the custom order takes effect.
@@ -1097,7 +1097,7 @@ describe("Sidebar groups customization (SHL-45)", () => {
 
   it("does not render a hidden group", async () => {
     // @verifies SHL-45 — a user-hidden group is absent, not an empty affordance
-    SETTINGS = { sidebar_groups: { hidden: ["labels"] } };
+    SETTINGS = { sidebar_groups: { version: 2, hidden: ["labels"] } };
     await renderSidebarAt("/list");
     // Wait for the settings-driven re-render to hide the group.
     await waitFor(() => {
@@ -1154,20 +1154,22 @@ describe("Sidebar groups customization (SHL-45)", () => {
     });
   });
 
-  it("K158: a pre-K158 setting renders migrated (one Views section where the earlier old section sat)", async () => {
-    // @verifies SHL-54 — the K125-era value: Filters first, above
-    // Projects; a hidden saved-views group hides each saved view.
-    SETTINGS = { sidebar_groups: { order: ["filters", "projects", "saved-filters"], hidden: ["saved-filters"] } };
+  it("K160: a pre-K158 setting is no longer migrated on read: the sidebar shows the default layout", async () => {
+    // @verifies SHL-54 — the 0.3.0 → 0.4.0 step converts it on disk; one
+    // left after that (the loader drops it, this guards the client too)
+    // renders the default, never the old ids' meanings.
+    // In the old shape `views` was the List / Board / Timeline switcher:
+    // read as K158 ids it would hide the whole Views section and put
+    // Labels first. It must do neither.
+    SETTINGS = { sidebar_groups: { order: ["labels", "views"], hidden: ["views"] } };
     await renderSidebarAt("/list");
-    await waitFor(() => {
-      const viewsHeader = screen.getByText("Views");
-      const projectsHeader = screen.getByText("Projects");
-      expect(
-        viewsHeader.compareDocumentPosition(projectsHeader)
-          & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-      expect(screen.queryByText("My open bugs")).toBeNull();
-    });
+    await screen.findByText("My open bugs");
+    const projectsHeader = screen.getByText("Projects");
+    const viewsHeader = screen.getByText("Views");
+    const labelsHeader = screen.getByText("Labels");
+    // Default order: Projects above Views above Labels, and every view visible.
+    expect(projectsHeader.compareDocumentPosition(viewsHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(viewsHeader.compareDocumentPosition(labelsHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     screen.getByText("Overdue");
   });
 

@@ -1,16 +1,18 @@
 id: upgrade-intentional
-name: A 0.1.0 tracker is refused until the user upgrades it, then every link is ranked as it was shown
+name: A 0.1.0 tracker is refused until the user upgrades it to 0.4.0, then every link is ranked as it was shown
 description: >
   K154 (renamed from upgrade-on-first-use, which asserted K143's automatic
   upgrade): a command on a tracker at format 0.1.0 is refused with the
   upgrade message and changes nothing. Upgrading is a deliberate step
   (`loctt migrate --yes`, MCP `migrate_schema` with confirm), which backs up
-  first and runs the 0.1.0 → 0.3.0 step. Every link gets a rank in the
+  first and runs the 0.1.0 → 0.3.0 step, then 0.3.0 → 0.4.0 (K160, the
+  sidebar settings step; this seed has no user settings, so it changes
+  nothing here: upgrade-sidebar-settings covers it). Every link gets a rank in the
   order 0.1.0 showed it (the check script compares against the frozen
   seed), the retired `ranked` setting is removed, and doctor is as clean as
   the current seed. Starts from the frozen 0.1.0 seed, whose
   ${task.epic_search.key} lists its reranked child first.
-tags: [upgrade, b41, b48]
+tags: [upgrade, b41, b48, b54]
 seed: "0.1.0"
 pre:
   - yaml: { file: .schema-version, equals: "0.1.0" }
@@ -27,16 +29,17 @@ steps:
     expect_error:
       cli:
         exit_code: 1
-        message: "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)."
+        message: "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first)."
       mcp:
-        message: "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)."
+        message: "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first)."
   - name: the user upgrades it on purpose
     cli: migrate --yes
     mcp:
       call: { tool: migrate_schema, args: { confirm: true } }
     post:
-      - output: { contains: ["Upgraded this tracker from 0.1.0 to 0.3.0.", ".loctt.backup-v0.1.0-"] }
-      - yaml: { file: .schema-version, equals: "0.3.0" }
+      - output: { contains: ["Upgraded this tracker from 0.1.0 to 0.4.0.", ".loctt.backup-v0.1.0-"] }
+      - output: { surface: cli, contains: ["1. 0.1.0 → 0.3.0", "2. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout"] }
+      - yaml: { file: .schema-version, equals: "0.4.0" }
       - yaml: { file: config/workflow.yaml, path: "relationships[key=blocks].ranked", absent: true }
       - yaml: { file: config/workflow.yaml, path: "relationships[key=parent].ranked", absent: true }
       - relationship_order:

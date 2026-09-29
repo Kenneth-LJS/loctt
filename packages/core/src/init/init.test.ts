@@ -224,7 +224,7 @@ describe("initLoctt", () => {
     const raw = (await readFile(versionPath, "utf-8")).trim();
     // K142: the format version, the release that introduced the format.
     expect(raw).toBe(CURRENT_SCHEMA_VERSION);
-    expect(raw).toBe("0.3.0");
+    expect(raw).toBe("0.4.0");
     expect(result.created.some(f => f.endsWith(".schema-version"))).toBe(true);
   });
 });
@@ -370,7 +370,11 @@ describe("initLoctt repair — .schema-version lost", () => {
     body: "",
   });
 
-  async function repairedStamp(rels: [{ type: string; target: string; rank?: string }[], { type: string; target: string; rank?: string }[]], workflowExtra?: string): Promise<string> {
+  async function repairedStamp(
+    rels: [{ type: string; target: string; rank?: string }[], { type: string; target: string; rank?: string }[]],
+    workflowExtra?: string,
+    extra?: (locttDir: string) => Promise<void>,
+  ): Promise<string> {
     const root = await mkdtemp(join(tmpdir(), "loctt-repair-ver-"));
     try {
       await initLoctt(root, { docs: false, timezone: "UTC" });
@@ -383,6 +387,7 @@ describe("initLoctt repair — .schema-version lost", () => {
         const raw = await readFile(wf, "utf-8");
         await writeFile(wf, raw.replace(/(\n {2}- key: blocks\n)/, `$1${workflowExtra}`), "utf-8");
       }
+      if (extra !== undefined) await extra(locttDir);
       await rm(join(locttDir, ".schema-version"));
       await rm(join(locttDir, "state.yaml"));
       await initLoctt(root, { repair: true, timezone: "UTC" });
@@ -404,6 +409,21 @@ describe("initLoctt repair — .schema-version lost", () => {
       [{ type: "blocks", target: B, rank: "u" }],
       [{ type: "is_blocked_by", target: A }],
     ])).toBe("0.1.0");
+  });
+
+  // K160 (A372): ranked, but a user's settings still hold what the
+  // 0.3.0 → 0.4.0 step converts: stamp 0.3.0 so `loctt migrate` runs it.
+  it("stamps 0.3.0 when every link is ranked but a user's settings are in the pre-K158 layout", async () => {
+    const { writeFile: write, mkdir: mk } = await import("node:fs/promises");
+    const stamp = await repairedStamp([
+      [{ type: "blocks", target: B, rank: "u" }],
+      [{ type: "is_blocked_by", target: A, rank: "u" }],
+    ], undefined, async (locttDir) => {
+      const dir = join(locttDir, "users", "01J00000000000000000000USR");
+      await mk(dir, { recursive: true });
+      await write(join(dir, "settings.yaml"), "sidebar_pins: [x]\n", "utf-8");
+    });
+    expect(stamp).toBe("0.3.0");
   });
 
   it("stamps 0.1.0 when workflow.yaml still sets the retired `ranked`", async () => {

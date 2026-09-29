@@ -6,6 +6,31 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+### 0.4.0: run `loctt migrate` once
+
+`loctt` 0.4.0 changes the tracker format to `0.4.0`. **Run `loctt migrate`
+(or press **Upgrade** in the web UI) once on each tracker**; until then
+every command, MCP tool and the web UI say "This tracker needs upgrading
+from 0.3.0 to 0.4.0." The upgrade backs `.loctt/` up first, then moves each
+person's sidebar settings to the one **Views** section: built-in and saved
+views keep the order and the hidden choices they had, pinned views lead
+the saved views, and the retired pinned-views setting is removed. Only
+the per-user `settings.yaml` files change. A tracker at 0.1.0 is upgraded
+through 0.3.0 to 0.4.0 in the same run.
+See [Upgrading](docs/user/common/upgrading.md).
+
+- Sidebar settings written before this release are no longer converted
+  each time they are read. One left in a settings file after the upgrade
+  (a hand edit, a restored copy) is ignored: the sidebar shows the default
+  layout, and `loctt doctor` names the file and says to reset the layout
+  (Settings → Customize sidebar → Reset to default, or
+  `loctt user sidebar-groups --reset`). A `sidebar_pins` line is likewise
+  ignored and reported, and goes the next time the settings are saved.
+- A backup taken at format 0.3.0 can't be restored by 0.4.0; restore it
+  with the release that took it, then upgrade the tracker.
+
+### Format 0.3.0 (ordered links)
+
 This release changes the tracker format (to `0.3.0`). **Before you use it
 on a tracker made by `loctt` 0.2.x or earlier, change
 `.loctt/.schema-version` from `1` to `0.1.0` once** (on every machine and

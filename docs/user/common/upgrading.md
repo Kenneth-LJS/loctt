@@ -31,14 +31,16 @@ asking your agent to). A backup is made first.
 Your tracker records the format it was written in, in
 `.loctt/.schema-version`. The format version is the `loctt` release that
 introduced that format: `0.1.0` is the first format, `0.3.0` the one where
-every link keeps its order. A `loctt` release reads and writes the newest
-format at or below its own version, so `loctt` 0.3.x writes `0.3.0`.
+every link keeps its order, `0.4.0` the one where sidebar settings use the
+one Views section. A `loctt` release reads and writes the newest format at
+or below its own version, so `loctt` 0.3.x writes `0.3.0` and 0.4.x writes
+`0.4.0`.
 
 A tracker in a newer format than your `loctt` reads is refused on every
 command, naming the release to install:
 
 ```
-Error: This tracker needs loctt 0.4.0 or newer.
+Error: This tracker needs loctt 0.5.0 or newer.
 ```
 
 Update `loctt`; a newer format cannot be moved back.
@@ -54,7 +56,7 @@ Change it once, by hand, to `0.1.0`:
 printf '0.1.0\n' > .loctt/.schema-version
 ```
 
-Then upgrade it to `0.3.0` as described below (`loctt migrate`). Do the
+Then upgrade it as described below (`loctt migrate`). Do the
 same on every machine and every clone of the tracker.
 
 ## Upgrading a tracker
@@ -63,7 +65,7 @@ When your tracker is older than your `loctt`, every command, tool call and
 web request refuses to run and changes nothing:
 
 ```
-Error: This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).
+Error: This tracker needs upgrading from 0.3.0 to 0.4.0. Run `loctt migrate` (a backup is made first).
 ```
 
 Upgrading is always your decision, on every surface. On a tracker shared
@@ -71,7 +73,7 @@ through git, whoever upgrades first moves everyone to the new format, so
 it is worth agreeing when to do it.
 
 `loctt doctor` and `loctt info` still run, and say the same thing
-(`needs upgrading from 0.1.0 to 0.3.0`). Neither writes anything while an
+(`needs upgrading from 0.3.0 to 0.4.0`). Neither writes anything while an
 upgrade is pending: doctor's repairs (`--fix`, `--rebuild-index`,
 `--repair-relationships`) are skipped and say why.
 
@@ -84,11 +86,13 @@ loctt migrate
 It shows what it will do, then asks:
 
 ```
-This tracker needs upgrading from 0.1.0 to 0.3.0.
+This tracker needs upgrading from 0.1.0 to 0.4.0.
 
 Steps:
   1. 0.1.0 → 0.3.0  Save the order of every task's links
      Each task's links keep the order they are shown in today, and that order is saved so you can rearrange them. …
+  2. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout
+     Each person's sidebar settings are saved in the one Views section: …
 
 Before any step runs, .loctt/ is copied to a backup beside it:
   /path/to/.loctt.backup-v0.1.0-<date and time>
@@ -122,6 +126,10 @@ If two upgrades start at once (two terminals, or the web button and a
 terminal), the tracker is upgraded once; the other says it is already
 current, or that another process is upgrading it.
 
+An older tracker runs every step between its format and the current one,
+in order, in one upgrade and after one backup: a `0.1.0` tracker goes
+through `0.3.0` to `0.4.0`.
+
 ### The 0.1.0 → 0.3.0 upgrade
 
 This upgrade gives every link a stored position (a rank), in the order the
@@ -130,6 +138,38 @@ tasks list exactly as before. It also removes the `ranked:` lines from
 `workflow.yaml`'s relationships, a setting that no longer does anything
 because every kind of link is now ordered. Task files change only in their
 `relationships`; `updated_at` and the task history are left alone.
+
+### The 0.3.0 → 0.4.0 upgrade
+
+This upgrade rewrites each person's sidebar settings
+(`.loctt/users/<id>/settings.yaml`) for the one **Views** section, which
+holds the built-in views (Assigned to me, Overdue, …) and your saved views
+together, so the sidebar looks as it did:
+
+- Views sits where the earlier of the old **Filters** and **Saved views**
+  sections sat, and lists their views in the order they showed.
+- What you hid stays hidden: a hidden section's views are each hidden, and
+  Views itself is hidden only if both old sections were.
+- Pinned views lead your saved views, in pin order. Pinned views are
+  retired, so the pinned-views setting (`sidebar_pins`) is removed. A
+  person who pinned views but never customized the sidebar gets a layout
+  with the pinned views first.
+- The List / Board / Timeline switcher keeps its place and is now called
+  **Layouts** in Settings → Customize sidebar.
+- Every other setting (theme, editor mode, card layout, …) is left as it
+  is. A settings file with neither sidebar setting is not touched.
+
+A settings file LocTT cannot read, or whose sidebar setting is damaged, is
+left exactly as it is, and `loctt doctor` names it after the upgrade. The
+settings files are per machine (they are not synced through git), so each
+machine's upgrade converts its own.
+
+After the upgrade LocTT reads only the new layout. An old-style sidebar
+setting that turns up later (a hand edit, a restored copy) is ignored: the
+sidebar shows the default layout and `loctt doctor` names the file. Reset
+the layout (Settings → Customize sidebar → **Reset to default**, or
+`loctt user sidebar-groups --reset`), or, if the tracker itself is older,
+run `loctt migrate`.
 
 ## The safety model
 
@@ -169,6 +209,9 @@ branch, and LocTT keeps the two sides from corrupting each other:
   are ranked as it applies them, after the ranked links of their kind.
   From a branch whose `.schema-version` is older than `0.3.0`, every link
   it brings is ranked in the order that branch showed it.
+- Personal settings (`users/<id>/settings.yaml`) are never synced, so the
+  `0.4.0` upgrade converts them on each machine when that machine
+  upgrades.
 
 The rule: **everyone on a shared tracker upgrades `loctt` on their own
 machine** (editing `.schema-version` from `1` to `0.1.0` first when coming

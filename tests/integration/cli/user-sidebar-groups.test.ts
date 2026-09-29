@@ -104,7 +104,7 @@ describe("CLI user sidebar-groups (spawned binary)", () => {
     await withTmpLoctt(async ({ root }) => {
       await writeFile(
         await settingsPath(root),
-        "theme: dark\nsidebar_groups:\n  hidden: [labels]\n",
+        "theme: dark\nsidebar_groups:\n  version: 2\n  hidden: [labels]\n",
         "utf8",
       );
       const result = await runCli(["user", "sidebar-groups", "--reset"], { cwd: root });
@@ -116,57 +116,67 @@ describe("CLI user sidebar-groups (spawned binary)", () => {
     });
   });
 
-  // @verifies SHL-54 — K158 (was A346's pre-K125 case): a setting written
-  // before K158 is migrated on read the way the sidebar renders it. The
-  // switcher's old id `views` reads back as `layouts`; the old Filters and
-  // Saved views groups are one `views` group where the earlier sat.
-  it("K158: migrates a pre-K158 stored order the way the sidebar renders it", async () => {
+  // @verifies SHL-54 — K160 (was B52's read-time migration test): after the
+  // 0.3.0 → 0.4.0 step the reader knows only the K158 shape. A pre-K158
+  // value left in the file reads as the default layout, and doctor names
+  // the file with the remedy that fits (this tracker is current: reset).
+  it("K160: a pre-K158 stored order is not migrated on read: the default layout, and doctor names the file", async () => {
     await withTmpLoctt(async ({ root }) => {
-      const created = await runCli(["views", "create", "Open bugs"], { cwd: root });
-      const viewId = /id (\S+)\)/.exec(created.stdout)?.[1];
-      expect(viewId).toBeDefined();
-      await writeFile(
-        await settingsPath(root),
-        "sidebar_groups:\n  order: [overdue, projects, views, saved-filters]\n  hidden: [views]\n",
-        "utf8",
-      );
+      const file = await settingsPath(root);
+      await writeFile(file, "theme: dark\nsidebar_groups:\n  order: [overdue, projects, views, saved-filters]\n  hidden: [views]\n", "utf8");
       const result = await runCli(["user", "sidebar-groups"], { cwd: root });
       expect(result.exitCode).toBe(0);
-      const lines = result.stdout.trim().split("\n");
-      const ids = lines.map(l => l.split("\t")[0]);
-      // One Views group where the first built-in sat (A339's rule), the
-      // built-ins first (Filters rendered above Saved views), then the
-      // saved views (init's seed view, then the one created here).
-      expect(ids.slice(0, 3)).toEqual(["views", "overdue", "assigned-to-me"]);
-      expect(ids[7]?.startsWith("view:")).toBe(true);
-      expect(lines[8]).toBe(`view:${String(viewId)}\tvisible\tOpen bugs`);
-      expect(ids.slice(9, 11)).toEqual(["projects", "layouts"]);
-      expect(result.stdout).toContain("layouts\thidden");
-      expect(ids).not.toContain("filters");
-      expect(ids).not.toContain("saved-filters");
+      const ids = result.stdout.trim().split("\n").map(l => l.split("\t")[0]);
+      expect(ids.slice(0, 3)).toEqual(["layouts", "projects", "views"]);
+      expect(result.stdout).toContain("layouts\tvisible");
+      expect(result.stdout).not.toContain("\thidden");
+      const doctor = await runCli(["doctor"], { cwd: root });
+      expect(doctor.stdout).toContain(file);
+      expect(doctor.stdout).toMatch(/"sidebar_groups" is in the layout loctt wrote before 0\.4\.0/);
+      expect(doctor.stdout).toContain("loctt user sidebar-groups --reset");
+      // The remedy works: a reset removes it and the finding.
+      expect((await runCli(["user", "sidebar-groups", "--reset"], { cwd: root })).exitCode).toBe(0);
+      expect((await runCli(["doctor"], { cwd: root })).stdout).not.toMatch(/sidebar_groups/);
     });
   });
 
-  // @verifies SHL-54 — K159: a retired `sidebar_pins` value seeds the
-  // migration once, and the write that stores the K158 shape drops it.
-  it("K159: a retired sidebar_pins value orders the saved views in the migration, then the next write drops it", async () => {
+  // @verifies ONB-C23
+  // @verifies SHL-54 — K160 (was B53's pins-seed test): on a tracker still
+  // at 0.3.0 with a pre-K158 layout and pins, every command is refused
+  // until `loctt migrate --yes`; after it, sidebar-groups reads the
+  // converted layout (pins leading the saved views) and the old keys are gone.
+  it("K160: after loctt migrate, sidebar-groups reads the converted layout with the pinned view first", async () => {
     await withTmpLoctt(async ({ root }) => {
       const created = await runCli(["views", "create", "Open bugs"], { cwd: root });
       const viewId = String(/id (\S+)\)/.exec(created.stdout)?.[1]);
       const file = await settingsPath(root);
-      await writeFile(file, `sidebar_pins:\n  - ${viewId}\nsidebar_groups:\n  order: [filters, saved-filters]\n`, "utf8");
-      const read = await runCli(["user", "sidebar-groups"], { cwd: root });
-      expect(read.exitCode).toBe(0);
-      const ids = read.stdout.trim().split("\n").map(l => l.split("\t")[0]);
-      expect(ids[7]).toBe(`view:${viewId}`);
-      expect(await readFile(file, "utf8")).toContain("sidebar_pins");
+      await writeFile(path.join(root, ".loctt", ".schema-version"), "0.3.0\n", "utf8");
+      await writeFile(file, `theme: dark\nsidebar_pins:\n  - ${viewId}\nsidebar_groups:\n  order: [filters, saved-filters]\n  hidden: [views]\n`, "utf8");
 
-      const write = await runCli(["user", "sidebar-groups", "--hidden", "overdue"], { cwd: root });
-      expect(write.exitCode).toBe(0);
+      const refused = await runCli(["user", "sidebar-groups"], { cwd: root });
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr + refused.stdout).toContain("This tracker needs upgrading from 0.3.0 to 0.4.0.");
+
+      const migrated = await runCli(["migrate", "--yes"], { cwd: root });
+      expect(migrated.exitCode).toBe(0);
+      expect(migrated.stdout).toContain("1. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout");
       const after = await readFile(file, "utf8");
       expect(after).not.toContain("sidebar_pins");
-      const reread = await runCli(["user", "sidebar-groups"], { cwd: root });
-      expect(reread.stdout.trim().split("\n").map(l => l.split("\t")[0])[7]).toBe(`view:${viewId}`);
+      expect(after).toContain("version: 2");
+      expect(after).toContain("theme: dark");
+
+      const read = await runCli(["user", "sidebar-groups"], { cwd: root });
+      expect(read.exitCode).toBe(0);
+      const lines = read.stdout.trim().split("\n");
+      const ids = lines.map(l => l.split("\t")[0]);
+      // Filters sat first: Views leads, the built-ins first, then the
+      // saved views with the pinned one leading init's seed view.
+      expect(ids.slice(0, 2)).toEqual(["views", "assigned-to-me"]);
+      expect(lines[7]).toBe(`view:${viewId}\tvisible\tOpen bugs`);
+      expect(ids[8]?.startsWith("view:")).toBe(true);
+      expect(read.stdout).toContain("layouts\thidden");
+      expect(ids).not.toContain("filters");
+      expect(ids).not.toContain("saved-filters");
     });
   });
 

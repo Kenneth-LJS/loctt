@@ -1,0 +1,19 @@
+---
+id: 01M3JSJPADAY11QFYYEZST7WH8
+key: WEB-17
+title: Publish API docs
+created_at: 2026-09-28T01:20:27.469Z
+updated_at: 2026-09-28T01:20:47.899Z
+project: 01M3JSJ5RKZ3TYC3J48FTRA6PV
+status: backlog
+task_type: task
+priority: medium
+labels:
+  - 01M3JSJ8PPPJRJYGS6QX12EK6N
+estimate: "2"
+milestone: 01M3JSJ9XTVVQT0EBTXQNVH4T8
+relationships:
+  - type: is_blocked_by
+    target: 01M3JSJNYW9VNP65VG99VM4GX4
+    rank: u
+---

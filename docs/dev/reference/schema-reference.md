@@ -11,7 +11,7 @@ All YAML files are written atomically (via `writeFileAtomically` / `writeYamlAto
   .gitignore                  # appended with ".loctt.backup-*"
   .loctt/
     .gitignore                # ignores .current-user and users/*/settings.yaml
-    .schema-version           # format version, semver (e.g. 0.3.0), K142
+    .schema-version           # format version, semver (e.g. 0.4.0), K142
     .schema-migration-in-progress  # sentinel, present only mid-migration
     .current-user             # per-checkout active user id (gitignored)
     state.yaml                # key allocation counters
@@ -1009,10 +1009,40 @@ editor_mode: source
 | `default_project` | string | no | Project the CLI creates into when `--project` is absent. Validated as a non-empty string; existence is *not* checked — a dangling reference falls back to the workspace default and is reported by `loctt doctor` |
 | `card_layout` | array of field names | no | Which fields a board card shows, **in render order**. Absent means the default layout; an explicit `[]` means title only |
 | `editor_mode` | `wysiwyg` \| `source` | no | Which body-editor mode to restore |
+| `sidebar_groups` | object, `version: 2` | no | The sidebar's order and hidden items (SHL-45, K158). See below |
 
 `card_layout` accepts: `key`, `status`, `priority`, `task_type`, `assignee`, `labels`, `due_date`, `estimate`, `milestone`, `sprint`. A repeated field is rejected — a field listed twice has no meaningful position.
 
 > `card_layout` is an **ordered array**, not a map of booleans. Position carries render order, so visibility and ordering are one setting rather than two. A map form (`{show_assignee: true, …}`) is rejected, so a hand-edited file using it fails loudly rather than rendering an empty card.
+
+### `sidebar_groups` (format 0.4.0, K158, K160)
+
+```yaml
+sidebar_groups:
+  version: 2
+  order: [labels, views, view:01HV3JQX5R7Y8Z2N4M6P8K0T1A, overdue, projects]
+  hidden: [sprints, high-priority]
+```
+
+| Key | Type | Description |
+|---|---|---|
+| `version` | `2` | Required. Marks the K158 id set |
+| `order` | array of ids | The ids the user placed, in render order. Group ids (`layouts` the List / Board / Timeline switcher, `projects`, `views`, `milestones`, `sprints`, `labels`, `recents`) order the sections; the Views group's children (the built-ins `assigned-to-me`, `reported-by-me`, `mentions-me`, `due-this-week`, `overdue`, `high-priority`, and `view:<id>` for a saved view) are ordered by their relative position. Anything unlisted follows in its default place; a new saved view appends |
+| `hidden` | array of ids | What the user hid. A hidden `views` hides every child |
+
+A repeated or unknown id, a non-list, a stray key or a `version` other
+than 2 drops alone on load (the rest applies) and `loctt doctor` names it.
+A `view:<id>` whose view no longer exists is skipped, not reported.
+
+**The pre-K158 shape** (no `version`; `views` meant the switcher, the
+built-ins sat under `filters` and saved views under `saved-filters`) and
+the retired **`sidebar_pins`** list (K159) are converted once by the
+0.3.0 → 0.4.0 upgrade step and deleted. After it they are corrupt: an
+old-shaped `sidebar_groups` is ignored whole (the default layout) and a
+`sidebar_pins` is dropped on load, so the next settings write leaves it
+behind; doctor names the file for each, telling the user to run
+`loctt migrate` if the tracker is older, and otherwise to reset the
+layout. Nothing converts them on read (K160).
 
 Every other key is passed through unchanged and survives a load → save round trip.
 
@@ -1023,22 +1053,23 @@ Every other key is passed through unchanged and survives a load → save round t
 Located at `.loctt/.schema-version`. The tracker's **format version**
 (K142): the semver of the `loctt` release that introduced the format this
 tracker is written in, newline-terminated. `CURRENT_SCHEMA_VERSION`
-(`packages/core/src/schema/version.ts`) is `0.3.0`, the release that made
-every link ordered (K143). `0.1.0` is the format of every tracker made
-before it. A build writes the highest format-changing release at or below
+(`packages/core/src/schema/version.ts`) is `0.4.0`, the release that
+moved per-user sidebar settings to the K158 Views layout (K160). `0.3.0`
+is the release that made every link ordered (K143), and `0.1.0` the
+format of every tracker made before it. A build writes the highest format-changing release at or below
 its own version; the constant is set to the release a format change ships
 in and never changed once published.
 
 ```
-0.3.0
+0.4.0
 ```
 
 | Constraint | Rule |
 |---|---|
 | Format | `MAJOR.MINOR.PATCH`, whole numbers without leading zeros, optional trailing newline. No pre-release tags |
 | Compared | As semver: `0.10.0` is newer than `0.3.0` |
-| Not a format version (incl. `1`, the counter 0.2.x wrote) | `SchemaUnmigratableError`: "`.schema-version` must hold a format version such as 0.3.0 (three whole numbers separated by dots). Got: …", remedy: write `0.1.0` for a tracker from 0.2.x or earlier. No compatibility for `1` (K142: Ken edits his trackers by hand) |
-| Empty file | `SchemaUnmigratableError`: "`.schema-version` is empty. It must hold a format version such as 0.3.0." |
+| Not a format version (incl. `1`, the counter 0.2.x wrote) | `SchemaUnmigratableError`: "`.schema-version` must hold a format version such as 0.4.0 (three whole numbers separated by dots). Got: …", remedy: write `0.1.0` for a tracker from 0.2.x or earlier. No compatibility for `1` (K142: Ken edits his trackers by hand) |
+| Empty file | `SchemaUnmigratableError`: "`.schema-version` is empty. It must hold a format version such as 0.4.0." |
 | Missing | Returns `null` (treated as legacy / fresh directory) |
 | Newer than `CURRENT_SCHEMA_VERSION` | `SchemaTooNewError`: "This tracker needs loctt <version> or newer." |
 | Older | `SchemaUpgradeRequiredError`: "This tracker needs upgrading from X to Y. Run `loctt migrate` (a backup is made first)." on every surface, nothing written, risky step or not (K154). Upgraded only by `loctt migrate`, MCP `migrate_schema` or the web Upgrade button |
@@ -1047,7 +1078,17 @@ Upgrade steps (`packages/core/src/schema/migrations.ts`) are keyed by
 semver `from`/`to`. The first is **0.1.0 → 0.3.0** (not marked risky,
 `schema/steps/rank-every-link.ts`): every link gets a rank in the order
 0.1.0 showed it, each type's links are stored in that order, and the
-retired `ranked` keys are removed from `workflow.yaml`.
+retired `ranked` keys are removed from `workflow.yaml`. The second is
+**0.3.0 → 0.4.0** (not risky, `schema/steps/sidebar-views-layout.ts`,
+K160): every `users/*/settings.yaml` holding a pre-K158 `sidebar_groups`
+or a `sidebar_pins` is rewritten to the version-2 layout (B52's rule, pins
+leading the saved views; a file with pins and no `sidebar_groups` is read
+as an empty pre-K158 value) and `sidebar_pins` is deleted, editing the
+YAML document so every other key, comment and line stays. A file it
+cannot read or parse, a pre-K158 value that is not clean, and (when
+`queries.yaml` cannot be read) any file that needs the saved views are
+left untouched for doctor to name. A 0.1.0 tracker runs both steps in one
+upgrade.
 
 The backup header's `schema_version` records this value (a string); a
 backup written by 0.2.x records the old integer, which restore refuses by

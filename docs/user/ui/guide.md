@@ -11,8 +11,8 @@ representative tracker.
 
 When a new `loctt` changes the tracker's data format, the web UI does not
 upgrade it for you. Opening an older tracker shows one screen instead of
-the app: the two versions ("This tracker needs upgrading from 0.1.0 to
-0.3.0."), "A backup is made first.", the steps under **What changes**
+the app: the two versions ("This tracker needs upgrading from 0.3.0 to
+0.4.0."), "A backup is made first.", the steps under **What changes**
 (click to open), and an **Upgrade** button. Nothing else works until the
 tracker is upgraded, because every part of the app would be refused.
 

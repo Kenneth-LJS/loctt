@@ -220,7 +220,7 @@ describe("schema version", () => {
 
     await emptyTasks(dstDir);
     await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
-      .rejects.toThrow(/taken at format 0\.1\.0 and this loctt reads format 0\.3\.0/);
+      .rejects.toThrow(/taken at format 0\.1\.0 and this loctt reads format 0\.4\.0/);
     expect(await readdir(join(dstDir, "tasks"))).toEqual([]);
   });
 

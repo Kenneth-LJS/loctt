@@ -66,7 +66,7 @@ Path helpers live in `packages/core/src/paths/index.ts`. Every config file has a
 
 ## Schema Versioning
 
-`.schema-version` holds a format version: the semver of the `loctt` release that introduced the format (K142), compared as semver (`compareFormatVersions`). `CURRENT_SCHEMA_VERSION` (`"0.3.0"`) lives in `packages/core/src/schema/version.ts`. Every CLI/MCP/HTTP entry point calls `requireSupportedSchema(locttDir)` first; it never writes, and refuses to boot if:
+`.schema-version` holds a format version: the semver of the `loctt` release that introduced the format (K142), compared as semver (`compareFormatVersions`). `CURRENT_SCHEMA_VERSION` (`"0.4.0"`) lives in `packages/core/src/schema/version.ts`. Every CLI/MCP/HTTP entry point calls `requireSupportedSchema(locttDir)` first; it never writes, and refuses to boot if:
 
 - the file is missing (legacy/uninitialized tracker), or does not hold a format version (including 0.2.x's `1`),
 - the recorded version is newer than `CURRENT_SCHEMA_VERSION` (`SchemaTooNewError`: "This tracker needs loctt <version> or newer."),

@@ -10,7 +10,8 @@ import { fileExists } from "../utils/fs.js";
  *
  * A format version is the semver of the `loctt` release that introduced
  * that format, not a counter: `0.1.0` is the first format, `0.3.0` the
- * one where every link carries a rank (K143). A build writes the highest
+ * one where every link carries a rank (K143), `0.4.0` the one where
+ * sidebar settings use the K158 Views layout (K160). A build writes the highest
  * format-changing release at or below its own version. Set it to the
  * release a format change ships in, and never change it once that
  * release is published. No pre-release tags.
@@ -18,7 +19,7 @@ import { fileExists } from "../utils/fs.js";
  * Migrations are registered in `migrations.ts`, keyed by these versions,
  * and run in order to bring an older tracker up to this one.
  */
-export const CURRENT_SCHEMA_VERSION = "0.3.0";
+export const CURRENT_SCHEMA_VERSION = "0.4.0";
 
 /** `MAJOR.MINOR.PATCH`, each a whole number without leading zeros. */
 const FORMAT_VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;

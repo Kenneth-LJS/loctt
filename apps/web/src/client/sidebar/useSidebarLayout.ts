@@ -4,7 +4,6 @@ import { useViews } from "../api/hooks/sidebarData.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import {
-  isLegacySidebarGroups,
   readSidebarGroups,
   resolveSidebarLayout,
   type SidebarLayoutRow,
@@ -22,9 +21,8 @@ import {
  * in theirs. While the settings are loading or failed, the default layout
  * is used, so navigation never disappears (P7).
  *
- * `canWrite` is false while a pre-K158 setting cannot yet be migrated
- * faithfully (the saved views have not loaded): writing then would drop
- * what the old setting said about the saved views as a block.
+ * `canWrite` is false until the stored settings have loaded: a write
+ * merges into them, so writing earlier would drop every other setting.
  *
  * `write` saves a new `sidebar_groups` value through the same merged
  * `PUT /api/user-settings` every personal panel uses.
@@ -47,9 +45,9 @@ export function useSidebarLayout(): {
     views.data?.queries ?? [],
     views.data?.broken ?? [],
   );
-  const groups = readSidebarGroups(stored, savedViews);
+  const groups = readSidebarGroups(stored);
   const rows = resolveSidebarLayout(groups, savedViews);
-  const canWrite = stored !== undefined && (!isLegacySidebarGroups(stored) || views.isSuccess);
+  const canWrite = stored !== undefined;
   const write = (next: SidebarGroups | undefined): void => {
     if (stored === undefined) return;
     if (next === undefined) {

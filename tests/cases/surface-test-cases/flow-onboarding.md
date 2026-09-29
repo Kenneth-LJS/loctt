@@ -249,7 +249,13 @@ tested against the running server, **then** each holds.
   `init/init.test.ts`, `tests/integration/cli/info-schema.test.ts`
 
 **Given** a fresh `loctt init`, **when** `.loctt/.schema-version` is
-read, **then** it holds `0.3.0`.
+read, **then** it holds `0.4.0`.
+
+> **Amended (K160, Ken 2026-09-29).** Ken: *"actually can we just do a
+> migration step: migrate old pins into the sidebar? i dont want to
+> support this backward compatibility forever."* Format **0.4.0** adds
+> the 0.3.0 → 0.4.0 step (ONB-C23), so this build writes `0.4.0` and a
+> 0.1.0 tracker upgrades through 0.3.0 to 0.4.0 in one run.
 
 > **Amended (K154, Ken 2026-09-28).** Ken reversed K143's automatic
 > upgrade, telling the orchestrator not to follow the K143-era cases
@@ -556,13 +562,19 @@ changes.
 - `--yes` skips the prompt.
 - Not at a terminal and no `--yes`: refused naming the flag ("Pass
   --yes"), exit 2, nothing changed.
-- On a current tracker: "already at format 0.3.0. Nothing to do."
+- On a current tracker: "already at format 0.4.0. Nothing to do."
   → `apps/cli/src/commands/migrate.test.ts`,
   `tests/integration/cli/format-upgrade.test.ts`
 
 **Given** a 0.1.0 tracker and a script, **when** it runs `loctt
 migrate` without `--yes`, **then** it exits 2 naming `--yes` and the
 tracker is unchanged.
+
+> **Amended (K160, Ken 2026-09-29).** Ken: *"actually can we just do a
+> migration step: migrate old pins into the sidebar? i dont want to
+> support this backward compatibility forever."* Format **0.4.0** adds
+> the 0.3.0 → 0.4.0 step (ONB-C23), so from 0.1.0 the preview lists both steps
+> and "already at format" names 0.4.0.
 
 ### ONB-C22 · blocker · P1 · MCP
 **Agents ask the user before upgrading.** K154.
@@ -581,3 +593,42 @@ tracker is unchanged.
 **Given** an agent connected to an older tracker, **when** it reads the
 tools, **then** the ask-first rule is in `migrate_schema` and in the
 server instructions.
+
+### ONB-C23 · blocker · P1 P7 · CLI MCP UI
+**The 0.3.0 → 0.4.0 step moves each user's sidebar settings to the Views
+layout.** K160. Not marked risky.
+
+- Every `users/*/settings.yaml` holding a pre-K158 `sidebar_groups` (no
+  `version`) becomes the K158 `version: 2` layout by SHL-54's rule: the
+  switcher becomes `layouts` in its place; one Views group where the
+  earlier of Filters and Saved views sat, their views in the order they
+  showed; a hidden old group hides each of its views, and Views is hidden
+  only when both were.
+- `sidebar_pins` orders the saved views once (pinned first, in pin order;
+  a pin naming a missing, archived or broken view is skipped), then is
+  deleted. A file with pins and no `sidebar_groups` is read as an empty
+  pre-K158 value, so the pins still lead.
+- Every other key, comment and line of the file is untouched; a file
+  with neither key is not written; a `version: 2` value is kept (its pins
+  are only deleted).
+- A file that cannot be read or parsed, or whose pre-K158 value is not
+  clean, is left exactly as it is, and `loctt doctor` names it after the
+  upgrade.
+- Running it again changes nothing. From 0.1.0 it runs after 0.1.0 →
+  0.3.0 in the same upgrade, and every preview (CLI, MCP, the web
+  Upgrade screen) lists both steps.
+- The preview describes it in plain words: "Move sidebar settings to the
+  Views layout" and what changes.
+  → `packages/core/src/schema/upgrade-0.4.0.test.ts` (frozen 0.3.0 seed),
+  `tests/integration/cli/user-sidebar-groups.test.ts`,
+  `tests/integration/mcp/sidebar-groups.test.ts`, runthrough
+  `upgrade/upgrade-sidebar-settings`, `tests/packaging/install.test.ts`,
+  `tests/ui/flow-schema-mismatch.spec.ts`
+
+**Given** the frozen 0.3.0 seed with pre-K158 sidebar settings and pins,
+**when** it is upgraded, **then** each user's sidebar shows what it
+showed, the old keys are gone, and a second run writes nothing.
+
+> Added (K160, Ken 2026-09-29): *"actually can we just do a migration
+> step: migrate old pins into the sidebar? i dont want to support this
+> backward compatibility forever."* Rules recorded as A372.

@@ -220,8 +220,8 @@ export async function run(args: string[], root: string): Promise<void> {
      * the view's name, and `broken` when its filters no longer load).
      * `--order` / `--hidden` take comma-separated ids; `--reset` clears the
      * setting back to the default. An unknown id is refused, naming it.
-     * A setting written before K158 is migrated when read, and written in
-     * the K158 shape by the next change.
+     * Only the K158 shape is read: a setting written before K158 is
+     * converted by `loctt migrate` (the 0.3.0 → 0.4.0 step, K160).
      */
     case "sidebar-groups": {
       await runCommand(async () => {
@@ -251,9 +251,9 @@ export async function run(args: string[], root: string): Promise<void> {
             console.log("Reset sidebar groups to the default order.");
             return;
           }
-          // Start from the stored (tolerant, migrated) value so setting
+          // Start from the stored (tolerant) value so setting
           // only one list preserves the other.
-          const stored = readSidebarGroups(settings, savedViews);
+          const stored = readSidebarGroups(settings);
           const next: SidebarGroups = { ...stored };
           if (orderArg !== undefined) {
             const order = parseIdList(orderArg, "--order", savedViews);
@@ -276,7 +276,7 @@ export async function run(args: string[], root: string): Promise<void> {
         // (A346): the Views children follow `views`, and all of them read
         // hidden while that group is hidden.
         const after = await loadUserSettings(locttDir, current.id);
-        const resolved = resolveRenderedSidebarItems(readSidebarGroups(after, savedViews), savedViews);
+        const resolved = resolveRenderedSidebarItems(readSidebarGroups(after), savedViews);
         for (const item of resolved) {
           const cols: string[] = [item.id, item.hidden ? "hidden" : "visible"];
           if (item.name !== undefined) cols.push(item.name);

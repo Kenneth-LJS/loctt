@@ -36,11 +36,11 @@ export {
 export type { RecentEntry } from "./recents.js";
 export { pushRecent, readRecents, RECENTS_CAP, removeRecent } from "./recents.js";
 export type { UserSettings } from "./settings.js";
-export type { KeyboardShortcutsDropReport, SidebarGroupsDropReport } from "./settings.js";
+export type { KeyboardShortcutsDropReport, SidebarGroupsDropReport, UnreadableSettingsReport } from "./settings.js";
 export { loadUserSettings, saveUserSettings } from "./settings.js";
-export { collectKeyboardShortcutsDrops, collectSidebarGroupsDrops } from "./settings.js";
+export { collectKeyboardShortcutsDrops, collectSidebarGroupsDrops, collectUnreadableSettings } from "./settings.js";
 export type { KeyboardShortcutsDrop, ResolvedKeyboardShortcuts, ResolvedShortcut, SalvagedKeyboardShortcuts, ShortcutChanges } from "./shortcuts.js";
 export { applyShortcutChanges, isShortcutActive, readKeyboardShortcuts, resolveKeyboardShortcuts, salvageKeyboardShortcuts, SHORTCUT_VALID_IDS, singleKeyShortcutsOn, validateShortcutIds, withKeyboardShortcuts } from "./shortcuts.js";
 export type { ResolvedSidebarItem, SalvagedSidebarGroups, SidebarGroupsDrop, SidebarLayoutRow, SidebarOrderInput, SidebarSavedView, SidebarViewChild } from "./sidebarGroups.js";
-export { forgetSavedViewInSidebar, isLegacySidebarGroups, isSidebarGroupId, migrateLegacySidebarGroups, readSidebarGroups, resolveRenderedSidebarItems, resolveSidebarLayout, resolveSidebarOrder, salvageSidebarGroups, setSidebarItemHidden, SIDEBAR_VALID_IDS, sidebarGroupsFromLayout, sidebarSavedViews, sidebarValidIdsList, validateSidebarIds } from "./sidebarGroups.js";
+export { forgetSavedViewInSidebar, isSidebarGroupId, readSidebarGroups, resolveRenderedSidebarItems, resolveSidebarLayout, resolveSidebarOrder, salvageSidebarGroups, setSidebarItemHidden, SIDEBAR_VALID_IDS, sidebarGroupsFromLayout, sidebarSavedViews, sidebarValidIdsList, validateSidebarIds } from "./sidebarGroups.js";
 export { loadSidebarSavedViews } from "./sidebarViews.js";

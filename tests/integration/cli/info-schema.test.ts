@@ -20,7 +20,7 @@ describe("loctt info reports schema status", () => {
     await withTmpLoctt(async ({ root }) => {
       const res = await runCli(["info"], { cwd: root });
       expect(res.exitCode).toBe(0);
-      expect(res.stdout).toMatch(/Schema: 0\.3\.0 \(current\)/);
+      expect(res.stdout).toMatch(/Schema: 0\.4\.0 \(current\)/);
     });
   });
 
@@ -31,7 +31,7 @@ describe("loctt info reports schema status", () => {
 
       const res = await runCli(["info"], { cwd: root });
       const out = `${res.stdout}${res.stderr}`;
-      expect(out).toMatch(/Schema: 9\.9\.9, this build reads 0\.3\.0/);
+      expect(out).toMatch(/Schema: 9\.9\.9, this build reads 0\.4\.0/);
       // Not just the number: what to do about it.
       expect(out).toMatch(/This tracker needs loctt 9\.9\.9 or newer/);
     });
@@ -45,7 +45,7 @@ describe("loctt info reports schema status", () => {
       const res = await runCli(["info"], { cwd: root });
       expect(res.exitCode).toBe(0);
       expect(res.stdout).toContain(
-        "Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)",
+        "Schema: needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first)",
       );
       const { readFile } = await import("node:fs/promises");
       expect((await readFile(path.join(root, ".loctt/.schema-version"), "utf-8")).trim()).toBe("0.1.0");

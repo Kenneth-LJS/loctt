@@ -1,0 +1,10 @@
+keys:
+  01M3JSJ5RKZ3TYC3J48FTRA6PV:
+    prefix: WEB
+    next_number: 26
+  01M3JSJ6ZTZ3MMREPGX5GRGCS2:
+    prefix: MOB
+    next_number: 10
+  01M3JSJ7938VBX3QQAD1AMW8MA:
+    prefix: OPS
+    next_number: 8

@@ -34,7 +34,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const FROZEN = resolve(here, "../../../../tests/fixtures/trackers/seed-0.1.0/.loctt");
 
 const UPGRADE_REFUSAL =
-  "This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).";
+  "This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).";
 
 let root: string;
 let originalArgv: string[];
@@ -104,9 +104,11 @@ describe("loctt migrate on a 0.1.0 tracker", () => {
     const before = await fingerprint();
     await run("migrate");
     const text = out();
-    expect(text).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+    expect(text).toContain("This tracker needs upgrading from 0.1.0 to 0.4.0.");
     expect(text).toContain("1. 0.1.0 → 0.3.0  Save the order of every task's links");
     expect(text).toContain("Each task's links keep the order they are shown in today");
+    // K160: the chain continues to 0.4.0, and the preview lists that step too.
+    expect(text).toContain("2. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout");
     expect(text).toContain(`${join(root, ".loctt")}.backup-v0.1.0-<date and time>`);
     expect(promptQuestion).toBe("Upgrade this tracker now? [y/N] ");
     expect(text).toContain("Not upgraded. Nothing was changed.");
@@ -118,9 +120,9 @@ describe("loctt migrate on a 0.1.0 tracker", () => {
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     promptAnswer = "y";
     await run("migrate");
-    expect(await version()).toBe("0.3.0");
+    expect(await version()).toBe("0.4.0");
     expect(await backups()).toHaveLength(1);
-    expect(out()).toContain("Upgraded this tracker from 0.1.0 to 0.3.0.");
+    expect(out()).toContain("Upgraded this tracker from 0.1.0 to 0.4.0.");
     expect(process.exitCode).toBeUndefined();
     // And the refused command now runs.
     await run("list", "--limit", "1");
@@ -131,7 +133,7 @@ describe("loctt migrate on a 0.1.0 tracker", () => {
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     const before = await fingerprint();
     await run("migrate", "--dry-run");
-    expect(out()).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0.");
+    expect(out()).toContain("This tracker needs upgrading from 0.1.0 to 0.4.0.");
     expect(out()).toContain("Dry run. Nothing was changed.");
     expect(promptQuestion).toBe("");
     expect(await fingerprint()).toEqual(before);
@@ -151,7 +153,7 @@ describe("loctt migrate on a 0.1.0 tracker", () => {
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
     await run("migrate", "--yes");
     expect(promptQuestion).toBe("");
-    expect(await version()).toBe("0.3.0");
+    expect(await version()).toBe("0.4.0");
     expect(await backups()).toHaveLength(1);
     expect(out()).toMatch(/Backup written to .+\.loctt\.backup-v0\.1\.0-/);
   });
@@ -162,11 +164,11 @@ describe("doctor and info on a 0.1.0 tracker", () => {
     const before = await fingerprint();
     await run("info");
     expect(out()).toContain(
-      "Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)",
+      "Schema: needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first)",
     );
     await run("doctor", "--fix", "--rebuild-index");
     expect(out()).toContain(
-      "✗ schema version: needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a backup is made first)",
+      "✗ schema version: needs upgrading from 0.1.0 to 0.4.0. Run loctt migrate (a backup is made first)",
     );
     expect(out()).toContain(
       "✗ repairs: skipped. This tracker needs upgrading first. Run loctt migrate, then run the repair again",

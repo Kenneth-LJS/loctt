@@ -128,11 +128,13 @@ describe("format versions are compared as semver (K142)", () => {
 });
 
 describe("the registry", () => {
-  it("registers 0.1.0 → 0.3.0, not risky, so it runs automatically (K143)", async () => {
+  it("registers 0.1.0 → 0.3.0 and 0.3.0 → 0.4.0 (K160), neither risky, chained to the current format", async () => {
     const { listMigrations } = await import("./migrations.js");
     const { CURRENT_SCHEMA_VERSION } = await import("./version.js");
-    expect(CURRENT_SCHEMA_VERSION).toBe("0.3.0");
+    expect(CURRENT_SCHEMA_VERSION).toBe("0.4.0");
     const path = findMigrationPath("0.1.0", CURRENT_SCHEMA_VERSION, listMigrations());
-    expect(path?.map(m => [m.from, m.to, m.risky === true])).toEqual([["0.1.0", "0.3.0", false]]);
+    expect(path?.map(m => [m.from, m.to, m.risky === true])).toEqual([["0.1.0", "0.3.0", false], ["0.3.0", "0.4.0", false]]);
+    expect(findMigrationPath("0.3.0", CURRENT_SCHEMA_VERSION, listMigrations())?.map(m => m.description))
+      .toEqual(["Move sidebar settings to the Views layout"]);
   });
 });

@@ -1352,7 +1352,7 @@ describe("CLI config subcommands", () => {
     process.argv = ["node", "loctt", "migrate"];
     await main();
     const lines = consoleSpy.mock.calls.map(c => String(c[0]));
-    expect(lines.some(l => /already at format 0\.3\.0/.test(l))).toBe(true);
+    expect(lines.some(l => /already at format 0\.4\.0/.test(l))).toBe(true);
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -1386,7 +1386,7 @@ describe("CLI config subcommands", () => {
       spy.mockRestore();
     }
     expect(process.exitCode).toBeUndefined();
-    expect(logs.join("\n")).toMatch(/Schema: 9\.9\.9, this build reads 0\.3\.0\. This tracker needs loctt 9\.9\.9 or newer/);
+    expect(logs.join("\n")).toMatch(/Schema: 9\.9\.9, this build reads 0\.4\.0\. This tracker needs loctt 9\.9\.9 or newer/);
   });
 });
 

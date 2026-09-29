@@ -1,0 +1,3 @@
+1. Open /login
+2. Submit with an empty password
+3. Observe the 500

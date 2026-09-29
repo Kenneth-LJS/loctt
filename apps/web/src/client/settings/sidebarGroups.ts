@@ -16,7 +16,6 @@ export type {
 } from "@loctt/core/users/sidebarGroups.js";
 export {
   forgetSavedViewInSidebar,
-  isLegacySidebarGroups,
   readSidebarGroups,
   resolveSidebarLayout,
   setSidebarItemHidden,

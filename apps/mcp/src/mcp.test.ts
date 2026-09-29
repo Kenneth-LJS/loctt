@@ -96,7 +96,7 @@ describe("MCP executeTool", () => {
   // guarded tool with the upgrade message, and nothing is written.
   describe("on a 0.1.0 tracker (K154)", () => {
     const REFUSAL =
-      "Error: This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).";
+      "Error: This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).";
 
     /** Every file under the temp root, path → content: "nothing changed". */
     async function fingerprint(): Promise<Map<string, string>> {
@@ -134,7 +134,7 @@ describe("MCP executeTool", () => {
       const info = await executeTool(root, "info", {});
       expect(info.isError).toBeUndefined();
       expect(info.content[0]?.text).toContain(
-        "Schema: needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first)",
+        "Schema: needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first)",
       );
       const doctor = await executeTool(root, "doctor", {
         fix: true, rebuild_index: true, repair_relationships: true, restore_missing: true,
@@ -145,7 +145,7 @@ describe("MCP executeTool", () => {
       expect(report.healthy).toBe(false);
       const byName = new Map(report.checks.map(c => [c.name, c.message]));
       expect(byName.get("schema version")).toBe(
-        "needs upgrading from 0.1.0 to 0.3.0. Run loctt migrate (a backup is made first)",
+        "needs upgrading from 0.1.0 to 0.4.0. Run loctt migrate (a backup is made first)",
       );
       expect(byName.get("repairs")).toMatch(/^skipped\. This tracker needs upgrading first\./);
       expect(byName.get("restore missing files")).toMatch(/^skipped\. This tracker needs upgrading first\./);
@@ -156,12 +156,14 @@ describe("MCP executeTool", () => {
       const before = await fingerprint();
       const plan = await executeTool(root, "migrate_schema", {});
       const text = plan.content[0]?.text ?? "";
-      expect(text).toContain("This tracker needs upgrading from 0.1.0 to 0.3.0 (1 step(s)).");
+      expect(text).toContain("This tracker needs upgrading from 0.1.0 to 0.4.0 (2 step(s)).");
       expect(text).toContain("Each task's links keep the order they are shown in today");
+      // K160: both steps of the chain are in the preview.
+      expect(text).toContain("0.3.0→0.4.0: Move sidebar settings to the Views layout");
       expect(text).toContain(`${join(root, ".loctt")}.backup-v0.1.0-<date and time>`);
       expect(await fingerprint()).toEqual(before);
       const done = await executeTool(root, "migrate_schema", { confirm: true });
-      expect(done.content[0]?.text).toMatch(/^Upgraded this tracker from 0\.1\.0 to 0\.3\.0\.\nBackup: /);
+      expect(done.content[0]?.text).toMatch(/^Upgraded this tracker from 0\.1\.0 to 0\.4\.0\.\nBackup: /);
       const after = await executeTool(root, "list_tasks", {});
       expect(after.isError).toBeUndefined();
     });

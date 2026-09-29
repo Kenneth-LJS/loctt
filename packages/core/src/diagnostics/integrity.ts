@@ -45,6 +45,8 @@ import {
   getWorkflowConfigPath,
 } from "../paths/index.js";
 import { getUserProfilePath } from "../paths/index.js";
+import { readRecordedFormat } from "../schema/migrations.js";
+import { compareFormatVersions, CURRENT_SCHEMA_VERSION } from "../schema/version.js";
 import { isMalformedComment, listCommentEntries } from "../task/comments.js";
 import { TaskParseError } from "../task/frontmatter.js";
 import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
@@ -53,7 +55,7 @@ import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasksDetailed } from "../task/load-all.js";
 import { validateRelationships } from "../task/traversal.js";
 import { loadAllUsersDetailed } from "../users/profile.js";
-import { collectKeyboardShortcutsDrops, collectSidebarGroupsDrops } from "../users/settings.js";
+import { collectKeyboardShortcutsDrops, collectSidebarGroupsDrops, collectUnreadableSettings } from "../users/settings.js";
 import { isMissingFile, readFileState, UnreadableFileError } from "../utils/read-state.js";
 
 export type IntegritySeverity = "unreadable" | "malformed" | "inconsistent";
@@ -400,7 +402,40 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
   // never blocking — the setting is a preserved-and-salvaged render pref,
   // and the valid ids still load.
   try {
-    for (const report of await collectSidebarGroupsDrops(locttDir)) {
+    const reports = await collectSidebarGroupsDrops(locttDir);
+    // What the 0.3.0 → 0.4.0 upgrade converts (K160) is corrupt after it.
+    // The remedy depends on whether the tracker has had that upgrade:
+    // naming `loctt migrate` on a tracker already at this format would
+    // send the user to a command that does nothing.
+    const upgradePending = reports.some(r => r.olderLayout || r.retiredPins)
+      ? await trackerNeedsUpgrade(locttDir)
+      : false;
+    for (const report of reports) {
+      if (report.olderLayout) {
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message:
+            `setting "sidebar_groups" is in the layout loctt wrote before 0.4.0 (it has no "version: 2"), `
+            + `so it is ignored and the sidebar shows the default layout. `
+            + (upgradePending
+              ? `Run loctt migrate to upgrade this tracker: the upgrade converts it.`
+              : `Reset the sidebar layout (Settings → Customize sidebar → Reset to default, `
+                + `or loctt user sidebar-groups --reset), or fix it by hand.`),
+        });
+      }
+      if (report.retiredPins) {
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message:
+            `setting "sidebar_pins" is no longer used (pinned views were retired), so it is ignored. `
+            + (upgradePending
+              ? `Run loctt migrate to upgrade this tracker: the upgrade moves the pins into the sidebar's Views order.`
+              : `It is removed the next time these settings are saved, for example by resetting the sidebar layout `
+                + `(loctt user sidebar-groups --reset), or remove the line by hand.`),
+        });
+      }
       if (report.wholeValueDropped) {
         findings.push({
           severity: "malformed",
@@ -433,6 +468,24 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
   } catch {
     // The users dir being absent is normal; a scan error here is left to
     // doctor's own users/ load check, same as the profile loop above.
+  }
+
+  // A user's settings.yaml that does not parse (K160). The settings
+  // loader throws on it and the upgrade step leaves it as it is, so it is
+  // named here. `malformed`, not `unreadable`: the file is per-checkout
+  // and gitignored, never published, so it must not block a publish.
+  try {
+    for (const report of await collectUnreadableSettings(locttDir)) {
+      findings.push({
+        severity: "malformed",
+        path: report.path,
+        message:
+          `this user's settings could not be read (${report.error}), so none of them load. `
+          + `Fix the file by hand.`,
+      });
+    }
+  } catch {
+    // The users dir being absent is normal, as above.
   }
 
   // Per-user `keyboard_shortcuts` salvage (K133). A hand-edited bad part
@@ -716,4 +769,18 @@ export async function computeIntegritySummary(
     counts: { tasks: taskCount, config: configCount },
     total,
   };
+}
+
+/**
+ * Whether the tracker's recorded format is older than this build's, so
+ * `loctt migrate` has work to do. An unreadable or missing version reads
+ * as not older: doctor's schema check names that problem itself.
+ */
+async function trackerNeedsUpgrade(locttDir: string): Promise<boolean> {
+  try {
+    const rf = await readRecordedFormat(locttDir);
+    return rf !== null && compareFormatVersions(rf.format, CURRENT_SCHEMA_VERSION) < 0;
+  } catch {
+    return false;
+  }
 }

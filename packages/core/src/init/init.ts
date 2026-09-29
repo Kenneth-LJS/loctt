@@ -24,6 +24,7 @@ import { assertValidPrefix } from "../projects/prefix.js";
 import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { knownFormats } from "../schema/migrations.js";
 import { isProvablyRanked } from "../schema/steps/rank-every-link.js";
+import { isProvablyInViewsLayout, SIDEBAR_VIEWS_LAYOUT_FROM } from "../schema/steps/sidebar-views-layout.js";
 import { loadState } from "../state/state.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { ensureDefaultUser } from "../users/index.js";
@@ -180,9 +181,12 @@ async function repairLoctt(
     // be from before 0.3.0. Stamping the current format over them would
     // skip the upgrade that ranks their links. Stamp current only when
     // the data provably is current (every link ranked, no retired
-    // `ranked` setting); otherwise the first format, so `loctt migrate`
-    // upgrades from there (A366, K154).
-    const stamp = (await isProvablyRanked(locttDir)) ? CURRENT_SCHEMA_VERSION : (knownFormats()[0] ?? CURRENT_SCHEMA_VERSION);
+    // `ranked` setting, and no user settings the 0.3.0 → 0.4.0 step would
+    // convert, K160); otherwise the newest format the data provably is, so
+    // `loctt migrate` upgrades from there (A366, A372, K154).
+    const stamp = !(await isProvablyRanked(locttDir))
+      ? (knownFormats()[0] ?? CURRENT_SCHEMA_VERSION)
+      : (await isProvablyInViewsLayout(locttDir)) ? CURRENT_SCHEMA_VERSION : SIDEBAR_VIEWS_LAYOUT_FROM;
     await writeFile(schemaPath, `${stamp}\n`, "utf-8");
     created.push(".schema-version");
   }

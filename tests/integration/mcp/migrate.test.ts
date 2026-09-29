@@ -70,17 +70,17 @@ describe("MCP migrate_schema (stdio)", () => {
       try {
         const plan = await client.callTool("migrate_schema", {});
         expect(plan.isError).toBeFalsy();
-        expect(plan.content[0]?.text ?? "").toContain("This tracker needs upgrading from 0.1.0 to 0.3.0 (1 step(s)).");
+        expect(plan.content[0]?.text ?? "").toContain("This tracker needs upgrading from 0.1.0 to 0.4.0 (2 step(s)).");
         const refused = await client.callTool("list_tasks", {});
         expect(refused.isError).toBe(true);
         expect(refused.content[0]?.text ?? "").toBe(
-          "Error: This tracker needs upgrading from 0.1.0 to 0.3.0. Run `loctt migrate` (a backup is made first).",
+          "Error: This tracker needs upgrading from 0.1.0 to 0.4.0. Run `loctt migrate` (a backup is made first).",
         );
         expect((await readFile(versionPath(root), "utf8")).trim()).toBe("0.1.0");
 
         const done = await client.callTool("migrate_schema", { confirm: true });
-        expect(done.content[0]?.text ?? "").toContain("Upgraded this tracker from 0.1.0 to 0.3.0.");
-        expect((await readFile(versionPath(root), "utf8")).trim()).toBe("0.3.0");
+        expect(done.content[0]?.text ?? "").toContain("Upgraded this tracker from 0.1.0 to 0.4.0.");
+        expect((await readFile(versionPath(root), "utf8")).trim()).toBe("0.4.0");
       } finally {
         await client.close();
       }

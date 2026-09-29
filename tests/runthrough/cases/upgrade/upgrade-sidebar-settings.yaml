@@ -1,0 +1,109 @@
+id: upgrade-sidebar-settings
+name: A 0.3.0 tracker is refused until the user upgrades it, then each user's sidebar settings are in the Views layout
+description: >
+  K160 (B54): format 0.4.0 moves every user's sidebar settings to the K158
+  Views layout. On the frozen 0.3.0 seed a command is refused with the
+  upgrade message and changes nothing. `loctt migrate --yes` (MCP
+  `migrate_schema` with confirm) backs up first and runs the one step
+  0.3.0 → 0.4.0: the current user's pre-K158 layout (Filters first, the
+  Saved views section hidden, one built-in hidden) becomes one Views group
+  in the same order with the same things hidden, the pinned Hot list
+  leading the saved views; a user with pins and no layout gets one seeded
+  by the pin; `sidebar_pins` is deleted; every other key stays; a file
+  with neither key is untouched. After it, the sidebar-groups read shows
+  the converted layout.
+tags: [upgrade, b54, k160]
+seed: "0.3.0"
+pre:
+  - yaml: { file: .schema-version, equals: "0.3.0" }
+  - yaml: { file: users/01M3JSJ5SC2X6K2GXCM8DDY4C3/settings.yaml, path: sidebar_pins, equals: ["01M3JSKFGY2KVS3DFF1TVEKWWY", "01M3JSZZZZZZZZZZZZZZZZZZZZ"] }
+  - yaml: { file: users/01M3JSJ5SC2X6K2GXCM8DDY4C3/settings.yaml, path: sidebar_groups.version, absent: true }
+  - yaml: { file: users/01M3JSJ6CXR6KBVE6HJQ1BDAN5/settings.yaml, path: sidebar_groups, absent: true }
+steps:
+  - name: a command on the older tracker is refused and changes nothing
+    cli: user sidebar-groups
+    mcp:
+      call: { tool: get_sidebar_groups, args: {} }
+    expect_error:
+      cli:
+        exit_code: 1
+        message: "This tracker needs upgrading from 0.3.0 to 0.4.0. Run `loctt migrate` (a backup is made first)."
+      mcp:
+        message: "This tracker needs upgrading from 0.3.0 to 0.4.0. Run `loctt migrate` (a backup is made first)."
+  - name: the user upgrades it on purpose
+    cli: migrate --yes
+    mcp:
+      call: { tool: migrate_schema, args: { confirm: true } }
+    post:
+      - output: { contains: ["Upgraded this tracker from 0.3.0 to 0.4.0.", ".loctt.backup-v0.3.0-"] }
+      - output: { surface: cli, contains: ["1. 0.3.0 → 0.4.0  Move sidebar settings to the Views layout"] }
+      - yaml: { file: .schema-version, equals: "0.4.0" }
+      - yaml:
+          file: users/01M3JSJ5SC2X6K2GXCM8DDY4C3/settings.yaml
+          path: sidebar_groups
+          equals:
+            version: 2
+            order:
+              - views
+              - overdue
+              - assigned-to-me
+              - reported-by-me
+              - mentions-me
+              - due-this-week
+              - high-priority
+              - view:01M3JSKFGY2KVS3DFF1TVEKWWY
+              - view:01M3JSJ5RT26R3NG7G9TXP3F56
+              - view:01M3JSKF7FX68V26D9GDQ768F9
+              - projects
+              - layouts
+              - milestones
+              - sprints
+              - labels
+              - recents
+            hidden:
+              - high-priority
+              - view:01M3JSKFGY2KVS3DFF1TVEKWWY
+              - view:01M3JSJ5RT26R3NG7G9TXP3F56
+              - view:01M3JSKF7FX68V26D9GDQ768F9
+      - yaml: { file: users/01M3JSJ5SC2X6K2GXCM8DDY4C3/settings.yaml, path: sidebar_pins, absent: true }
+      - yaml: { file: users/01M3JSJ5SC2X6K2GXCM8DDY4C3/settings.yaml, path: theme, equals: dark }
+      - yaml: { file: users/01M3JSJ5SC2X6K2GXCM8DDY4C3/settings.yaml, path: experimental_flag, equals: keep-me }
+      - yaml:
+          file: users/01M3JSJ6CXR6KBVE6HJQ1BDAN5/settings.yaml
+          path: sidebar_groups.order
+          equals:
+            - layouts
+            - projects
+            - views
+            - view:01M3JSKF7FX68V26D9GDQ768F9
+            - view:01M3JSJ5RT26R3NG7G9TXP3F56
+            - view:01M3JSKFGY2KVS3DFF1TVEKWWY
+            - assigned-to-me
+            - reported-by-me
+            - mentions-me
+            - due-this-week
+            - overdue
+            - high-priority
+            - milestones
+            - sprints
+            - labels
+            - recents
+      - yaml: { file: users/01M3JSJ6CXR6KBVE6HJQ1BDAN5/settings.yaml, path: sidebar_pins, absent: true }
+      - yaml: { file: users/01M3JSJ6CXR6KBVE6HJQ1BDAN5/settings.yaml, path: editor_mode, equals: source }
+      - file_unchanged: users/01M3JSJ6P7SE9KVFDFKMHSTS3K/settings.yaml
+  - name: the command it refused now reads the converted layout
+    cli: user sidebar-groups
+    mcp:
+      call: { tool: get_sidebar_groups, args: {} }
+    post:
+      - output:
+          surface: cli
+          in_order:
+            - "views\tvisible"
+            - "overdue\tvisible"
+            - "high-priority\thidden"
+            - "view:01M3JSKFGY2KVS3DFF1TVEKWWY\thidden\tHot list"
+            - "view:01M3JSJ5RT26R3NG7G9TXP3F56\thidden\trecent-open"
+            - "projects\tvisible"
+            - "layouts\tvisible"
+      - output: { surface: mcp, contains: ["view:01M3JSKFGY2KVS3DFF1TVEKWWY", "\"version\": 2"], not_contains: ["saved-filters"] }

@@ -200,28 +200,22 @@ describe("SidebarGroupsPanel", () => {
     expect(row.innerHTML).not.toMatch(/line-through/);
   });
 
-  it("K158 MIGRATION: a pre-K158 value shows migrated, and the first change writes the K158 shape", async () => {
-    // @verifies SHL-54 — the K125-era value had Filters leading (with
-    // "overdue" first inside it) and the Saved views group hidden.
+  it("K160: a pre-K158 value is not migrated on read: the panel shows the default, and a change writes the K158 shape", async () => {
+    // @verifies SHL-54 — the 0.3.0 → 0.4.0 step converts it on disk.
     SETTINGS = { sidebar_groups: { order: ["filters", "overdue", "projects"], hidden: ["saved-filters", "views"] } };
     renderPanel();
     await screen.findByText("Projects");
     const rows = await screen.findAllByTestId(/^sidebar-group-row-/);
-    expect(rows[0]?.getAttribute("data-testid")).toBe("sidebar-group-row-views");
-    const children = await screen.findAllByTestId(/^sidebar-view-row-/);
-    expect(children[0]?.getAttribute("data-testid")).toBe("sidebar-view-row-overdue");
-    // The old switcher id `views` is `layouts` now, still hidden.
-    expect(screen.getByTestId<HTMLInputElement>("sidebar-group-toggle-layouts").checked).toBe(false);
-    // The hidden Saved views group hid each saved view.
-    expect(screen.getByTestId<HTMLInputElement>("sidebar-view-toggle-view:v_bugs").checked).toBe(false);
+    expect(rows[0]?.getAttribute("data-testid")).toBe("sidebar-group-row-layouts");
+    expect(screen.getByTestId<HTMLInputElement>("sidebar-group-toggle-layouts").checked).toBe(true);
+    expect(screen.getByTestId<HTMLInputElement>("sidebar-view-toggle-view:v_bugs").checked).toBe(true);
 
     fireEvent.click(screen.getByTestId("sidebar-group-toggle-labels"));
     await waitFor(() => { expect(PUTS.length).toBeGreaterThan(0); });
     const groups = PUTS[PUTS.length - 1]?.["sidebar_groups"] as { version?: number; hidden?: string[]; order?: string[] };
     expect(groups.version).toBe(2);
-    expect(groups.hidden?.sort()).toEqual(["labels", "layouts", "view:v_bugs"]);
+    expect(groups.hidden).toEqual(["labels"]);
     expect(groups.order).not.toContain("filters");
-    expect(groups.order).not.toContain("saved-filters");
   });
 
   it("shows the server message and a Retry when the save fails", async () => {

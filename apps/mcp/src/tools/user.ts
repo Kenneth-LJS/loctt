@@ -103,14 +103,14 @@ export const TOOLS: readonly ToolDef[] = [
      * capability, so an agent can read/configure it too (K158 ids).
      */
     name: "get_sidebar_groups",
-    description: "Returns the active user's sidebar customization (SHL-45, K158): which sidebar groups, and which views inside the Views group, show and in what order. `resolved` is the full ordered list with a `hidden` flag per item, exactly as the sidebar renders it: the Views group's children (built-in views, and saved views as `view:<id>` with their `name` and `broken` when their filters no longer load) follow `views`, and all read hidden while that group is hidden. `stored` is the per-user setting (a value written before K158 is shown migrated). Group ids: " + SIDEBAR_GROUP_IDS.join(", ") + " (`layouts` is the List / Board / Timeline switcher). Built-in view ids: " + SIDEBAR_BUILTIN_VIEW_IDS.join(", ") + ". Saved views: `view:<id>`.",
+    description: "Returns the active user's sidebar customization (SHL-45, K158): which sidebar groups, and which views inside the Views group, show and in what order. `resolved` is the full ordered list with a `hidden` flag per item, exactly as the sidebar renders it: the Views group's children (built-in views, and saved views as `view:<id>` with their `name` and `broken` when their filters no longer load) follow `views`, and all read hidden while that group is hidden. `stored` is the per-user setting. Group ids: " + SIDEBAR_GROUP_IDS.join(", ") + " (`layouts` is the List / Board / Timeline switcher). Built-in view ids: " + SIDEBAR_BUILTIN_VIEW_IDS.join(", ") + ". Saved views: `view:<id>`.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       const settings = await loadUserSettings(locttDir, current.id);
       const savedViews = await loadSidebarSavedViews(locttDir);
-      const stored = readSidebarGroups(settings, savedViews);
+      const stored = readSidebarGroups(settings);
       // Resolved as the web sidebar renders it (A346), matching the CLI read.
       const resolved = resolveRenderedSidebarItems(stored, savedViews);
       return text(JSON.stringify({ user: current.id, user_name: current.name, stored, resolved }, null, 2));
@@ -147,7 +147,7 @@ export const TOOLS: readonly ToolDef[] = [
           bad.push(...unknown);
           return known;
         };
-        const stored = readSidebarGroups(settings, savedViews);
+        const stored = readSidebarGroups(settings);
         const next: SidebarGroups = { ...stored };
         const orderIds = orderArg !== undefined ? parse(orderArg) : undefined;
         const hiddenIds = hiddenArg !== undefined ? parse(hiddenArg) : undefined;
@@ -167,7 +167,7 @@ export const TOOLS: readonly ToolDef[] = [
         }
         await saveUserSettings(locttDir, current.id, { ...settings, sidebar_groups: next });
       }
-      const after = readSidebarGroups(await loadUserSettings(locttDir, current.id), savedViews);
+      const after = readSidebarGroups(await loadUserSettings(locttDir, current.id));
       // Resolved as the web sidebar renders it (A346), matching the CLI read.
       const resolved = resolveRenderedSidebarItems(after, savedViews);
       return text(JSON.stringify({ user: current.id, user_name: current.name, stored: after, resolved }, null, 2));

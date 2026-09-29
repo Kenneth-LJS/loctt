@@ -265,12 +265,14 @@ const Base = {
    * Which seed the case starts from. `current` (the default) is the
    * checked-in seed at the code's format; `0.1.0` is the frozen copy at
    * format 0.1.0 (`tests/fixtures/trackers/seed-0.1.0/`), for the upgrade
-   * cases (B41). Same ids, keys and index either way. `empty` is a
+   * cases (B41), and `0.3.0` the one at format 0.3.0
+   * (`tests/fixtures/trackers/seed-0.3.0/`, with pre-K158 user settings,
+   * K160). Same ids, keys and index each way. `empty` is a
    * tracker `loctt init` just made (prefix `T`, no tasks), and `none` an
    * empty directory — for the journeys folded in from `tests/e2e` (B43),
    * which start from nothing and name their own keys.
    */
-  seed: z.enum(["current", "0.1.0", "empty", "none"]).default("current"),
+  seed: z.enum(["current", "0.1.0", "0.3.0", "empty", "none"]).default("current"),
   /**
    * Make the temp root a git repository (`local`), and also give it a
    * bare `origin` (`remote`, at `${var.remote}`), before `pre` — for the
@@ -304,7 +306,7 @@ export interface Case {
   readonly setupPatch: ReadonlyArray<{ file: string; find: string; replace: string }>;
   readonly knownDoctorFindings: ReadonlyArray<{ match: string; bug: string }>;
   readonly pre: readonly Check[];
-  readonly seed: "current" | "0.1.0" | "empty" | "none";
+  readonly seed: "current" | "0.1.0" | "0.3.0" | "empty" | "none";
   readonly git?: "local" | "remote";
   readonly steps: readonly Step[];
   readonly checkScript?: string;

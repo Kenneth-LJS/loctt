@@ -239,12 +239,19 @@ the crash sentinel is fatal until the backup is restored.
   `loadAllUsersDetailed`.
 - **per-user `sidebar_groups` salvage** (SHL-45, K158) — a hand-edited
   unknown or duplicate id (or an unknown `version`) is lifted out on load
-  so the sidebar still renders (P7); a pre-K158 value is not a fault and
-  is migrated on read;
+  so the sidebar still renders (P7). Since format 0.4.0 (K160) a pre-K158
+  value (no `version`) is corrupt: ignored whole for the default layout,
+  and reported as the older layout with the remedy that fits the tracker
+  (`loctt migrate` when its format is older, a layout reset otherwise); a
+  stray `sidebar_pins` is dropped on load and reported the same way;
   `collectSidebarGroupsDrops` (in `users/settings.ts`) reads the raw
   settings and `checkDataIntegrity` emits a `malformed` finding naming
   each dropped id (and one for a wholly-unshaped value). Non-blocking —
   the valid ids still load.
+- **unparseable per-user `settings.yaml`** (K160) — `loadUserSettings`
+  throws on it and the 0.3.0 → 0.4.0 step leaves it as it is, so
+  `collectUnreadableSettings` names it (`malformed`: the file is
+  gitignored and never published, so it must not block a publish).
 - **per-user `keyboard_shortcuts` salvage** (K133) — a hand-edited unknown
   shortcut id, a duplicate, or a non-boolean `single_key` is lifted out on
   load so single-key shortcuts fail open (on); `collectKeyboardShortcutsDrops`
@@ -275,11 +282,13 @@ This month's additions, walked against the checklists above:
 |---|---|---|---|---|
 | `keyboard_shortcuts` (K133) | field-local | yes — `salvageKeyboardShortcuts`, fails open (all on) | yes — `collectKeyboardShortcutsDrops` → `checkDataIntegrity` | had zero test at the doctor/integrity layer (only unit-level `shortcuts.test.ts`); added two `integrity.test.ts` cases |
 | `sidebar_groups` incl. `filters` group id (K125) | field-local | yes — `salvageSidebarGroups`, degrades to "no customization" | yes — `collectSidebarGroupsDrops` → `checkDataIntegrity`, tested | none — the `filters` group id is just one more entry in the closed `SIDEBAR_ITEM_IDS` set the existing salvage already walks; no separate code path to miss |
-| `sidebar_groups` version 2: one `views` group, `view:<id>` children (K158, A370) | field-local | yes — `salvageSidebarGroups` reads by `version` (absent = the pre-K158 id set, migrated on read with the saved views loaded; 2 = the K158 set; any other version reported and read as 2); a malformed, duplicate or stray part drops alone | yes — the same `collectSidebarGroupsDrops` path, tested for a malformed `view:` id and for a clean pre-K158 value producing no finding | a `view:<id>` whose view is gone is not a finding: it is a stale reference the resolver skips (a deleted view drops out of the order), not corruption |
+| `sidebar_groups` version 2: one `views` group, `view:<id>` children (K158, A370) | field-local | yes — `salvageSidebarGroups` (2 = the K158 set; any other version reported and read as 2); a malformed, duplicate or stray part drops alone | yes — the same `collectSidebarGroupsDrops` path, tested for a malformed `view:` id | a `view:<id>` whose view is gone is not a finding: it is a stale reference the resolver skips (a deleted view drops out of the order), not corruption |
+| Pre-K158 `sidebar_groups` (no `version`) after format 0.4.0 (K160, A372) | field-local | yes — `salvageSidebarGroups` flags `olderLayout` and returns the default; not salvaged per id (its ids meant other things) | yes — `collectSidebarGroupsDrops` → `checkDataIntegrity`, remedy chosen by the tracker's recorded format (`loctt migrate` if older, reset otherwise); `integrity.test.ts` | the upgrade step converts only a clean value; a dirty one is left for this finding rather than approximated (rule 3) |
 | Body draft (`sessionStorage`, A338) | field-local (per-tab, ephemeral) | yes — `readBodyDraft` drops an unparseable/wrong-shaped entry and a blocked/throwing `Storage` degrades to "no draft" everywhere it's touched | n/a — not on-disk tracker state, so outside doctor's scope by design | none — `bodyDraft.test.ts` already covers the malformed-JSON, wrong-type, and blocked-storage cases |
 | Link `rank` (K143, B41) | field-local (an edge without one) | yes — sorts after the ranked edges; reorder ranks its siblings first | yes — `relationshipFindings` "has no rank", repaired by `--repair-relationships` | none; tested in `task/traversal.test.ts` and `relationship-repair.test.ts` |
 | Retired `ranked` on a relationship (K143) | field-local (a key that no longer means anything) | yes — dropped on read, the kind loads | yes — `workflow.yaml retired settings` warn | none; `config/retired-keys.test.ts` |
-| Retired `sidebar_pins` per-user setting (K159) | field-local (a key that no longer means anything) | yes — not in the schema, so it passes through and loads whatever it holds; read only to seed the K158 migration of a pre-K158 `sidebar_groups`, and a non-list reads as no pins | no — unlike `ranked`, loctt rewrites this file itself: `saveUserSettings` drops the key with the write that stores the K158 shape, so there is nothing for the user to remove | none; `users/settings.test.ts`, `users/sidebarGroups.test.ts`, `integration/cli/user-sidebar-groups.test.ts` |
+| Retired `sidebar_pins` per-user setting (K159, K160) | field-local (a key that no longer means anything) | yes — the loader lifts it out (`RETIRED_SETTINGS_KEYS`), whatever it holds, so the next settings write leaves it behind; only the 0.3.0 → 0.4.0 step reads it, to order the saved views, and deletes it | yes — `collectSidebarGroupsDrops` (`retiredPins`), same remedy rule as the older layout | none; `users/settings.test.ts`, `diagnostics/integrity.test.ts`, `schema/upgrade-0.4.0.test.ts` |
+| Unparseable `settings.yaml` (K160) | object-fatal for that user's settings (the loader throws) | no — pre-existing; the settings surfaces fail for that user | yes — `collectUnreadableSettings`, `malformed` | the loader itself still throws (a known gap, not new): only doctor reports it |
 | `.schema-version` as semver (K142) | object-fatal (for the tracker) | n/a — refused with what it must hold, by design | yes — the `schema version` check names the problem | none; `schema/version.test.ts`, `upgrade-0.3.0.test.ts` |
 | Unique view names (B21/K129) | write-time refusal (not stored corruption) | n/a — a duplicate name already on disk (pre-K129, or hand-edited) keeps loading and running by id; only a *new write* to a taken name is refused | n/a — nothing to salvage on read | none — this is a write guard, not a degrade-on-load case; `views/manage.test.ts` covers the refusal |
 

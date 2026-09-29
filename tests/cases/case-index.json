@@ -1,9 +1,9 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1101,
+    "total": 1102,
     "ui": 968,
-    "surface": 133,
+    "surface": 134,
     "resolved": 4
   },
   "cases": [
@@ -9023,7 +9023,7 @@
       "id": "ONB-C12",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 263,
+      "line": 269,
       "title": "A tracker the code cannot read is refused with what to do.",
       "severity": "blocker",
       "principles": [
@@ -9041,7 +9041,7 @@
       "id": "ONB-C13",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 301,
+      "line": 307,
       "title": "An older tracker is refused on every surface until the user upgrades it on purpose.",
       "severity": "blocker",
       "principles": [
@@ -9060,7 +9060,7 @@
       "id": "ONB-C14",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 343,
+      "line": 349,
       "title": "An upgrade that crashes part-way stops every surface until it is recovered.",
       "severity": "blocker",
       "principles": [
@@ -9078,7 +9078,7 @@
       "id": "ONB-C15",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 373,
+      "line": 379,
       "title": "A retired `ranked` setting never breaks loading.",
       "severity": "major",
       "principles": [
@@ -9095,7 +9095,7 @@
       "id": "ONB-C16",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 401,
+      "line": 407,
       "title": "Two upgrades started at once upgrade the tracker once.",
       "severity": "major",
       "principles": [
@@ -9112,7 +9112,7 @@
       "id": "ONB-C17",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 427,
+      "line": 433,
       "title": "The web shows an Upgrade screen, and only that, until the user upgrades.",
       "severity": "major",
       "principles": [
@@ -9127,7 +9127,7 @@
       "id": "ONB-C18",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 465,
+      "line": 471,
       "title": "The 0.1.0 → 0.3.0 step ranks every link in the order it was shown.",
       "severity": "blocker",
       "principles": [
@@ -9144,7 +9144,7 @@
       "id": "ONB-C19",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 494,
+      "line": 500,
       "title": "The installed package refuses an old tracker until `loctt migrate --yes`, and refuses a newer one.",
       "severity": "blocker",
       "principles": [
@@ -9159,7 +9159,7 @@
       "id": "ONB-C20",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 518,
+      "line": 524,
       "title": "Doctor and info are read-only on every surface and say an upgrade is needed.",
       "severity": "blocker",
       "principles": [
@@ -9177,7 +9177,7 @@
       "id": "ONB-C21",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 544,
+      "line": 550,
       "title": "`loctt migrate` previews, then asks.",
       "severity": "blocker",
       "principles": [
@@ -9193,7 +9193,7 @@
       "id": "ONB-C22",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 567,
+      "line": 579,
       "title": "Agents ask the user before upgrading.",
       "severity": "blocker",
       "principles": [
@@ -9201,6 +9201,24 @@
       ],
       "surfaces": [
         "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C23",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 597,
+      "title": "The 0.3.0 → 0.4.0 step moves each user's sidebar settings to the Views layout.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P7"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
       ],
       "resolved": false
     },

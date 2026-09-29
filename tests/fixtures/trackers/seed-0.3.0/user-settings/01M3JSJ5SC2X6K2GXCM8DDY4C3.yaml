@@ -1,0 +1,11 @@
+# Written by loctt 0.3.0 (before K158): Filters above Projects, the
+# Saved views section hidden, one built-in hidden, two pins (one of them
+# naming a view that no longer exists).
+theme: dark
+sidebar_groups:
+  order: [filters, overdue, assigned-to-me, projects, saved-filters, views]
+  hidden: [saved-filters, high-priority]
+sidebar_pins:
+  - 01M3JSKFGY2KVS3DFF1TVEKWWY
+  - 01M3JSZZZZZZZZZZZZZZZZZZZZ
+experimental_flag: keep-me

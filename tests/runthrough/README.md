@@ -48,6 +48,12 @@ tests/fixtures/trackers/seed/
 tests/fixtures/trackers/seed-0.1.0/
   .loctt/                 the same seed frozen at format 0.1.0 (B41), never
                           upgraded: the upgrade tests start from it
+tests/fixtures/trackers/seed-0.3.0/
+  .loctt/                 the same seed frozen at format 0.3.0 (B54, K160)
+  user-settings/          <user id>.yaml: pre-K158 sidebar settings and
+                          pins, installed as users/<id>/settings.yaml per
+                          test (a tracker's .gitignore keeps them out of
+                          .loctt/)
 tests/vitest.runthrough.config.ts
 ```
 
@@ -82,7 +88,9 @@ is, because core has no clock or id override. Keys are deterministic
 - **`npm run seed:upgrade`** brings the seed to the code's format
   version through the tracker's own upgrade path (`loctt migrate`),
   keeping its history, ids and timestamps. B41 produced the 0.3.0 seed
-  this way from the 0.1.0 one (every link ranked in its shown order). It
+  this way from the 0.1.0 one (every link ranked in its shown order), and
+  B54 the 0.4.0 seed from the 0.3.0 one (the seed has no user settings,
+  so only `.schema-version` changed). It
   replaces the
   seed only when the upgraded copy is `doctor`-clean.
 - **The runner refuses to start** when the seed's `.schema-version`
@@ -157,7 +165,9 @@ post:
   its return value is the step's output.
 - **`seed: "0.1.0"`** starts the case from the frozen 0.1.0 seed
   (`tests/fixtures/trackers/seed-0.1.0/`) instead of the current one, for
-  the upgrade cases. Ids, keys and the index are the same.
+  the upgrade cases, and **`seed: "0.3.0"`** from the frozen 0.3.0 one
+  (with its `user-settings/` installed). Ids, keys and the index are the
+  same.
 - **`setup_files`** (`path: content`) writes files under the temp root
   before `pre` — e.g. a file to attach. **`setup_patch`** (`file`,
   `find`, `replace`, relative to `.loctt/`, `find` must occur exactly
