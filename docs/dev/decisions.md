@@ -22693,6 +22693,9 @@ Ken: *"`1 discarded task is excluded from the total.` we shouldnt be
 showing this"*. The web progress readout (milestones, sprints, child
 progress) no longer shows the note; discarded tasks are still excluded
 from the total. The case that required the sentence is amended.
+Extended to every surface (*"yes remove for consistency"*): the CLI's
+"(N discarded, excluded)" and the same sentence in MCP text go too;
+structured numeric fields (a `discarded` count) stay.
 
 ### K156 · One reorder primitive (SortableTree) with nesting options; aligned relationship rows; drop line
 
