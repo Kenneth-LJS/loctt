@@ -34,6 +34,11 @@ See [Upgrading](docs/user/common/upgrading.md).
   steps run on a copy of the backup's data first, so if one fails nothing
   is restored. A backup from a newer format is still refused. See
   [Upgrading](docs/user/common/upgrading.md#restoring-a-backup-taken-at-an-older-format).
+- A personal settings file that can't be read (not valid YAML, or not a
+  set of `name: value` settings) no longer stops that person's settings
+  from loading. The web UI, CLI and MCP use the default settings, and
+  saving a setting is refused, naming the file, instead of replacing it.
+  `loctt doctor` names the file. Fix it by hand.
 
 ### Format 0.3.0 (ordered links)
 

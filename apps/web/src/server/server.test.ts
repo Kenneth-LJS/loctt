@@ -450,6 +450,37 @@ describe("web server security", () => {
       }
     });
 
+    // @verifies DEG-28 — B56: an unparseable settings.yaml reads as the
+    // defaults, and a PUT is refused as not saved, leaving the file as it is.
+    it("reads an unparseable settings.yaml as no settings and refuses a PUT over it", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      const settingsPath = join(root, ".loctt", "users", current.id, "settings.yaml");
+      const broken = "theme: [dark\n";
+      const original = await readFile(settingsPath, "utf-8").catch(() => null);
+      await writeFile(settingsPath, broken, "utf-8");
+      try {
+        const get = await fetch(`${base}/api/user-settings`);
+        expect(get.status).toBe(200);
+        expect((await get.json() as { settings: unknown }).settings).toEqual({});
+
+        const put = await fetch(`${base}/api/user-settings`, {
+          method: "PUT",
+          headers: csrfHeaders,
+          body: JSON.stringify({ theme: "light" }),
+        });
+        expect(put.status).toBe(400);
+        const body = await put.json() as { error: string; code?: string; data_state?: string };
+        expect(body.code).toBe("config_invalid");
+        expect(body.data_state).toBe("not_saved");
+        expect(body.error).toContain("settings.yaml");
+        expect(await readFile(settingsPath, "utf-8")).toBe(broken);
+      } finally {
+        if (original === null) await rm(settingsPath, { force: true });
+        else await writeFile(settingsPath, original, "utf-8");
+      }
+    });
+
     it("ignores avatar_source_path in POST /api/users (field is no longer accepted)", async () => {
       const res = await fetch(`${base}/api/users`, {
         method: "POST",

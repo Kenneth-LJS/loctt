@@ -436,7 +436,10 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 Per-user settings, sidebar layout and keyboard shortcuts have their own
 read/write tools: `get_user_settings`, `get_sidebar_groups`,
 `set_sidebar_groups`, `get_keyboard_shortcuts`,
-`set_keyboard_shortcuts`.
+`set_keyboard_shortcuts`. When the user's `settings.yaml` can't be read
+(it isn't valid YAML, or isn't a set of `name: value` settings), the
+read tools return the defaults and the set tools return an error naming
+the file, writing nothing. `doctor` names the file too. Fix it by hand.
 
 The sidebar-groups tools use these ids. Groups: `layouts` (List / Board /
 Timeline), `projects`, `views`, `milestones`, `sprints`, `labels`,

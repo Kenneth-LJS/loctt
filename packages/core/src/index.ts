@@ -595,6 +595,7 @@ export {
   singleKeyShortcutsOn,
   switchCurrentUser,
   unarchiveUser,
+  UnreadableSettingsError,
   updateUser,
   UserError,
   userExists,

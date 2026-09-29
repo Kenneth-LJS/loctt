@@ -470,17 +470,19 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     // doctor's own users/ load check, same as the profile loop above.
   }
 
-  // A user's settings.yaml that does not parse (K160). The settings
-  // loader throws on it and the upgrade step leaves it as it is, so it is
-  // named here. `malformed`, not `unreadable`: the file is per-checkout
-  // and gitignored, never published, so it must not block a publish.
+  // A user's settings.yaml that does not parse, or is not a mapping (K160,
+  // B56). The settings loader reads it as no settings, a settings write
+  // refuses to overwrite it, and the upgrade step leaves it as it is, so
+  // it is named here. `malformed`, not `unreadable`: the file is
+  // per-checkout and gitignored, never published, so it must not block a
+  // publish.
   try {
     for (const report of await collectUnreadableSettings(locttDir)) {
       findings.push({
         severity: "malformed",
         path: report.path,
         message:
-          `this user's settings could not be read (${report.error}), so none of them load. `
+          `this user's settings could not be read (${report.error}). The defaults are in use and settings changes aren't saved. `
           + `Fix the file by hand.`,
       });
     }

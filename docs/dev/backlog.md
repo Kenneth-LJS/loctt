@@ -10,11 +10,4 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 ---
 
 
-## B56 · An unparseable settings.yaml degrades instead of failing (G12) — **todo**
-
-Ken put it in the 0.4.0 stack (2026-09-29). Loading a user's settings
-file that does not parse falls back to defaults (field-local), the
-surfaces keep working, doctor keeps naming the file, and a settings write
-does not overwrite the unreadable file silently.
-
-Empty otherwise. B51–B55 shipped on `ui/sortable-tree`; records are K156–K161 and A369–A374 in `decisions.md`.
+Empty. B51–B56 shipped on the 0.4.0 stack (`ui/sortable-tree`, `fix/restore-older-backup`, `fix/unreadable-settings`); records are K156–K161 and A369–A375 in `decisions.md`.

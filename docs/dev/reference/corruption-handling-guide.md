@@ -248,10 +248,13 @@ the crash sentinel is fatal until the backup is restored.
   settings and `checkDataIntegrity` emits a `malformed` finding naming
   each dropped id (and one for a wholly-unshaped value). Non-blocking —
   the valid ids still load.
-- **unparseable per-user `settings.yaml`** (K160) — `loadUserSettings`
-  throws on it and the 0.3.0 → 0.4.0 step leaves it as it is, so
-  `collectUnreadableSettings` names it (`malformed`: the file is
-  gitignored and never published, so it must not block a publish).
+- **unparseable or non-mapping per-user `settings.yaml`** (K160, B56) —
+  `loadUserSettings` reads it as no settings (every setting at its
+  default), `saveUserSettings` refuses to overwrite it
+  (`UnreadableSettingsError`, not saved), and the 0.3.0 → 0.4.0 step
+  leaves it as it is, so `collectUnreadableSettings` names it
+  (`malformed`: the file is gitignored and never published, so it must
+  not block a publish).
 - **per-user `keyboard_shortcuts` salvage** (K133) — a hand-edited unknown
   shortcut id, a duplicate, or a non-boolean `single_key` is lifted out on
   load so single-key shortcuts fail open (on); `collectKeyboardShortcutsDrops`
@@ -288,7 +291,7 @@ This month's additions, walked against the checklists above:
 | Link `rank` (K143, B41) | field-local (an edge without one) | yes — sorts after the ranked edges; reorder ranks its siblings first | yes — `relationshipFindings` "has no rank", repaired by `--repair-relationships` | none; tested in `task/traversal.test.ts` and `relationship-repair.test.ts` |
 | Retired `ranked` on a relationship (K143) | field-local (a key that no longer means anything) | yes — dropped on read, the kind loads | yes — `workflow.yaml retired settings` warn | none; `config/retired-keys.test.ts` |
 | Retired `sidebar_pins` per-user setting (K159, K160) | field-local (a key that no longer means anything) | yes — the loader lifts it out (`RETIRED_SETTINGS_KEYS`), whatever it holds, so the next settings write leaves it behind; only the 0.3.0 → 0.4.0 step reads it, to order the saved views, and deletes it | yes — `collectSidebarGroupsDrops` (`retiredPins`), same remedy rule as the older layout | none; `users/settings.test.ts`, `diagnostics/integrity.test.ts`, `schema/upgrade-0.4.0.test.ts` |
-| Unparseable `settings.yaml` (K160) | object-fatal for that user's settings (the loader throws) | no — pre-existing; the settings surfaces fail for that user | yes — `collectUnreadableSettings`, `malformed` | the loader itself still throws (a known gap, not new): only doctor reports it |
+| Unparseable or non-mapping `settings.yaml` (K160, B56) | object-fatal for the file, degraded for the user: nothing in it can be read, so every setting loads at its default | yes — `loadUserSettings` returns `{}`, so web, CLI and MCP keep working for that user (B56) | yes — `collectUnreadableSettings`, `malformed` (a non-mapping file too, since B56) | none. A settings write refuses with `UnreadableSettingsError` and writes nothing (rules 2 and 3): the write was built from the defaults and cannot merge into a file it cannot read, so writing would silently replace the user's file. `settings.test.ts`, the CLI and MCP `user-settings-unreadable` integration tests, `server.test.ts` |
 | `.schema-version` as semver (K142) | object-fatal (for the tracker) | n/a — refused with what it must hold, by design | yes — the `schema version` check names the problem | none; `schema/version.test.ts`, `upgrade-0.3.0.test.ts` |
 | Unique view names (B21/K129) | write-time refusal (not stored corruption) | n/a — a duplicate name already on disk (pre-K129, or hand-edited) keeps loading and running by id; only a *new write* to a taken name is refused | n/a — nothing to salvage on read | none — this is a write guard, not a degrade-on-load case; `views/manage.test.ts` covers the refusal |
 

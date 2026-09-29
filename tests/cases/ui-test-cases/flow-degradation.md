@@ -129,7 +129,8 @@ data-integrity concern, not an eleventh principle.
 
 - A wrong-typed known setting falls back to its default for reading; the rest of the settings are kept.
 - Unknown settings keys survive untouched (the passthrough is load-bearing).
-- Cannot be satisfied yet: whether a corrupt known setting's stored value survives a load→save round-trip (rather than being re-emitted as the default) is not pinned by any test, and an unparseable `settings.yaml` has no read/write test. The risk is a save that re-emits defaults over a file the load could not read — the same data-loss shape as DEG-24. Flag it here; do not author until the round-trip behaviour is decided.
+- A `settings.yaml` that does not parse, or is not a set of `name: value` settings, reads as no settings: every setting at its default, and the settings panels keep working (B56). A settings save over it is refused as not saved, naming the file, and the file is left byte for byte. Doctor names the file, non-blocking.
+- Cannot be satisfied yet: whether a corrupt known setting's stored value survives a load→save round-trip (rather than being re-emitted as the default) is not pinned by any test. The risk is a save that re-emits defaults over a value the load dropped, the same data-loss shape as DEG-24. Flag it here. Do not author until the round-trip behaviour is decided.
 
 ## C. References and cross-object
 

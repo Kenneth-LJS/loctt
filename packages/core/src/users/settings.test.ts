@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getUserSettingsPath } from "../paths/index.js";
-import { loadUserSettings, saveUserSettings } from "./settings.js";
+import { collectUnreadableSettings, loadUserSettings, saveUserSettings, UnreadableSettingsError } from "./settings.js";
 
 const USER_ID = "01HXXXXXXXXXXXXXXXXXXXXXXX";
 
@@ -108,5 +108,65 @@ describe("loadUserSettings corruption tolerance (Phase-7B)", () => {
   it("a wrong-typed sidebar_pins does not break loading (K159)", async () => {
     await writeSettings(`theme: dark\nsidebar_pins: 42\n`);
     expect((await loadUserSettings(locttDir, USER_ID)).theme).toBe("dark");
+  });
+});
+
+// B56 (G12): a settings file that does not parse, or is not a mapping,
+// used to make every settings read throw for that user. It now loads as
+// no settings, and a write refuses rather than replace the file with the
+// defaults plus one change.
+describe("an unreadable settings.yaml (B56)", () => {
+  let locttDir: string;
+
+  beforeEach(async () => {
+    locttDir = await mkdtemp(join(tmpdir(), "loctt-settings-unreadable-"));
+  });
+  afterEach(async () => {
+    await rm(locttDir, { recursive: true, force: true });
+  });
+
+  async function writeSettings(text: string): Promise<string> {
+    const path = getUserSettingsPath(locttDir, USER_ID);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, text, "utf-8");
+    return path;
+  }
+
+  const UNREADABLE: ReadonlyArray<readonly [string, string]> = [
+    ["does not parse as YAML", "theme: [dark\ndefault_project: web\n"],
+    ["is a list", "- theme\n- dark\n"],
+    ["is a bare value", "dark\n"],
+  ];
+
+  // @verifies DEG-28
+  it.each(UNREADABLE)("loads as no settings when the file %s", async (_what, text) => {
+    await writeSettings(text);
+    expect(await loadUserSettings(locttDir, USER_ID)).toEqual({});
+  });
+
+  // @verifies DEG-28
+  it.each(UNREADABLE)("refuses a write, leaving the file as it is, when the file %s", async (_what, text) => {
+    const path = await writeSettings(text);
+    const err = await saveUserSettings(locttDir, USER_ID, { theme: "light" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UnreadableSettingsError);
+    const envelope = (err as UnreadableSettingsError).toEnvelope();
+    expect(envelope.code).toBe("config_invalid");
+    expect(envelope.data_state).toBe("not_saved");
+    expect(envelope.message).toContain(join("users", USER_ID, "settings.yaml"));
+    expect(await readFile(path, "utf-8")).toBe(text);
+  });
+
+  it("a file of comments only is no settings, and a write replaces it", async () => {
+    const path = await writeSettings("# nothing here yet\n");
+    expect(await loadUserSettings(locttDir, USER_ID)).toEqual({});
+    await saveUserSettings(locttDir, USER_ID, { theme: "dark" });
+    expect(await readFile(path, "utf-8")).toContain("theme: dark");
+  });
+
+  it("doctor's scan names the file, including one that is not a mapping", async () => {
+    await writeSettings("- theme\n");
+    const reports = await collectUnreadableSettings(locttDir);
+    expect(reports.map(r => r.userId)).toEqual([USER_ID]);
+    expect(reports[0]?.error).toMatch(/name: value/);
   });
 });

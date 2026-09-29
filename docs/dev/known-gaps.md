@@ -22,14 +22,6 @@ Playwright's 5 s default, was fixed by `SYNC_SETTLE_MS` in
 (G11, a 0.3.0 backup refused by 0.4.0, was fixed by B55: restoring an
 older backup upgrades it, K161.)
 
-## G12 · An unparseable `settings.yaml` stops that user's settings loading
-
-`loadUserSettings` degrades a wrong-typed key but throws when the file is
-not YAML at all, so every settings read for that user fails (web settings
-panels, CLI `loctt user settings`/`sidebar-groups`, MCP
-`get_user_settings`). Since B54, `loctt doctor` names the file
-(`collectUnreadableSettings`) and the 0.3.0 → 0.4.0 step leaves it as it
-is, but loading still does not degrade to `{}`.
-
-Reproduce: write `theme: [dark` to `.loctt/users/<id>/settings.yaml`, then
-`loctt user sidebar-groups`: a YAML parse error.
+(G12, an unparseable `settings.yaml` making every settings read throw,
+was fixed by B56: it loads as no settings and a settings write refuses to
+overwrite it, A375.)

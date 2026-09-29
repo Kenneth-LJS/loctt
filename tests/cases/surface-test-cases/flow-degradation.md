@@ -63,3 +63,10 @@ scheduled by severity.
 - A per-item refusal (a derived op over a field-local-corrupt member) lands in `failed` carrying the corrupt-field error message, and the rest of the batch proceeds.
 - An object-fatal member is reported "could not be read: <path>", not "not found"; a no-op member is `unchanged` (K25/BLK-27), distinct from `failed`.
 - Known gap: existing bulk tests use dangling refs, not an on-disk object-fatal member. Needs new tests.
+
+### DEG-C9 · major · P1 P5 P10 · CLI MCP
+**An unreadable `settings.yaml` reads as the defaults, and a settings write refuses rather than replace it.** Hand-break a user's `settings.yaml` (`theme: [dark`), then read and change settings through `loctt user settings`/`sidebar-groups`/`shortcuts` and MCP `get_user_settings`/`get_sidebar_groups`/`get_keyboard_shortcuts`/`set_sidebar_groups`/`set_keyboard_shortcuts`.
+
+- Every read succeeds with the default settings, matching the web (DEG-28). `loctt create`, which reads the user's default project, still works.
+- Every write, a reset included, is refused naming the file and saying the settings weren't saved: CLI a non-zero exit, MCP an `isError` result. The file is left byte for byte.
+- `loctt doctor` names the file (a warning, never blocking a publish).

@@ -1,8 +1,10 @@
 import { readdir, readFile } from "node:fs/promises";
+import { dirname, relative } from "node:path";
 
 import { type UserSettings, UserSettingsSchema } from "@loctt/contracts";
 import { parse as parseYaml } from "yaml";
 
+import { LocttError } from "../errors.js";
 import { getUsersDir, getUserSettingsPath } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
@@ -138,6 +140,64 @@ function parseSettingsTolerant(candidate: Record<string, unknown>): UserSettings
 }
 
 /**
+ * What a user's stored `settings.yaml` holds, read once for the loader,
+ * the write guard and doctor (B56).
+ *
+ * - `none`: no file, an empty file, or one holding only comments. No
+ *   settings, nothing to lose.
+ * - `settings`: a mapping, the only shape a settings file has.
+ * - `unreadable`: the file could not be read, does not parse as YAML, or
+ *   parses to something other than a mapping (a list, a bare value).
+ *   `error` is one line naming the cause.
+ */
+type StoredSettings =
+  | { readonly kind: "none" }
+  | { readonly kind: "settings"; readonly value: Record<string, unknown> }
+  | { readonly kind: "unreadable"; readonly error: string };
+
+/** The cause recorded for a settings file that parses to a non-mapping. */
+const NOT_A_MAPPING = "it isn't a set of name: value settings";
+
+async function readStoredSettings(path: string): Promise<StoredSettings> {
+  if (!(await fileExists(path))) return { kind: "none" };
+  let parsed: unknown;
+  try {
+    const raw = await readFile(path, "utf-8");
+    if (raw.trim() === "") return { kind: "none" };
+    parsed = parseYaml(raw);
+  } catch (err) {
+    return { kind: "unreadable", error: firstLine(err) };
+  }
+  // A file of comments only parses to null: no settings, not corruption.
+  if (parsed === null || parsed === undefined) return { kind: "none" };
+  if (!isPlainObject(parsed)) return { kind: "unreadable", error: NOT_A_MAPPING };
+  return { kind: "settings", value: parsed };
+}
+
+/**
+ * Refused: a settings write would replace a `settings.yaml` that could
+ * not be read (B56). The file may hold a hand edit with one typo in it,
+ * and the write cannot merge into what it cannot read, so writing would
+ * destroy it silently (corruption-handling-guide rules 2 and 3). Nothing
+ * is written. The message names the file because fixing it by hand is
+ * the way out. Doctor names it too (`collectUnreadableSettings`).
+ */
+export class UnreadableSettingsError extends LocttError {
+  readonly path: string;
+
+  constructor(locttDir: string, path: string, cause: string) {
+    const shown = relative(dirname(locttDir), path);
+    super(
+      "config_invalid",
+      `Couldn't read ${shown}, so your settings weren't saved. Fix the file by hand and try again.`,
+      { dataState: "not_saved", recovery: { kind: "none" }, detail: `${shown}: ${cause}` },
+    );
+    this.name = "UnreadableSettingsError";
+    this.path = path;
+  }
+}
+
+/**
  * Loads a user's settings.yaml. Returns `{}` when absent or empty.
  *
  * A wrong-typed KNOWN setting (e.g. `theme: 42`) degrades to its default
@@ -145,21 +205,21 @@ function parseSettingsTolerant(candidate: Record<string, unknown>): UserSettings
  * out of their whole settings surface. Unknown keys are accepted via the
  * schema's passthrough policy and survive round-trip unchanged (Group-G,
  * load-bearing).
+ *
+ * A file that cannot be read, does not parse, or is not a mapping loads
+ * as `{}` too (B56): every setting falls back to its default, so the web
+ * app, CLI and MCP keep working for that user. The file is left as it
+ * is. Doctor names it (`collectUnreadableSettings`) and a settings write
+ * refuses rather than overwrite it (`saveUserSettings`).
  */
 export async function loadUserSettings(
   locttDir: string,
   userId: string,
 ): Promise<UserSettings> {
-  const path = getUserSettingsPath(locttDir, userId);
-  if (!(await fileExists(path))) return UserSettingsSchema.parse({});
-  const raw = await readFile(path, "utf-8");
-  if (raw.trim() === "") return UserSettingsSchema.parse({});
-  const parsed: unknown = parseYaml(raw);
-  // Coerce non-object payloads to empty rather than crashing — matches
-  // the previous behaviour for malformed-but-not-invalid YAML (e.g. a
-  // bare list). A wrong-typed KNOWN key degrades to default below.
-  const candidate = isPlainObject(parsed) ? withoutRetiredKeys(parsed) : {};
-  return parseSettingsTolerant(candidate);
+  const stored = await readStoredSettings(getUserSettingsPath(locttDir, userId));
+  if (stored.kind !== "settings") return UserSettingsSchema.parse({});
+  // A wrong-typed KNOWN key degrades to default below.
+  return parseSettingsTolerant(withoutRetiredKeys(stored.value));
 }
 
 /**
@@ -169,6 +229,11 @@ export async function loadUserSettings(
  * The schema is re-applied on save so the on-disk file is always
  * normalized to a validated shape. UI-only keys are preserved through
  * the schema's passthrough policy.
+ *
+ * Refuses with `UnreadableSettingsError`, writing nothing, when the
+ * stored file could not be read (B56). The caller's settings were built
+ * from the defaults that file loaded as, so writing them would replace
+ * the user's file with the defaults plus one change.
  */
 export async function saveUserSettings(
   locttDir: string,
@@ -176,7 +241,10 @@ export async function saveUserSettings(
   settings: UserSettings,
 ): Promise<UserSettings> {
   const safe = UserSettingsSchema.parse(settings);
-  await writeYamlAtomically(getUserSettingsPath(locttDir, userId), safe);
+  const path = getUserSettingsPath(locttDir, userId);
+  const stored = await readStoredSettings(path);
+  if (stored.kind === "unreadable") throw new UnreadableSettingsError(locttDir, path, stored.error);
+  await writeYamlAtomically(path, safe);
   return safe;
 }
 
@@ -311,7 +379,10 @@ export async function collectKeyboardShortcutsDrops(
   return reports;
 }
 
-/** A user's `settings.yaml` that cannot be read or parsed as YAML. */
+/**
+ * A user's `settings.yaml` that cannot be read, does not parse as YAML,
+ * or is not a mapping.
+ */
 export interface UnreadableSettingsReport {
   readonly userId: string;
   readonly path: string;
@@ -319,11 +390,13 @@ export interface UnreadableSettingsReport {
 }
 
 /**
- * Scans every user's `settings.yaml` for a file that cannot be read or
- * does not parse as YAML. Read-only. `loadUserSettings` throws on such a
- * file, and the 0.3.0 → 0.4.0 upgrade step leaves it as it is (K160), so
- * doctor names it (corruption-handling-guide rule 4). An empty file is
- * not a fault: it loads as no settings.
+ * Scans every user's `settings.yaml` for a file that cannot be read,
+ * does not parse as YAML, or is not a mapping. Read-only.
+ * `loadUserSettings` loads such a file as no settings and
+ * `saveUserSettings` refuses to overwrite it (B56), and the 0.3.0 →
+ * 0.4.0 upgrade step leaves it as it is (K160), so doctor names it
+ * (corruption-handling-guide rule 4). An empty file, or one of comments
+ * only, is not a fault: it loads as no settings.
  */
 export async function collectUnreadableSettings(
   locttDir: string,
@@ -335,14 +408,8 @@ export async function collectUnreadableSettings(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const path = getUserSettingsPath(locttDir, entry.name);
-    if (!(await fileExists(path))) continue;
-    try {
-      const raw = await readFile(path, "utf-8");
-      if (raw.trim() === "") continue;
-      parseYaml(raw);
-    } catch (err) {
-      reports.push({ userId: entry.name, path, error: firstLine(err) });
-    }
+    const stored = await readStoredSettings(path);
+    if (stored.kind === "unreadable") reports.push({ userId: entry.name, path, error: stored.error });
   }
   return reports;
 }

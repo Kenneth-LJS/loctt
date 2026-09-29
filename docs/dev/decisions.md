@@ -23335,6 +23335,33 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A375 · An unreadable settings.yaml loads as no settings, and a settings write refuses (B56, G12)
+
+**Ticket:** B56 · **Date:** 2026-09-29 · **Agent-made** (under B56; the corruption guide rules 1 to 4, K160, A372).
+
+**The situation.** B56 (Ken put it in the 0.4.0 stack) asks that a user's `settings.yaml` that does not parse falls back to defaults, the surfaces keep working, doctor keeps naming the file, and a settings write does not overwrite the unreadable file silently. Before this, `loadUserSettings` threw on a YAML parse error (every settings read for that user failed: web panels, `loctt user settings`/`sidebar-groups`/`shortcuts`, `loctt create` through the user's default project, MCP `get_user_settings` and the sidebar/shortcut tools), coerced a non-mapping file (a list, a bare value) to `{}` silently, and `saveUserSettings` wrote over whatever was there.
+
+**What had to be decided.**
+1. What a settings write does when the stored file cannot be read.
+2. Whether a file that parses to a non-mapping counts as unreadable (it already loaded as `{}`, but was overwritten on the next save and doctor did not name it).
+3. What counts as no settings rather than unreadable.
+4. Whether read surfaces say anything about the unreadable file.
+
+**Decided.**
+1. **Refuse the write.** `saveUserSettings` re-reads the stored file and, when it is unreadable, throws `UnreadableSettingsError` (a `LocttError`: `config_invalid`, `data_state: not_saved`, recovery `none`, the parse error in `detail`) and writes nothing. Message: "Couldn't read .loctt/users/<id>/settings.yaml, so your settings weren't saved. Fix the file by hand and try again." Every surface already renders a `LocttError`: CLI exit 1 with the message on stderr, MCP an `isError` result, web a 400 through the top-level catch (the client's settings mutation rolls back and surfaces the error). Resets (`sidebar-groups --reset`, `shortcuts --reset`, `set_sidebar_groups reset`) are writes and are refused too. Alternative: move the bad file aside (e.g. `settings.yaml.unreadable-<ts>`) and write, saying so. Rejected: no precedent in core for moving a user's file aside, it leaves a stray file doctor would then need to know about, and the guide's rule 3 prefers a visible "can't" over an approximation. The precedent is every config loader: a `YamlSyntaxError` on `labels.yaml` makes a label write fail, it never rewrites the file. Alternative: write anyway since the file is gitignored and per-user. Rejected: it destroys a hand edit with one typo in it (rule 2, P1).
+2. **A non-mapping file is unreadable too**, for the load (still `{}`), the write guard and doctor (`collectUnreadableSettings` now reports it, cause "it isn't a set of name: value settings"). Otherwise a save would silently replace it, which is the thing B56 rules out, and doctor would be silent about a file a write refuses.
+3. **No settings, not unreadable:** an absent file, an empty or whitespace-only file, and a file of comments only (parses to null). A write replaces these as before.
+4. **Read surfaces stay silent.** They show the defaults with no marker, matching every other settings salvage (`sidebar_groups`, `keyboard_shortcuts`): doctor is where settings corruption is reported (rule 4), and the write refusal names the file the first time the user tries to change a setting. The doctor finding's sentence now says "The defaults are in use and settings changes aren't saved" in place of "so none of them load".
+
+One read helper, `readStoredSettings` in `users/settings.ts`, returns `none | settings | unreadable` and is shared by `loadUserSettings`, `saveUserSettings` and `collectUnreadableSettings`, so the three cannot disagree on what "unreadable" means. A file that cannot be read at all (a permission error, a directory in its place) is unreadable by the same helper, where the loader used to throw the raw errno.
+
+**Why.** B56's wording ("does not overwrite the unreadable file silently"); corruption guide rule 1 (degrade: the file is object-fatal but the user is not), rule 2 (a writer preserves what it did not touch: a write built from defaults cannot preserve a file it could not read), rule 3 (refuse rather than approximate), rule 4 (doctor names it); `YamlSyntaxError`'s refuse-don't-rewrite precedent for config files; messaging.md (what happened, data state, one action, the path because hand-editing is the fix).
+
+**To revert.**
+- Write decision: in `saveUserSettings` (`packages/core/src/users/settings.ts`) drop the `readStoredSettings` check and the `UnreadableSettingsError` throw. Delete the class and its exports (`users/index.ts`, `core/src/index.ts`). Delete the refusal tests: the "refuses a write" `it.each` in `settings.test.ts`, the second test in `tests/integration/cli/user-settings-unreadable.test.ts` and in `tests/integration/mcp/user-settings-unreadable.test.ts`, and the PUT half of the B56 test in `apps/web/src/server/server.test.ts`. Remove the write sentences from DEG-28, DEG-C9, the CLI and MCP references, the CHANGELOG line, the doctor sentence ("settings changes aren't saved") and the guide's § 6 bullet and table row.
+- Non-mapping as unreadable: in `readStoredSettings` return `{ kind: "none" }` for a non-mapping, and drop the "is a list"/"is a bare value" rows and the doctor-scan test in `settings.test.ts`.
+- Loading degrade (B56 itself, Ken's): not revertible by an agent.
+
 ### A374 · Restoring an older backup upgrades it on a staging copy (B55, K161)
 
 **Ticket:** B55 · **Date:** 2026-09-29 · **Commit:** fix/restore-older-backup · **Agent-made** (under K161; K142, K151, K154, A366, A372, BAK-C21, BAK-C14).

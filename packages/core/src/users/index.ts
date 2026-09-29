@@ -37,7 +37,7 @@ export type { RecentEntry } from "./recents.js";
 export { pushRecent, readRecents, RECENTS_CAP, removeRecent } from "./recents.js";
 export type { UserSettings } from "./settings.js";
 export type { KeyboardShortcutsDropReport, SidebarGroupsDropReport, UnreadableSettingsReport } from "./settings.js";
-export { loadUserSettings, saveUserSettings } from "./settings.js";
+export { loadUserSettings, saveUserSettings, UnreadableSettingsError } from "./settings.js";
 export { collectKeyboardShortcutsDrops, collectSidebarGroupsDrops, collectUnreadableSettings } from "./settings.js";
 export type { KeyboardShortcutsDrop, ResolvedKeyboardShortcuts, ResolvedShortcut, SalvagedKeyboardShortcuts, ShortcutChanges } from "./shortcuts.js";
 export { applyShortcutChanges, isShortcutActive, readKeyboardShortcuts, resolveKeyboardShortcuts, salvageKeyboardShortcuts, SHORTCUT_VALID_IDS, singleKeyShortcutsOn, validateShortcutIds, withKeyboardShortcuts } from "./shortcuts.js";
