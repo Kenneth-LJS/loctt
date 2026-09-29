@@ -20,4 +20,13 @@ built-in ⋯ = Hide, saved ⋯ = Edit/Rename/Delete/Hide; Customize sidebar
 lists the merged section on SortableTree; CLI/MCP sidebar-group tools
 and docs follow the new ids; amend K125/A339-era cases.
 
+## B53 · Retire pinned views (K159) — **todo** (after B52 lands)
+
+Remove the Pinned views settings panel and route, `sidebar_pins` (contracts,
+core, per-user settings write paths; a stored value is ignored and dropped
+on the next write, with a doctor note if the corruption guide calls for one),
+CLI `--sweep-pins`, MCP `sweep_sidebar_pins`, their docs and tests; keep the
+one-time seeding of the K158 migration from existing pins. Retire SET-13 and
+every pin case entirely (not commented out); close G10.
+
 Empty otherwise. B39–B50 shipped on `fix/parent-and-child-order`; records K140–K155, A357–A368.

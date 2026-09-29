@@ -22685,6 +22685,19 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K159 · Pinned views are retired
+
+**Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
+
+After K158 moved the whole Views order into Customize sidebar, Settings →
+Pinned views overlapped it and silently stopped affecting the sidebar
+once a layout was saved (known gap G10, from A370). Offered retiring pins
+or keeping them with a new meaning, Ken chose **"Retire pins"**: remove
+Settings → Pinned views, the stored `sidebar_pins` setting, CLI
+`--sweep-pins` and MCP `sweep_sidebar_pins`. Existing pins seed the
+user's Views order once, during the K158 settings migration. SET-13 and
+the other pin cases are retired.
+
 ### K158 · One "Views" section: built-in and saved views together, with counts
 
 **Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
