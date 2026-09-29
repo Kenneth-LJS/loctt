@@ -69,7 +69,7 @@ let SETTINGS: Record<string, unknown> = {};
 
 /** Saved views returned by /api/views, per-test (SHL-32). */
 // `conditions` optional: a valid view carries it (edit seeds the builder
-// from it); fixtures that only exercise listing/pin/delete may omit it.
+// from it); fixtures that only exercise listing/delete may omit it.
 let VIEWS: { id: string; name: string; filters: unknown[]; archived?: boolean; icon?: string; color?: unknown }[] = [
   {
     id: "v_mine",
@@ -1251,15 +1251,14 @@ describe("Sidebar groups customization (SHL-45)", () => {
 });
 
 /**
- * Edit / Pin / Delete a saved filter from the sidebar row (Ken's gap).
+ * Edit / Delete a saved filter from the sidebar row (Ken's gap).
  *
  * The user-view rows were bare `<Link>`s — the edit/rename/delete
  * affordance existed only in Settings → Saved views. These cover the
  * kebab the rows now carry: present on a user view, absent on a built-in;
  * Edit opens the prefilled dialog and issues one PUT; Delete confirms,
  * DELETEs, and does NOT fire the "was removed" vanished-view notice for
- * the user's own deletion; Pin/Unpin issues one merged user-settings PUT;
- * and a broken row offers Edit but not Pin.
+ * the user's own deletion; and a broken row offers Edit but not Rename.
  */
 describe("Sidebar saved-filter row actions", () => {
   /** Captures write requests so a test can assert method + URL + body. */
@@ -1438,7 +1437,7 @@ describe("Sidebar saved-filter row actions", () => {
    * @verifies A328 (B6)
    *
    * Before this fix, `confirmDelete` called `dismiss(view.id)`, the
-   * pin-removal write and `setDialog(null)` EAGERLY — before the DELETE
+   * settings write and `setDialog(null)` EAGERLY — before the DELETE
    * had even settled. A FAILED delete still closed the dialog and told
    * `useVanishedViews` the view was gone, so the app believed an
    * unconfirmed delete had succeeded and showed the user nothing. This
@@ -1446,7 +1445,7 @@ describe("Sidebar saved-filter row actions", () => {
    * leave the dialog open, with an inline notice, and the row must still
    * be there.
    *
-   * Red-proof: restore the eager `dismiss`/pin-write/`setDialog(null)`
+   * Red-proof: restore the eager `dismiss`/settings-write/`setDialog(null)`
    * ordering in `Sidebar.tsx`'s `confirmDelete` (call them unconditionally
    * before `del.mutate`, not from its `onSuccess`) and every assertion
    * below goes red — the dialog closes and the row disappears despite the
@@ -1513,11 +1512,10 @@ describe("Sidebar saved-filter row actions", () => {
     });
   });
 
-  it("Delete drops the view's pin and its sidebar place in one merged settings PUT", async () => {
-    // K158: the ⋯ no longer offers Pin (Ken's list: Edit, Rename, Delete,
-    // Hide). A deleted view's pin and its `view:<id>` entries go in the
-    // same write, once the DELETE has landed.
-    SETTINGS = { sidebar_pins: ["v_mine"], sidebar_groups: { version: 2, order: ["view:v_mine", "labels"], hidden: ["overdue"] } };
+  it("Delete drops the view's sidebar place in one merged settings PUT", async () => {
+    // A deleted view's `view:<id>` entries go in one write, once the
+    // DELETE has landed.
+    SETTINGS = { sidebar_groups: { version: 2, order: ["view:v_mine", "labels"], hidden: ["overdue"] } };
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");
     const { calls } = captureWrites();
@@ -1527,7 +1525,7 @@ describe("Sidebar saved-filter row actions", () => {
     await waitFor(() => {
       const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
       expect(puts.length).toBe(1);
-      expect(puts[0]?.body).toEqual({ sidebar_pins: [], sidebar_groups: { version: 2, order: ["labels"], hidden: ["overdue"] } });
+      expect(puts[0]?.body).toEqual({ sidebar_groups: { version: 2, order: ["labels"], hidden: ["overdue"] } });
     });
   });
 

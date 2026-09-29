@@ -23307,6 +23307,47 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A371 · Pinned views retired (B53, K159)
+
+#### A371 · Pinned views retired; `sidebar_pins` read only by the K158 migration (B53, K159)
+
+#### A371 · Retiring pins: what is read, what is dropped, what doctor says (B53)
+
+**Ticket:** B53 · **Date:** 2026-09-29 · **Commit:** (uncommitted, ui/sortable-tree) · **Agent-made** (under K159; A370, K158, the corruption guide, B41/K143's `ranked` precedent).
+
+**The situation.** K159 (Ken: "Retire pins") removes Settings → Pinned views, the `sidebar_pins` per-user setting, CLI `--sweep-pins` and MCP `sweep_sidebar_pins`, and keeps A370's one-time seeding: existing pins order the saved views when a pre-K158 `sidebar_groups` is migrated. K159 does not say where the legacy value is read, how a stored value leaves the file, when it may be dropped, whether doctor reports it, what happens to a user with pins and no `sidebar_groups` at all, or what the "default order" of an unplaced saved view becomes.
+
+**What had to be decided.**
+1. Where a stored `sidebar_pins` is read.
+2. How it leaves the settings file, and when.
+3. Whether doctor reports it (the retired-key pattern).
+4. The default order of a saved view the user has not placed.
+5. What the seeding does with a pin naming an archived, missing or broken view.
+6. The delete-view dialog's pin warning and the sidebar delete's pin write.
+
+**Options considered / decided** (chosen first).
+
+1. *Read.* (a) Only inside `readSidebarGroups`, and only on its pre-K158 branch (`legacyPins`, `pinnedFirst` in `users/sidebarGroups.ts`); every surface already reads the layout through it, so web, CLI and MCP seed identically. The value is not in the contracts schema any more (an unknown passthrough key), so any content loads; a non-list reads as no pins. (b) A separate exported reader: a second reader of a retired key, which is what K159 says to avoid. (a) chosen. `loadSidebarSavedViews` and `sidebarSavedViews` lost their pins parameter.
+2. *Drop.* (a) `saveUserSettings` removes `sidebar_pins` from the value it writes (`withoutRetiredSettings`), and returns the saved value (the web PUT responds with it). Every panel PUTs `{...stored, ...next}`, so a stored key would otherwise ride along forever; dropping in core covers web, CLI and MCP. **Exception:** while `sidebar_groups` is absent or still pre-K158 the key is kept, because the migration runs on every read of such a value and would reorder the saved views the moment an unrelated write (a theme change) removed the pins. The write that stores the K158 shape drops it. (b) Drop on every write: a theme change would silently reorder the user's sidebar (P7, the A339/A370 "nothing moves" precedent). (c) Migrate on write: core cannot do it, it does not know the saved view ids (A370 item 4). (a) chosen. Cost: a user with pins who never customizes the sidebar keeps the (inert to everything except the default order) key in the file, and their default order stays pinned-first, until their first layout write.
+3. *Doctor.* No report. `ranked:` (K143) is reported because loctt never rewrites `workflow.yaml`, so the line stays until a human removes it. `settings.yaml` is loctt's own per-user, gitignored file and the key goes with the next layout write, so there is nothing for the user to do. The corruption guide's coverage table has the row. Alternative: a `settings retired` warn; rejected as noise on a file the user does not maintain. Tolerance is tested: a wrong-typed value loads.
+4. *Default order.* `queries.yaml` order, then broken views. Pinned-first survives only through the migration (item 1). A user with no `sidebar_groups` is "an empty pre-K158 value" to `readSidebarGroups`, so their pins still seed it (item 2's exception).
+5. *Seeding rules* are the ones the old default order had: only healthy, non-archived views; pin order; duplicates folded; a pin naming a missing, archived or broken view is skipped; the rest follow in `queries.yaml` order, then broken.
+6. *Delete.* `DeleteViewDialog` lost its `pinned` prop and warning; the sidebar delete writes `sidebar_groups` (drop `view:<id>`) only, no `sidebar_pins`. VUE-38 amended (the warning and the pin sweep are gone; the confirmation, the order clean-up and the removal from `queries.yaml` stay).
+
+**Why.** K159; K158's single Views order in `sidebar_groups`; P7 (nothing moves silently: the exception in item 2); the corruption guide's field-local rule (a retired key never breaks loading) and its retired-key row; the layer rule (core drops it once, so CLI, MCP and web agree).
+
+**To revert.** Ken's ruling K159 itself is not revertible by an agent; these are the agent calls.
+1. `readSidebarGroups`' `legacyPins`/`pinnedFirst` (`core/users/sidebarGroups.ts`): remove to stop seeding.
+2. `withoutRetiredSettings` and `saveUserSettings`' return value (`core/users/settings.ts`): remove to keep a stored key forever.
+3. The exception in item 2: replace `stillNeeded` by `false` to drop on every write.
+4. Doctor: add a `collectRetiredSettings` report beside `collectSidebarGroupsDrops`.
+5. Default order: reintroduce a pins argument to `sidebarSavedViews` (not recommended: K159 retires the setting).
+6. `pinned` prop of `DeleteViewDialog` (VUE-38's amendment).
+
+**Removed.** `core/users/pins.ts` + `pins.test.ts` and the `./users/pins.js` export; contracts `SidebarPinsSchema`/`SidebarPins` and `UserSettings.sidebar_pins`; web `settings/SidebarPinsPanel.tsx` + test, `settings/sidebarPins.ts`, the `sidebar-pins` section (route, nav entry, `SettingsShell` branch), the A244 relabel test; CLI `loctt user settings --sweep-pins`; MCP `sweep_sidebar_pins` (and it from `get_user_settings`'s description); `tests/integration/mcp/sweep-sidebar-pins.test.ts`, the two `--sweep-pins` CLI tests, SET-13/SET-27 specs and unit tests; the tool-contract snapshot entry; G10. Cases SET-13 and SET-27 retired (text and tests deleted); VUE-38, SHL-32, SHL-45, SHL-52, SHL-54, XS-28 and A11Y-55 amended with K159; README's P7 text no longer names pins. User docs: UI guide, CLI and MCP references.
+
+**Tests (red-proven).** `core/users/settings.test.ts` (legacy `sidebar_pins` loads and the next write drops it; kept while `sidebar_groups` is pre-K158; wrong-typed value loads), `core/users/sidebarGroups.test.ts` (migration seeds from a legacy pin; ignored for a K158 value; a non-list is no pins; default order has no pins), `tests/integration/cli/user-sidebar-groups.test.ts` (seed through the spawned CLI, then the write drops the key). Red-proof: `withoutRetiredSettings` returning its input, `stillNeeded` forced false, and `pinnedFirst` removed each turn the matching test red. The wrong-typed-value test was red against the old schema (`ZodError` on `sidebar_pins`) before the contracts change was built. Edited, not new: `contracts/users.test.ts`, `web/shell/Sidebar.test.tsx` (delete write), `tests/ui/flow-settings-personal.spec.ts` (VUE-38 now deletes from the sidebar; SET-2 loses the pins panel).
+
 ### A370 · One "Views" sidebar section with counts and a count/⋯ slot (B52, K158)
 
 #### A370 · One Views section: `views` group storage, migration, count/⋯ slot, saved-view counts (B52)

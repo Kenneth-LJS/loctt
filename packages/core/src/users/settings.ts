@@ -28,14 +28,13 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * for one of these degrades to the field's default; anything NOT in this
  * set is an unknown key and passes through untouched via `.passthrough()`
  * (Group-G: load-bearing — every panel saves `{...stored, ...next}`, so
- * dropping unknown keys would destroy data like sidebar pins).
+ * dropping unknown keys would destroy data a newer client wrote).
  */
 const KNOWN_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "default_project",
   "card_layout",
   "editor_mode",
   "theme",
-  "sidebar_pins",
   "sidebar_groups",
   "keyboard_shortcuts",
 ]);
@@ -48,7 +47,7 @@ const KNOWN_SETTINGS_KEYS: ReadonlySet<string> = new Set([
  * genuinely wrong-typed KNOWN key (a hand edit like `theme: 42` or
  * `card_layout: "big"`). Under a plain `.parse()` that throws and locks
  * the user out of their *whole* settings file — every panel 500s and no
- * pin, default project or layout loads. Instead we degrade: the bad
+ * default project or layout loads. Instead we degrade: the bad
  * KNOWN key is dropped (falls back to the field's default / absent), and
  * everything else — the healthy known keys AND all unknown passthrough
  * keys — still loads.
@@ -164,9 +163,24 @@ export async function saveUserSettings(
   locttDir: string,
   userId: string,
   settings: UserSettings,
-): Promise<void> {
-  const safe = UserSettingsSchema.parse(settings);
+): Promise<UserSettings> {
+  const safe = withoutRetiredSettings(UserSettingsSchema.parse(settings));
   await writeYamlAtomically(getUserSettingsPath(locttDir, userId), safe);
+  return safe;
+}
+
+/**
+ * Drops the retired `sidebar_pins` key (K159) from a value about to be
+ * written. The one thing it still does is seed the K158 migration of a
+ * pre-K158 `sidebar_groups`, so it stays while `sidebar_groups` is absent
+ * or still that old shape, and goes with the write that stores the K158
+ * shape. Doctor does not report it: loctt removes it itself.
+ */
+function withoutRetiredSettings(settings: UserSettings): UserSettings {
+  const { sidebar_pins: _retired, ...rest } = settings as UserSettings & { sidebar_pins?: unknown };
+  const groups = settings.sidebar_groups;
+  const stillNeeded = "sidebar_pins" in settings && (groups === undefined || !("version" in groups));
+  return stillNeeded ? settings : (rest as UserSettings);
 }
 
 /**

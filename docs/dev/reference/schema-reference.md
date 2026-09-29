@@ -1000,10 +1000,6 @@ default_view: 01HV3JQX5R7Y8Z2N4M6P8K0T1A
 default_project: backend
 card_layout: [priority, assignee, due_date]
 editor_mode: source
-sidebar:
-  pinned_views:
-    - 01HV3JQX5R7Y8Z2N4M6P8K0T1A
-    - 01HV3JR1WV9N2K4M6P8R0T1Y3B
 ```
 
 ### Validated fields

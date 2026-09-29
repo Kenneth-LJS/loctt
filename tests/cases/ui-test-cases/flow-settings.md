@@ -2,7 +2,7 @@
 
 Covers the `/settings/$section` shell and its grouped navigation, the
 read-only workflow panels that mirror `workflow.yaml`, custom fields and
-estimation, the calendar, personal preferences, sidebar pins, and the
+estimation, the calendar, personal preferences, and the
 Diagnostics panel including the schema migrate action (M4.1–M4.4). The
 Projects and Users panels have their own doc,
 [flow-projects-users.md](flow-projects-users.md); Git sync has
@@ -115,14 +115,6 @@ This case previously asserted the panels were read-only. That was an early draft
 - The layout is saved per user; a second user's board is unaffected.
 - **The write landed in `settings.yaml`**: re-read the file and confirm the new `card_layout` array, in order. SET-11 checks disk for its panel; this one asserted only the render.
 - The editor shows a live card preview so the effect is visible before leaving the panel.
-
-### SET-13 · M4 · major · P1 P7
-**Sidebar pins are a drag list that sweeps stale entries.**
-
-- The pins panel lists the currently pinned saved views in sidebar order with drag handles.
-- Reordering the list reorders the sidebar group immediately and persists per user.
-- A pin referencing a view since deleted from `queries.yaml` is removed from both the panel and the sidebar — the sidebar does not render a broken entry or crash — and the removal is **explained, not silent**: the panel says the pin was dropped because its view no longer exists (per P5, resolving the earlier SET-13/SET-27 disagreement in favour of the explaining behaviour; see [README](README.md#p5--destructive-actions-are-proportionate-to-their-blast-radius) and SET-27). It does not simply vanish.
-- The sweep does not remove pins whose views merely have zero matching tasks; those still render with a `0` badge.
 
 ### SET-14 · M4 · blocker · P4 P10
 **Diagnostics runs the equivalent of `loctt doctor` inline.**
@@ -238,7 +230,7 @@ This case previously asserted the panels were read-only. That was an early draft
 > fields are date-only and which are datetimes". Ken: *"just remove all
 > these. some things like the calendar note, can go into user docs"* —
 > the explanation now lives in the user docs, not the panel.
-### B3. Personal, pins, diagnostics
+### B3. Personal, diagnostics
 
 ### SET-26 · M4 · minor · P1 P7
 **Hiding every field from the card layout.**
@@ -246,13 +238,6 @@ This case previously asserted the panels were read-only. That was an early draft
 - The editor allows it but the preview shows what an empty card looks like, so the outcome is visible before saving.
 - The board still renders identifiable cards — the task key remains as an un-hideable anchor, or the editor blocks hiding the last field with a stated reason.
 - Whichever it does, cards never become unclickable blank rectangles.
-
-### SET-27 · M4 · minor · P1 P7
-**All pinned views are deleted from `queries.yaml` while the panel is open.**
-
-- The stale sweep removes them on the next fetch and the sidebar group renders its designed empty state, not a bare heading with nothing under it.
-- The pins panel says the pins were removed because their views no longer exist, rather than silently emptying.
-- The user's `settings.yaml` is rewritten to drop the dead references, so the sweep does not have to re-run every load.
 
 ### SET-28 · M4 · major · P1 P7
 **`workflow.yaml` is rewritten by hand while a settings panel is open, with edits gated behind a dialog.**

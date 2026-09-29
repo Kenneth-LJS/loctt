@@ -149,29 +149,6 @@ export const ThemePreferenceSchema = z.enum(["light", "dark", "system"]);
 export type ThemePreference = z.infer<typeof ThemePreferenceSchema>;
 
 /**
- * Sidebar pins (SET-13): the saved-view ids pinned to the sidebar's
- * Views group, in sidebar order.
- *
- * K158: the Views group's order is `sidebar_groups` (built-in and saved
- * views in one list). Pins set a saved view's DEFAULT place (pinned
- * first), which applies until the user places it in Customize sidebar,
- * and seed the order a pre-K158 setting migrates to.
- *
- * Ids, not names — a view renamed in `queries.yaml` keeps its pin.
- * Absent means "pin nothing"; the sidebar still lists views, but the
- * pinned subset is what this orders.
- *
- * Duplicates are rejected for the same reason `card_layout` rejects
- * them: a pin appearing twice has no meaningful sidebar position.
- */
-export const SidebarPinsSchema = z
-  .array(z.string().min(1))
-  .refine(ids => new Set(ids).size === ids.length, {
-    message: "sidebar_pins must not repeat a view",
-  });
-export type SidebarPins = z.infer<typeof SidebarPinsSchema>;
-
-/**
  * The sidebar's top-level group ids, and the ids of the items inside the
  * Views group, that the `sidebar_groups` setting orders and hides
  * (SHL-45, K125, K158).
@@ -368,10 +345,9 @@ export type StoredSidebarGroups = z.infer<typeof StoredSidebarGroupsSchema>;
  *
  * Every settings panel saves with `{...stored, ...next}` — it reads
  * the whole object and writes it back
- * (`PreferencesPanel.tsx:83`, `SidebarPinsPanel.tsx:94`,
- * `CardLayoutPanel.tsx:96`). Under `.strict()`, a key one panel does
+ * (`PreferencesPanel.tsx:83`, `CardLayoutPanel.tsx:96`). Under `.strict()`, a key one panel does
  * not know about is rejected *on save*, so editing your card layout
- * would destroy your sidebar pins the moment the two versions
+ * would destroy your sidebar layout the moment the two versions
  * disagree — a newer client's key, or a hand-added one.
  *
  * The strictness that protects `profile.yaml` would corrupt this file.
@@ -383,7 +359,6 @@ export const UserSettingsSchema = z.object({
   card_layout: CardLayoutSchema.optional(),
   editor_mode: EditorModeSchema.optional(),
   theme: ThemePreferenceSchema.optional(),
-  sidebar_pins: SidebarPinsSchema.optional(),
   sidebar_groups: StoredSidebarGroupsSchema.optional(),
   // K133: the single-key shortcut switches. See `shortcuts.ts`.
   keyboard_shortcuts: KeyboardShortcutsSchema.optional(),

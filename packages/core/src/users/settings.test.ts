@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getUserSettingsPath } from "../paths/index.js";
-import { loadUserSettings } from "./settings.js";
+import { loadUserSettings, saveUserSettings } from "./settings.js";
 
 const USER_ID = "01HXXXXXXXXXXXXXXXXXXXXXXX";
 
@@ -78,5 +78,31 @@ describe("loadUserSettings corruption tolerance (Phase-7B)", () => {
     const settings = await loadUserSettings(locttDir, USER_ID) as Record<string, unknown>;
     expect(settings["theme"]).toBe("dark");
     expect(settings["sidebar_extra"]).toBe("keep-me");
+  });
+
+  // K159: pinned views are retired. A stored value must load, must not
+  // surface as a setting, and must be dropped by the next write; only a
+  // pre-K158 sidebar_groups (or none yet) still needs it, to seed the migration.
+  it("loads a legacy sidebar_pins cleanly and the next write drops it (K159)", async () => {
+    await writeSettings(`theme: dark\nsidebar_pins:\n  - v1\n  - v2\nsidebar_groups:\n  version: 2\n  order: [labels]\n`);
+    const loaded = await loadUserSettings(locttDir, USER_ID);
+    expect(loaded.theme).toBe("dark");
+    await saveUserSettings(locttDir, USER_ID, { ...loaded, theme: "light" });
+    const raw = await readFile(getUserSettingsPath(locttDir, USER_ID), "utf-8");
+    expect(raw).not.toContain("sidebar_pins");
+    expect(raw).toContain("theme: light");
+    expect(raw).toContain("labels");
+  });
+
+  it("a wrong-typed sidebar_pins does not break loading (K159)", async () => {
+    await writeSettings(`theme: dark\nsidebar_pins: 42\n`);
+    expect((await loadUserSettings(locttDir, USER_ID)).theme).toBe("dark");
+  });
+
+  it("keeps sidebar_pins through a write while sidebar_groups is still pre-K158, so the migration can seed from it (K159)", async () => {
+    await writeSettings(`sidebar_pins: [v1]\nsidebar_groups:\n  order: [labels]\n`);
+    const loaded = await loadUserSettings(locttDir, USER_ID);
+    await saveUserSettings(locttDir, USER_ID, { ...loaded, theme: "dark" });
+    expect(await readFile(getUserSettingsPath(locttDir, USER_ID), "utf-8")).toContain("sidebar_pins");
   });
 });

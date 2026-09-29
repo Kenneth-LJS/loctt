@@ -110,7 +110,7 @@ composes them into `fieldView(field, value, health)` at the render edge
 **Keep the schema tolerant of pre-existing files.** A `.strict()` schema
 rejects every older file on load, or destroys unknown keys on save.
 `UserSettings.passthrough()` is load-bearing: every panel saves
-`{...stored, ...next}`, so `.strict()` there would destroy sidebar pins
+`{...stored, ...next}`, so `.strict()` there would destroy the sidebar layout
 when editing an unrelated card layout — a data-loss bug that looks like
 drift to remove. Add a write-path check for the new field
 (`schema-coverage.test.ts` enumerates the schema at runtime and fails
@@ -279,6 +279,7 @@ This month's additions, walked against the checklists above:
 | Body draft (`sessionStorage`, A338) | field-local (per-tab, ephemeral) | yes — `readBodyDraft` drops an unparseable/wrong-shaped entry and a blocked/throwing `Storage` degrades to "no draft" everywhere it's touched | n/a — not on-disk tracker state, so outside doctor's scope by design | none — `bodyDraft.test.ts` already covers the malformed-JSON, wrong-type, and blocked-storage cases |
 | Link `rank` (K143, B41) | field-local (an edge without one) | yes — sorts after the ranked edges; reorder ranks its siblings first | yes — `relationshipFindings` "has no rank", repaired by `--repair-relationships` | none; tested in `task/traversal.test.ts` and `relationship-repair.test.ts` |
 | Retired `ranked` on a relationship (K143) | field-local (a key that no longer means anything) | yes — dropped on read, the kind loads | yes — `workflow.yaml retired settings` warn | none; `config/retired-keys.test.ts` |
+| Retired `sidebar_pins` per-user setting (K159) | field-local (a key that no longer means anything) | yes — not in the schema, so it passes through and loads whatever it holds; read only to seed the K158 migration of a pre-K158 `sidebar_groups`, and a non-list reads as no pins | no — unlike `ranked`, loctt rewrites this file itself: `saveUserSettings` drops the key with the write that stores the K158 shape, so there is nothing for the user to remove | none; `users/settings.test.ts`, `users/sidebarGroups.test.ts`, `integration/cli/user-sidebar-groups.test.ts` |
 | `.schema-version` as semver (K142) | object-fatal (for the tracker) | n/a — refused with what it must hold, by design | yes — the `schema version` check names the problem | none; `schema/version.test.ts`, `upgrade-0.3.0.test.ts` |
 | Unique view names (B21/K129) | write-time refusal (not stored corruption) | n/a — a duplicate name already on disk (pre-K129, or hand-edited) keeps loading and running by id; only a *new write* to a taken name is refused | n/a — nothing to salvage on read | none — this is a write guard, not a degrade-on-load case; `views/manage.test.ts` covers the refusal |
 

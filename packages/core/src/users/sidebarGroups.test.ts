@@ -195,7 +195,7 @@ describe("resolveSidebarLayout (K158)", () => {
 });
 
 describe("sidebarSavedViews (the default order a saved view takes)", () => {
-  it("pinned first in pin order, then queries.yaml order, then broken; archived excluded", () => {
+  it("queries.yaml order, then broken; archived excluded", () => {
     const list = sidebarSavedViews(
       [
         { id: "a", name: "A" },
@@ -204,9 +204,8 @@ describe("sidebarSavedViews (the default order a saved view takes)", () => {
         { id: "d", name: "D" },
       ],
       [{ id: "x", name: "X" }],
-      ["d", "c", "gone"],
     );
-    expect(list.map(v => [v.id, v.broken])).toEqual([["d", false], ["a", false], ["b", false], ["x", true]]);
+    expect(list.map(v => [v.id, v.broken])).toEqual([["a", false], ["b", false], ["d", false], ["x", true]]);
   });
 });
 
@@ -241,10 +240,18 @@ describe("migrateLegacySidebarGroups (K158)", () => {
     expect(g.hidden).toEqual(["high-priority"]);
   });
 
-  it("keeps the saved views' pinned order", () => {
-    const views = sidebarSavedViews([{ id: "bugs", name: "Open bugs" }, { id: "mine", name: "Mine" }], [], ["mine"]);
-    const g = migrate({ order: ["filters", "saved-filters"] }, views);
-    expect(childIds(g, views).slice(-2)).toEqual(["view:mine", "view:bugs"]);
+  it("a retired sidebar_pins value seeds the saved views' order once (K159)", () => {
+    const withPins = (v: unknown, pins: unknown): UserSettings =>
+      ({ sidebar_groups: v, sidebar_pins: pins } as unknown as UserSettings);
+    const legacy = { order: ["filters", "saved-filters"] };
+    const g = readSidebarGroups(withPins(legacy, ["mine", "gone"]), VIEWS);
+    expect(childIds(g).slice(-2)).toEqual(["view:mine", "view:bugs"]);
+    // No pins, or a value that is not a list of ids: queries.yaml order.
+    expect(childIds(readSidebarGroups(withPins(legacy, undefined), VIEWS)).slice(-2)).toEqual(["view:bugs", "view:mine"]);
+    expect(childIds(readSidebarGroups(withPins(legacy, "mine"), VIEWS)).slice(-2)).toEqual(["view:bugs", "view:mine"]);
+    // A K158 value ignores pins.
+    const v2 = { version: 2, order: ["views", "view:bugs", "view:mine"] };
+    expect(childIds(readSidebarGroups(withPins(v2, ["mine"]), VIEWS)).slice(0, 2)).toEqual(["view:bugs", "view:mine"]);
   });
 
   it("a hidden Filters group hides each built-in, and the saved views stay visible", () => {

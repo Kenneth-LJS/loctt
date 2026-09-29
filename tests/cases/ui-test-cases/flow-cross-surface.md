@@ -250,11 +250,13 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - Aggregations that count per enum category include an explicit bucket for the unrecognized value rather than discarding those tasks.
 
 ### XS-28 · M1 · major · P7
-**`queries.yaml` losing a view that the sidebar has pinned degrades gracefully.** Delete a saved view from `queries.yaml` while the UI has it pinned in the sidebar and, separately, while it is the currently-active view.
+**`queries.yaml` losing a view that the sidebar lists degrades gracefully.** Delete a saved view from `queries.yaml` while the UI lists it in the sidebar and, separately, while it is the currently-active view.
 
 - The sidebar does not crash; the entry is either removed on the next read or shown as unavailable with an explanation.
 - If the deleted view was the active one, the list falls back to a defined default view and says so — it does not render an error page or an empty table implying zero tasks.
 - The URL still parses; navigating back does not resurrect a broken state.
+
+> **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. This case said the sidebar had the view "pinned"; pins no longer exist. It is about a saved view the sidebar lists.
 
 ### XS-29 · M1 · major · P7 P4
 **`projects.yaml` losing the active project falls through to a defined resolution, not an error.** Delete the currently-selected project from `projects.yaml` (leaving at least one other) with the UI open.

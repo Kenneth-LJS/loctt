@@ -3771,14 +3771,13 @@ export function createWebApp(options: WebAppOptions) {
     // or corrupted file; the worst case is last-write-wins between two
     // tabs of the *same* user editing *their own* settings — a rare,
     // self-inflicted, non-corrupting race. The client owns the merge (it
-    // PUTs the whole document, preserving keys it did not change — see the
-    // SidebarPinsPanel "unrelated preferences survive" assertion), so
+    // PUTs the whole document, preserving keys it did not change), so
     // there is no cross-user or cross-key update to lose. Taking the
     // state lock would serialize this against unrelated task writes for no
     // benefit and would still not order two writes to the same file any
     // better than the atomic rename already does.
-    await saveUserSettings(locttDir, current.id, settings);
-    json(res, { user: current.id, settings });
+    const saved = await saveUserSettings(locttDir, current.id, settings as Parameters<typeof saveUserSettings>[2]);
+    json(res, { user: current.id, settings: saved });
   };
 
   const handleBoardRerank: RouteHandler = async ({ req, res, locttDir, captures }) => {

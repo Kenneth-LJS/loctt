@@ -1,7 +1,4 @@
-import type { UserSettings } from "@loctt/contracts";
-
 import { loadOptionalConfigs } from "../config/index.js";
-import { readSidebarPins } from "./pins.js";
 import { type SidebarSavedView, sidebarSavedViews } from "./sidebarGroups.js";
 
 /**
@@ -15,12 +12,10 @@ import { type SidebarSavedView, sidebarSavedViews } from "./sidebarGroups.js";
  */
 export async function loadSidebarSavedViews(
   locttDir: string,
-  settings: UserSettings,
 ): Promise<readonly SidebarSavedView[]> {
   const { queriesConfig } = await loadOptionalConfigs(locttDir);
   return sidebarSavedViews(
     queriesConfig?.queries ?? [],
     queriesConfig?.broken ?? [],
-    readSidebarPins(settings),
   );
 }

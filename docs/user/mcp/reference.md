@@ -373,7 +373,7 @@ user meant, so **do not assume the view is empty and do not recreate it**.
 text:
 
 - `edit_view` with `replaceBroken: true` **replaces** the entry with the
-  `filters` you supply, keeping the **same id** (so pins and other by-id
+  `filters` you supply, keeping the **same id** (so other by-id
   references survive). It keeps the old `name` unless you pass a new one.
   Nothing else of the old entry carries over.
 - `delete_view` needs both `confirm: true` (the gate on every delete) and
@@ -435,7 +435,7 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 
 Per-user settings, sidebar layout and keyboard shortcuts have their own
 read/write tools: `get_user_settings`, `get_sidebar_groups`,
-`set_sidebar_groups`, `sweep_sidebar_pins`, `get_keyboard_shortcuts`,
+`set_sidebar_groups`, `get_keyboard_shortcuts`,
 `set_keyboard_shortcuts`.
 
 The sidebar-groups tools use these ids. Groups: `layouts` (List / Board /

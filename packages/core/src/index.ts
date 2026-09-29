@@ -545,7 +545,6 @@ export type {
 } from "./task/relationship-repair.js";
 export { planRelationshipRepair, planRelationshipRepairOnDisk, repairActionCount, repairRelationships } from "./task/relationship-repair.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
-export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
 export type { ResolvedSidebarItem, SalvagedSidebarGroups, SidebarGroupsDrop, SidebarGroupsDropReport, SidebarLayoutRow, SidebarOrderInput, SidebarSavedView, SidebarViewChild } from "./users/index.js";
 export type { KeyboardShortcutsDrop, KeyboardShortcutsDropReport, ResolvedKeyboardShortcuts, ResolvedShortcut, SalvagedKeyboardShortcuts, ShortcutChanges } from "./users/index.js";
@@ -574,7 +573,6 @@ export {
   readKeyboardShortcuts,
   readRecents,
   readSidebarGroups,
-  readSidebarPins,
   RECENTS_CAP,
   removeRecent,
   resolveKeyboardShortcuts,
@@ -592,7 +590,6 @@ export {
   sidebarSavedViews,
   sidebarValidIdsList,
   singleKeyShortcutsOn,
-  sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,

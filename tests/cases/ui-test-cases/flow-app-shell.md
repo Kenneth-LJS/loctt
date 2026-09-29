@@ -259,19 +259,21 @@ config changing underneath a live session is
 - Toggling the sidebar in one window does not visibly fight with the other on the next reload (whether state is shared or per-port, the behaviour is consistent and not oscillating).
 
 ### SHL-32 · M1 · major · P7
-**A saved view referenced by a sidebar pin but deleted from `queries.yaml` degrades with a visible explanation.** Delete a pinned saved view from the config while the UI is open, then refresh.
+**A saved view deleted from `queries.yaml` while the sidebar lists it degrades with a visible explanation.** Delete a saved view from the config while the UI is open, then refresh.
 
 This case previously asserted the entry was dropped silently. P7 admits
-no carve-out for per-user preference drift (see README): a pin that
+no carve-out for per-user preference drift (see README): a view that
 vanishes without explanation is drift the user cannot account for, even
 when they made the edit themselves — they may have edited a different
 view, or on a different machine.
 
 - The stale entry does not render as a broken item and does not crash the group.
-- The user is told the pinned view was removed — inline in the group, naming the view, and dismissible. Dismissing removes the pin.
+- The user is told the view was removed — inline in the group, naming the view, and dismissible. Dismissing forgets the notice.
 - The rest of the Views section (K158, Ken 2026-09-29 — was "Saved
   views" under K125, "Saved filters" before that) renders normally.
 - **No error toast fires** — this is an explanation, not an error. A config the user edited themselves is not an error condition, but it is not invisible either.
+
+> **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. This case named a sidebar pin; pins no longer exist. The notice is about a saved view the sidebar listed, and dismissing it now only forgets the notice.
 
 ### SHL-33 · M1 · minor · P3
 **A workflow with an unusual number of statuses does not distort the shell.** Configure ten statuses.
@@ -391,11 +393,13 @@ a violation of P4.
 **The sidebar's top-level groups can be shown/hidden and reordered.**
 
 - A settings editor lets the user hide or reorder the built-in groups (Projects, Milestones, Sprints, Labels, Recently viewed) and built-in filters.
-- The choice is a **per-user setting** (mirrors `sidebar_pins`) and persists across reload.
+- The choice is a **per-user setting** and persists across reload.
 - Per the which-layer rule, it is exposed on CLI + MCP with both reference docs updated, and it degrades on an unknown/duplicate group id per the corruption-handling guide.
 - "Hidden by the user" is not "vanished": this needs a carve-out against SHL-9 bullet 4 / SHL-5 / SHL-10 ("a group whose config file has no entries renders an explicit empty affordance rather than vanishing") — a user-hidden group is a deliberate choice, not a missing config.
 
 > Shape DECIDED (Ken, 2026-09-06): **per-user** settings; built-in groups and filters are **hideable AND reorderable**; exposed on **web + CLI + MCP** (full parity — an agent may configure the UI). Persisted per-user `sidebar_groups`; doctor-tolerant.
+
+> **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. This case said the setting mirrors `sidebar_pins`; that setting is retired, and the choice is stored in `sidebar_groups` alone.
 
 > **Amended (K125, Ken 2026-09-24).** Ken: *"Nest under 'Filters'"*. The
 > six built-in filters (Assigned to me, Reported by me, Mentions me, Due
@@ -565,11 +569,13 @@ orbit instead of rotating on the spot.
 - A saved view's ⋯ offers Edit, Rename, Delete and Hide. Edit and Rename open the existing view dialog (Rename with the name ready to type over); Delete opens the existing delete confirmation.
 - Hide writes the per-user hidden flag and the row leaves the sidebar at once, and stays hidden after a reload. Nothing else in the stored order changes.
 - A hidden view comes back from Settings → Customize sidebar by switching it on; it returns to its stored position.
-- Deleting a saved view from the sidebar also drops it from the user's stored sidebar order and pins in the same settings write, once the delete has landed.
+- Deleting a saved view from the sidebar also drops it from the user's stored sidebar order in the same settings write, once the delete has landed.
 
 > Added (K158, Ken 2026-09-29): *"custom views can also have the '...'
 > but it should align"*; built-ins' ⋯ = Hide, saved views' ⋯ = Edit,
 > Rename, Delete, Hide.
+
+> **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. The stored-order clean-up on delete no longer also drops a pin; pins no longer exist.
 
 ### SHL-53 · M4 · major · P2 P6 P7
 **Saved views show task counts too, and a broken saved view shows a warning mark instead.** A tracker with a saved view matching several tasks and a saved view whose filters no longer load (a hand edit to `queries.yaml`).
@@ -586,10 +592,12 @@ orbit instead of rotating on the spot.
 **The one Views group is stored per user as one `views` group, a setting from before it is migrated without losing the user's order or hidden choices, and CLI and MCP read and write the same ids.** Per-user `sidebar_groups` in `settings.yaml`.
 
 - The stored setting carries `version: 2`. Its groups are `layouts` (List / Board / Timeline), `projects`, `views`, `milestones`, `sprints`, `labels`, `recents`. The Views group's children are the built-in ids and `view:<id>` for each saved view, ordered by their relative position in `order` and hidden by `hidden`.
-- A setting written before K158 (no `version`; `views` was the switcher; built-ins under `filters`, saved views under `saved-filters`) still loads and renders the way it did: the switcher's entry becomes `layouts` with its hidden flag; the one Views group sits where the earlier of Filters and Saved views sat; the children are the old sections' rows in the order they rendered (the built-ins' stored order, the saved views' pin-then-file order); a hidden Filters or Saved views group hides each of its views; only when both were hidden is the Views group hidden. The first change after that writes the K158 shape.
+- A setting written before K158 (no `version`; `views` was the switcher; built-ins under `filters`, saved views under `saved-filters`) still loads and renders the way it did: the switcher's entry becomes `layouts` with its hidden flag; the one Views group sits where the earlier of Filters and Saved views sat; the children are the old sections' rows in the order they rendered (the built-ins' stored order, the saved views' pinned-then-file order, where a `sidebar_pins` value left from before K159 supplies the pinned ones); a hidden Filters or Saved views group hides each of its views; only when both were hidden is the Views group hidden. The first change after that writes the K158 shape.
 - A deleted saved view drops out of the order; a new saved view appends.
 - A malformed id (not a group, not a built-in, not `view:<id>`), a duplicate, a stray key or an unknown `version` is dropped field-locally on load: the rest of the setting still applies and `loctt doctor` names what was dropped. A `view:<id>` whose view no longer exists is not corruption: it is skipped when the sidebar resolves. A pre-K158 value is not reported.
 - `loctt user sidebar-groups` and MCP `get_sidebar_groups`/`set_sidebar_groups` use these ids and report the resolved list the web sidebar renders: every group, the Views children straight after `views` (a saved view with its name, and `broken` when it no longer loads), and every child hidden while the Views group is hidden. A write naming an unknown id, including `view:<id>` for a view that does not exist, is refused, naming it.
 
 > Added (K158, Ken 2026-09-29). Storage and migration rule recorded as
 > A370.
+
+> **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. A `sidebar_pins` value stored before this change is read only by this migration, to order the saved views once; the write that stores the K158 shape drops it, and nothing else reads it.

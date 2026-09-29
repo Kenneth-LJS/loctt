@@ -21,7 +21,7 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/dev/backlog.md` — **work Ken has decided to do**, each item with the ruling it rests on. Check before starting new work
 - `docs/dev/known-gaps.md` — understood defects not yet fixed (and the roster of cases that cannot be satisfied yet); check before reporting one as new
 - `docs/dev/reference/corruption-handling-guide.md` — **how to make a new field/object/surface degrade instead of crash**: the field-local-vs-object-fatal decision, the building blocks, per-thing checklists, and what to add to `doctor`. Read before adding a field or config object
-- `tests/cases/ui-test-cases/` + `tests/cases/surface-test-cases/` — acceptance criteria (997 cases). Indexed in `tests/cases/case-index.json`; see `tools/README.md`
+- `tests/cases/ui-test-cases/` + `tests/cases/surface-test-cases/` — acceptance criteria (over 1,100 cases). Indexed in `tests/cases/case-index.json`; see `tools/README.md`
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 

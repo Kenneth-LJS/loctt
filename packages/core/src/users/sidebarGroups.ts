@@ -28,8 +28,7 @@ import {
  * and resolving the per-user `sidebar_groups` setting that orders and
  * hides the sidebar's groups and the views inside its Views group.
  *
- * This is the twin of `pins.ts`: pure logic over ids, imports nothing
- * from node, so the web client can import it directly (its barrel pulls
+ * Pure logic over ids, imports nothing from node, so the web client can import it directly (its barrel pulls
  * in the filesystem paths module, which has no browser build).
  *
  * ## The K158 model
@@ -61,26 +60,15 @@ export interface SidebarSavedView {
 
 /**
  * The saved views the sidebar can list, in their DEFAULT order: the one a
- * view takes when the user has not placed it.
- *
- * That order is the one the sidebar used before K158, so nothing moves on
- * the first load after it: pinned views first in pin order (SET-13), then
- * the rest in `queries.yaml` order, then broken views (VUE-22). Archived
- * views are not listed (VUE-25); they stay runnable by id.
+ * view takes when the user has not placed it (`queries.yaml` order, then
+ * broken views (VUE-22)). Archived views are not listed (VUE-25); they
+ * stay runnable by id.
  */
 export function sidebarSavedViews(
   queries: readonly { readonly id: string; readonly name: string; readonly archived?: boolean | undefined }[],
   broken: readonly { readonly id: string; readonly name: string }[],
-  pins: readonly string[],
 ): readonly SidebarSavedView[] {
-  const active = queries.filter(q => q.archived !== true);
-  const byId = new Map(active.map(q => [q.id, q]));
-  const pinned = pins.flatMap(id => {
-    const q = byId.get(id);
-    return q === undefined ? [] : [q];
-  });
-  const pinnedIds = new Set(pinned.map(q => q.id));
-  const healthy = [...pinned, ...active.filter(q => !pinnedIds.has(q.id))];
+  const healthy = queries.filter(q => q.archived !== true);
   const seen = new Set(healthy.map(q => q.id));
   return [
     ...healthy.map(q => ({ id: q.id, name: q.name, broken: false })),
@@ -286,6 +274,9 @@ export function isLegacySidebarGroups(settings: UserSettings | undefined): boole
  * `savedViews` is needed for the migration only: a pre-K158 setting could
  * place or hide the saved views as a block, and the K158 shape names each
  * one. A K158 value is returned as salvaged, whatever `savedViews` holds.
+ *
+ * The migration is also the only place a retired `sidebar_pins` value
+ * (K159) is read: pinned views lead the saved views, in pin order, once.
  */
 export function readSidebarGroups(
   settings: UserSettings | undefined,
@@ -293,7 +284,33 @@ export function readSidebarGroups(
 ): SidebarGroups {
   const raw = (settings as { sidebar_groups?: unknown } | undefined)?.sidebar_groups;
   const stored = salvageSidebarGroups(raw).groups;
-  return isLegacy(stored) ? migrateLegacySidebarGroups(stored, savedViews) : stored;
+  if (!isLegacy(stored)) return stored;
+  return migrateLegacySidebarGroups(stored, pinnedFirst(savedViews, legacyPins(settings)));
+}
+
+/**
+ * A retired `sidebar_pins` value (K159), read only to seed the migration.
+ * Anything that is not a list of ids reads as no pins: a hand-edited
+ * value must not stop the sidebar rendering.
+ */
+function legacyPins(settings: UserSettings | undefined): readonly string[] {
+  const raw = (settings as { sidebar_pins?: unknown } | undefined)?.sidebar_pins;
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+}
+
+/** `views` with the pinned ones first, in pin order; a pin naming no view is skipped. */
+function pinnedFirst(
+  views: readonly SidebarSavedView[],
+  pins: readonly string[],
+): readonly SidebarSavedView[] {
+  if (pins.length === 0) return views;
+  const byId = new Map(views.map(v => [v.id, v]));
+  const pinned = [...new Set(pins)].flatMap(id => {
+    const v = byId.get(id);
+    return v === undefined || v.broken ? [] : [v];
+  });
+  const pinnedIds = new Set(pinned.map(v => v.id));
+  return [...pinned, ...views.filter(v => !pinnedIds.has(v.id))];
 }
 
 /** The two id lists a resolver reads; ids it does not know are skipped. */
@@ -431,7 +448,7 @@ export function sidebarGroupsFromLayout(
 /**
  * `groups` without any mention of one saved view: the web's delete drops
  * the deleted view's `view:<id>` from the order and the hidden list in the
- * same settings write that drops its pin.
+ * same settings write.
  */
 export function forgetSavedViewInSidebar(groups: SidebarGroups, viewId: string): SidebarGroups {
   const id = savedViewSidebarId(viewId);

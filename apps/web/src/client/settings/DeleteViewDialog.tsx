@@ -4,18 +4,8 @@ import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { InlineFailureNotice } from "../ui/InlineFailureNotice.tsx";
 
 /**
- * Confirmation for deleting a saved view (VUE-38).
- *
- * The case asks for two specific things in the copy, and they are not
- * the same thing:
- *
- *  - **the view is named** — "the confirmation names the view";
- *  - **the consequence for pins is stated** — "states that pinned
- *    sidebar references will be dropped".
- *
- * The second only makes sense when the view actually *is* pinned, so
- * `pinned` gates it. Telling a user their pins will be dropped when
- * they have none is noise that trains them to stop reading (P4).
+ * Confirmation for deleting a saved view (VUE-38): the confirmation
+ * names the view.
  *
  * No typed-word friction here, unlike `DeleteConfirmDialog`: a saved
  * view is a query definition, not task data, and it can be recreated.
@@ -27,13 +17,12 @@ import { InlineFailureNotice } from "../ui/InlineFailureNotice.tsx";
  * A328 (B6): the delete's outcome is read here, not fired
  * fire-and-forget by the caller. `dataState`/`onRetry` let a FAILED
  * delete show an inline notice and keep the dialog open — the caller
- * (`Sidebar.tsx`'s `confirmDelete`) now runs `dismiss`, the pin-removal
- * write, and closing the dialog only from the mutation's `onSuccess`,
+ * (`Sidebar.tsx`'s `confirmDelete`) now runs `dismiss`, the sidebar-order
+ * clean-up write, and closing the dialog only from the mutation's `onSuccess`,
  * never eagerly before it settles.
  */
 export function DeleteViewDialog({
   name,
-  pinned,
   dataState,
   onCancel,
   onConfirm,
@@ -41,8 +30,6 @@ export function DeleteViewDialog({
   returnFocusTo,
 }: {
   readonly name: string;
-  /** Whether this view is currently pinned to the sidebar. */
-  readonly pinned: boolean;
   /**
    * The delete mutation's `data_state`, or `undefined` when it has not
    * failed. Drives the A328 notice; `null` is not a valid state, so
@@ -79,14 +66,6 @@ export function DeleteViewDialog({
       onConfirm={onConfirm}
       onCancel={onCancel}
     >
-      {pinned ? (
-        <p
-          data-testid="delete-view-pin-warning"
-          className="mt-3 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[0.8571rem] text-warn-fg"
-        >
-          This view is pinned to your sidebar. The pin will be dropped.
-        </p>
-      ) : null}
       {dataState !== undefined && (
         <InlineFailureNotice
           testId="delete-view-error"

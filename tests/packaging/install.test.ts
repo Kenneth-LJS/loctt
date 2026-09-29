@@ -184,7 +184,7 @@ describe("the published `loctt` package installs and runs on its own (RR-B4)", (
     // The source registry is the reference: a tool lost in bundling, or a
     // server that starts with a partial registry, shows up as a diff.
     const expected = getTools().map(t => t.name).sort();
-    expect(expected.length).toBeGreaterThanOrEqual(99);
+    expect(expected.length).toBeGreaterThanOrEqual(98);
     await withMcp([cliBin(), "mcp"], tracker, async client => {
       expect(client.getServerVersion()?.name).toBe("loctt");
       expect(client.getServerVersion()?.version).toBe(version);

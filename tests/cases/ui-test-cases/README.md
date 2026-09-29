@@ -184,16 +184,16 @@ assigned to work, and stale saved-view references degrade gracefully
 with a visible explanation.
 
 **Violations:** a task referencing a deleted status rendering as blank;
-the sidebar crashing because a pinned view was removed from
-`queries.yaml`; a pinned view *vanishing silently* because it was
+the sidebar crashing because a saved view was removed from
+`queries.yaml`; a saved view *vanishing silently* because it was
 removed from `queries.yaml`.
 
 **No carve-out for per-user preference drift.** "Surfaced" means the
 same thing whether the drift is in shared config or in one user's
-settings: a pinned view deleted from `queries.yaml` tells the user it
+settings: a saved view deleted from `queries.yaml` tells the user it
 was removed rather than disappearing. Silently pruning a preference is
 still drift the user cannot account for. This resolves the
-SHL-32 / SET-13 / SET-27 / XS-28 disagreement in favour of the
+SHL-32 / XS-28 disagreement in favour of the
 explaining cases — SHL-32, PRU-14 and NEW-16 asserted silent dropping
 and are corrected.
 

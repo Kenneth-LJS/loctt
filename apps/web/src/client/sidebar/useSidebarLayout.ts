@@ -11,7 +11,6 @@ import {
   type SidebarSavedView,
   sidebarSavedViews,
 } from "../settings/sidebarGroups.ts";
-import { readSidebarPins } from "../settings/sidebarPins.ts";
 
 /**
  * The sidebar's resolved layout (SHL-45, K158), shared by the sidebar and
@@ -47,7 +46,6 @@ export function useSidebarLayout(): {
   const savedViews = sidebarSavedViews(
     views.data?.queries ?? [],
     views.data?.broken ?? [],
-    readSidebarPins(stored),
   );
   const groups = readSidebarGroups(stored, savedViews);
   const rows = resolveSidebarLayout(groups, savedViews);

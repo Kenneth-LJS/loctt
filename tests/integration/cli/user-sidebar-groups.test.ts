@@ -147,6 +147,29 @@ describe("CLI user sidebar-groups (spawned binary)", () => {
     });
   });
 
+  // @verifies SHL-54 — K159: a retired `sidebar_pins` value seeds the
+  // migration once, and the write that stores the K158 shape drops it.
+  it("K159: a retired sidebar_pins value orders the saved views in the migration, then the next write drops it", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const created = await runCli(["views", "create", "Open bugs"], { cwd: root });
+      const viewId = String(/id (\S+)\)/.exec(created.stdout)?.[1]);
+      const file = await settingsPath(root);
+      await writeFile(file, `sidebar_pins:\n  - ${viewId}\nsidebar_groups:\n  order: [filters, saved-filters]\n`, "utf8");
+      const read = await runCli(["user", "sidebar-groups"], { cwd: root });
+      expect(read.exitCode).toBe(0);
+      const ids = read.stdout.trim().split("\n").map(l => l.split("\t")[0]);
+      expect(ids[7]).toBe(`view:${viewId}`);
+      expect(await readFile(file, "utf8")).toContain("sidebar_pins");
+
+      const write = await runCli(["user", "sidebar-groups", "--hidden", "overdue"], { cwd: root });
+      expect(write.exitCode).toBe(0);
+      const after = await readFile(file, "utf8");
+      expect(after).not.toContain("sidebar_pins");
+      const reread = await runCli(["user", "sidebar-groups"], { cwd: root });
+      expect(reread.stdout.trim().split("\n").map(l => l.split("\t")[0])[7]).toBe(`view:${viewId}`);
+    });
+  });
+
   // @verifies SHL-54 — K158: hiding the Views group hides every child in
   // the sidebar, so the read-back must say so.
   it("K158: reports every Views child hidden when the Views group is hidden", async () => {

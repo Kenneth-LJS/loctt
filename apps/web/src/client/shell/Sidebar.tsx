@@ -27,7 +27,6 @@ import { type RowAction, RowActions } from "../settings/RowActions.tsx";
 import { DEFAULT_SECTION } from "../settings/sections.ts";
 import { forgetSavedViewInSidebar, isLegacySidebarGroups, setSidebarItemHidden } from "../settings/sidebarGroups.ts";
 import { SidebarGroupsPanel } from "../settings/SidebarGroupsPanel.tsx";
-import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
 import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
@@ -1701,9 +1700,8 @@ function ViewsGroup({
   // K118: the one derivation every row compares against.
   const activeRow = useActiveRow(currentUserId, today);
 
-  // SET-13: a deleted view's pin is dropped in the same write that
-  // confirms the delete (see `confirmDelete`).
-  const pins = readSidebarPins(layout.settings.data?.settings);
+  // A deleted view's place in the sidebar order is dropped in the write
+  // that follows the delete (see `confirmDelete`).
   const saveSettings = useUserSettingsMutation();
   const del = useDeleteView();
 
@@ -1749,20 +1747,18 @@ function ViewsGroup({
       {
         onSuccess: () => {
           dismiss(view.id);
-          // One settings write drops the view's pin and its place and
-          // flag in the sidebar order (a pre-K158 value never names a
-          // view, so it is left as it is).
+          // One settings write drops the view's place and flag in the
+          // sidebar order (a pre-K158 value never names a view, so it is
+          // left as it is).
           const stored = layout.settings.data?.settings;
           if (stored !== undefined) {
-            const pinned = pins.includes(view.id);
             const sidebarId = savedViewSidebarId(view.id);
             const placed = !isLegacySidebarGroups(stored)
               && [...(groups.order ?? []), ...(groups.hidden ?? [])].includes(sidebarId);
-            if (pinned || placed) {
+            if (placed) {
               saveSettings.mutate({
                 ...stored,
-                ...(pinned ? { sidebar_pins: pins.filter(p => p !== view.id) } : {}),
-                ...(placed ? { sidebar_groups: forgetSavedViewInSidebar(groups, view.id) } : {}),
+                sidebar_groups: forgetSavedViewInSidebar(groups, view.id),
               } as UserSettings);
             }
           }
@@ -2009,7 +2005,6 @@ function ViewsGroup({
       {dialog?.mode === "delete" ? (
         <DeleteViewDialog
           name={dialog.view.name}
-          pinned={pins.includes(dialog.view.id)}
           returnFocusTo={newViewRef}
           {...(del.isError ? { dataState: dataStateOf(del.error) } : {})}
           onCancel={() => { del.reset(); setDialog(null); }}

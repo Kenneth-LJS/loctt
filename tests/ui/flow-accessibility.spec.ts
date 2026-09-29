@@ -3747,7 +3747,7 @@ test.describe("A11Y-55 — pointer targets are at least 24px (WCAG 2.5.8)", () =
     page,
     tracker,
   }) => {
-    // Enough content that the reorder handles, pin rows and toggles render.
+    // Enough content that the reorder handles and toggles render.
     await tracker.run(["label", "create", "infra"]);
     await tracker.run(["create", "Tagged", "--label", "infra"]);
     await page.goto(`${tracker.baseURL}/settings/projects`);
@@ -3770,7 +3770,7 @@ test.describe("A11Y-55 — pointer targets are at least 24px (WCAG 2.5.8)", () =
       });
       for (const f of found) small.push(`${href}: ${f}`);
     }
-    // Before B4 this listed the drag handles (15x17), Pin, Hide/Show,
+    // Before B4 this listed the drag handles (15x17), Hide/Show,
     // Reset and Delete view (17px tall) and the card-layout toggles (21px).
     expect(small).toEqual([]);
   });

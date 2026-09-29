@@ -1,6 +1,6 @@
 /**
  * Transcribed from tests/cases/ui-test-cases/flow-settings.md (SET-2,
- * SET-11, SET-12, SET-13, SET-26, SET-27) and flow-saved-views.md
+ * SET-11, SET-12, SET-26) and flow-saved-views.md
  * (VUE-38).
  *
  * These assert the **far end**: SET-12's fourth bullet is explicit
@@ -50,7 +50,6 @@ test.describe("SET — personal settings", () => {
     for (const [section, testid] of [
       ["preferences", "preferences-panel"],
       ["card-layout", "card-layout-panel"],
-      ["sidebar-pins", "sidebar-pins-panel"],
       ["keyboard", "keyboard-panel"],
     ] as const) {
       await page.goto(`${tracker.baseURL}/settings/${section}`);
@@ -127,47 +126,11 @@ test.describe("SET — personal settings", () => {
       .toContain("card_layout: []");
   });
 
-  // @verifies SET-13
-  // @verifies SET-27
-  test("SET-27: pins whose views were deleted are named, and swept from settings.yaml", async ({
-    page,
-    tracker,
-  }) => {
-    // Pin two views that do not exist in queries.yaml — the state
-    // SET-27 reaches by deleting them while the panel is open.
-    await tracker.run(["user", "settings"]);
-    const usersDir = path.join(tracker.root, ".loctt", "users");
-    const { readdir, writeFile, mkdir } = await import("node:fs/promises");
-    const [userId] = await readdir(usersDir);
-    await mkdir(path.join(usersDir, String(userId)), { recursive: true });
-    await writeFile(
-      path.join(usersDir, String(userId), "settings.yaml"),
-      "sidebar_pins:\n  - v_gone\n  - v_also_gone\n",
-      "utf8",
-    );
-
-    await page.goto(`${tracker.baseURL}/settings/sidebar-pins`);
-
-    // It SAYS what was removed, rather than silently emptying — the
-    // README's P7 amendment resolves SET-13's "silently" in favour of
-    // this, the explaining case.
-    const notice = page.getByTestId("pins-swept-notice");
-    await expect(notice).toBeVisible();
-    await expect(notice).toContainText("v_gone");
-    await expect(notice).toContainText("v_also_gone");
-
-    // And the file is rewritten so the sweep does not re-run each load.
-    await expect
-      .poll(async () => settingsYaml(tracker.root), { timeout: 5000 })
-      .toContain("sidebar_pins: []");
-  });
-
   // @verifies VUE-38
-  test("VUE-38: deleting a pinned view warns, removes it from queries.yaml, and drops the pin", async ({
+  test("VUE-38: deleting a saved view names it, removes it from queries.yaml, and drops its place in the sidebar order", async ({
     page,
     tracker,
   }) => {
-    // Pin a real view, so the confirmation has a pin to warn about.
     const queriesPath = path.join(tracker.root, ".loctt", "config", "queries.yaml");
     const queries = await readFile(queriesPath, "utf8");
     const idLine = queries.split("\n").find(l => /^\s*-?\s*id:/.test(l));
@@ -179,19 +142,18 @@ test.describe("SET — personal settings", () => {
     const [userId] = await readdir(usersDir);
     await writeFile(
       path.join(usersDir, String(userId), "settings.yaml"),
-      `sidebar_pins:\n  - ${viewId}\n`,
+      `sidebar_groups:\n  version: 2\n  order: [views, "view:${viewId}", overdue]\n`,
       "utf8",
     );
 
-    await page.goto(`${tracker.baseURL}/settings/sidebar-pins`);
-    await page.getByTestId(`view-delete-${viewId}`).click();
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.getByRole("button", { name: 'Actions for view "recent-open"' }).click();
+    await page.getByTestId("view-delete").click();
 
-    // The confirmation names the view and states the pin consequence.
     const dialog = page.getByTestId("delete-view-dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("recent-open");
-    await expect(page.getByTestId("delete-view-pin-warning"))
-      .toContainText("pin will be dropped");
+    await expect(page.getByTestId("delete-view-pin-warning")).toHaveCount(0);
 
     await page.getByTestId("delete-view-confirm").click();
 
@@ -202,8 +164,8 @@ test.describe("SET — personal settings", () => {
       .poll(async () => readFile(queriesPath, "utf8"), { timeout: 5000 })
       .not.toContain(viewId);
 
-    // And the pin went with it, rather than being left to a later
-    // sweep to explain a deletion the user just performed.
+    // And its place in the sidebar order went with it, rather than being
+    // left behind.
     await expect
       .poll(async () => settingsYaml(tracker.root), { timeout: 5000 })
       .not.toContain(viewId);

@@ -530,7 +530,7 @@ function UserMenu({
               navigation. "My profile" jumps to the current user's row via
               the `#row-<id>` anchor UsersPanel exposes; "Customize
               sidebar…" lands on the sidebar-groups section that owns the
-              group order/visibility (and pins live one section over). The
+              group order/visibility. The
               plain "Settings" link is kept as the catch-all landing. */}
           <div className="border-t border-border-subtle py-1">
             {currentUser ? (

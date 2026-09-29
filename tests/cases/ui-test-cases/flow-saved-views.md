@@ -312,10 +312,12 @@ view's row in the sidebar or the Saved-views panel:
 - The editor flags the sort row so it can be corrected.
 
 ### VUE-38 · M4 · major · P4 P5
-**Deleting a saved view that is pinned or referenced warns before removing it.**
-- The confirmation names the view and states that pinned sidebar references will be dropped.
-- After deletion, stale pins are swept rather than rendering as broken sidebar entries (P7).
+**Deleting a saved view asks for confirmation before removing it.**
+- The confirmation names the view.
+- After deletion, the view's place in the sidebar order is dropped rather than rendering as a broken sidebar entry (P7).
 - Deletion removes the entry from `queries.yaml`; `loctt list --view <name>` then reports an unknown view rather than silently returning all tasks.
+
+> **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. This case warned that pinned sidebar references would be dropped and swept stale pins; pins no longer exist, so the warning and the sweep are gone. What stays is the confirmation, the sidebar-order clean-up, and the removal from `queries.yaml`.
 
 ### VUE-39 · M4 · minor · P4
 **A query timing out or failing server-side is reported as a failure, not as zero results.**

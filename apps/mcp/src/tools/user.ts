@@ -24,19 +24,16 @@ import {
   filterByName,
   getCurrentUser,
   loadAllUsers,
-  loadOptionalConfigs,
   loadSidebarSavedViews,
   loadUserSettings,
   readKeyboardShortcuts,
   readSidebarGroups,
-  readSidebarPins,
   resolveKeyboardShortcuts,
   resolveRenderedSidebarItems,
   resolveUserRef,
   saveUserSettings,
   SHORTCUT_VALID_IDS,
   sidebarValidIdsList,
-  sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,
@@ -90,42 +87,14 @@ export const TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    /**
-     * Ken's layer rule: core's pin sweep (`sweepSidebarPins`) ships to
-     * all three surfaces, not just the web UI that motivated it.
-     */
     name: "get_user_settings",
-    description: "Returns the active user's personal settings (theme, card_layout, sidebar_pins, sidebar_groups, keyboard_shortcuts, default_project). These are per-user render preferences stored in .loctt/users/<id>/settings.yaml.",
+    description: "Returns the active user's personal settings (theme, card_layout, sidebar_groups, keyboard_shortcuts, default_project). These are per-user render preferences stored in .loctt/users/<id>/settings.yaml.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       const settings = await loadUserSettings(locttDir, current.id);
       return text(JSON.stringify({ user: current.id, user_name: current.name, settings }, null, 2));
-    },
-  },
-  {
-    name: "sweep_sidebar_pins",
-    description: "Removes pinned saved views whose views no longer exist in queries.yaml, and reports which were removed by id. Pins whose views merely match zero tasks are kept. This checks existence, not results.",
-    inputSchema: {},
-    handler: async ({ locttDir }) => {
-      const current = await getCurrentUser(locttDir);
-      if (!current) return errorResult("no users registered");
-      const settings = await loadUserSettings(locttDir, current.id);
-      const { queriesConfig } = await loadOptionalConfigs(locttDir);
-      const existing = (queriesConfig?.queries ?? []).map(q => q.id);
-      const sweep = sweepSidebarPins(readSidebarPins(settings), existing);
-      if (sweep.changed) {
-        await saveUserSettings(locttDir, current.id, {
-          ...settings,
-          sidebar_pins: sweep.kept,
-        });
-      }
-      return text(JSON.stringify(
-        { removed: sweep.removed, kept: sweep.kept, changed: sweep.changed },
-        null,
-        2,
-      ));
     },
   },
   {
@@ -140,7 +109,7 @@ export const TOOLS: readonly ToolDef[] = [
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       const settings = await loadUserSettings(locttDir, current.id);
-      const savedViews = await loadSidebarSavedViews(locttDir, settings);
+      const savedViews = await loadSidebarSavedViews(locttDir);
       const stored = readSidebarGroups(settings, savedViews);
       // Resolved as the web sidebar renders it (A346), matching the CLI read.
       const resolved = resolveRenderedSidebarItems(stored, savedViews);
@@ -165,7 +134,7 @@ export const TOOLS: readonly ToolDef[] = [
         return errorResult("reset cannot be combined with order/hidden");
       }
       const settings = await loadUserSettings(locttDir, current.id);
-      const savedViews = await loadSidebarSavedViews(locttDir, settings);
+      const savedViews = await loadSidebarSavedViews(locttDir);
       if (reset) {
         const { sidebar_groups: _drop, ...rest } = settings;
         await saveUserSettings(locttDir, current.id, rest);

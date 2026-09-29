@@ -24,7 +24,7 @@ describe("ShortcutSettingsEditor", () => {
   // @verifies A11Y-43
   // @verifies A11Y-56
   it("turns every single-key shortcut off with the master switch, keeping other settings", async () => {
-    const store = stubSettingsApi({ theme: "dark", sidebar_pins: ["v1"] });
+    const store = stubSettingsApi({ theme: "dark", default_project: "web" });
     renderEditor();
     const master = await screen.findByTestId("ed-master");
     expect((master as HTMLInputElement).checked).toBe(true);
@@ -35,7 +35,7 @@ describe("ShortcutSettingsEditor", () => {
     await waitFor(() => { expect(store.puts).toHaveLength(1); });
     expect(store.puts[0]).toEqual({
       theme: "dark",
-      sidebar_pins: ["v1"],
+      default_project: "web",
       keyboard_shortcuts: { single_key: false },
     });
   });

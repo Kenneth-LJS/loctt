@@ -137,7 +137,7 @@ Original finding, kept for context: no shared loading/skeleton component. ~14+ f
 **no `role="status"`/`aria-busy`/`aria-live`**, so loads aren't
 announced: `settings/{PreferencesPanel:78, CardLayoutPanel:81,
 CalendarPanel:56, UsersPanel:475, SprintsPanel:182,
-WorkflowPanelFrame:98, SavedViewsPanel:211, SidebarPinsPanel:66,
+WorkflowPanelFrame:98, SavedViewsPanel:211,
 MilestonesPanel:269, ProjectsPanel:585, SidebarGroupsPanel:66,
 LabelsPanel:358}`, `milestones/{MilestoneDetail:89,248,
 MilestonesView:146}`, `sprints/SprintDetail:72`. The pattern *exists* —

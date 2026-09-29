@@ -10,12 +10,10 @@ import {
   filterByName,
   getCurrentUser,
   loadAllUsers,
-  loadOptionalConfigs,
   loadSidebarSavedViews,
   loadUserSettings,
   readKeyboardShortcuts,
   readSidebarGroups,
-  readSidebarPins,
   resolveKeyboardShortcuts,
   resolveLocttDir,
   resolveRenderedSidebarItems,
@@ -23,7 +21,6 @@ import {
   saveUserSettings,
   SHORTCUT_VALID_IDS,
   sidebarValidIdsList,
-  sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,
@@ -56,7 +53,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--avatar", "--email", "--filter", "--hidden", "--limit", "--name", "--off", "--offset", "--on", "--order", "--remap-to", "--remove-avatar", "--reset", "--single-key", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--avatar", "--email", "--filter", "--hidden", "--limit", "--name", "--off", "--offset", "--on", "--order", "--remap-to", "--remove-avatar", "--reset", "--single-key", "--switch", "--timezone", "--unassign", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -179,21 +176,7 @@ export async function run(args: string[], root: string): Promise<void> {
       });
       break;
     }
-    /**
-     * `loctt user settings [--sweep-pins]` — the per-user settings
-     * file the web UI's Personal panels write (SET-11, SET-12,
-     * SET-13).
-     *
-     * Core gained `readSidebarPins` / `sweepSidebarPins` for those
-     * panels, and Ken's layer rule is that a core capability reaches
-     * CLI and MCP too. Without this the sweep would exist only where
-     * the web app could reach it.
-     *
-     * `--sweep-pins` performs SET-27's write: it drops pins whose
-     * views are gone from `queries.yaml` and **names them** rather
-     * than emptying quietly — the README's P7 amendment resolves
-     * SET-13's "silently" in favour of the explaining cases.
-     */
+    /** `loctt user settings` — prints the per-user settings file. */
     case "settings": {
       await runCommand(async () => {
         const current = await getCurrentUser(locttDir);
@@ -201,25 +184,6 @@ export async function run(args: string[], root: string): Promise<void> {
           throw new UserError("no users registered. Run 'loctt user create <name>'.");
         }
         const settings = await loadUserSettings(locttDir, current.id);
-        if (hasFlag(args, "--sweep-pins")) {
-          const { queriesConfig } = await loadOptionalConfigs(locttDir);
-          const existing = (queriesConfig?.queries ?? []).map(q => q.id);
-          const sweep = sweepSidebarPins(readSidebarPins(settings), existing);
-          if (!sweep.changed) {
-            console.log("No stale sidebar pins.");
-            return;
-          }
-          await saveUserSettings(locttDir, current.id, {
-            ...settings,
-            sidebar_pins: sweep.kept,
-          });
-          // Named, not counted: "removed 2 pins" tells the user
-          // nothing they can act on.
-          for (const id of sweep.removed) {
-            console.log(`Removed pin ${id}: no such view in queries.yaml`);
-          }
-          return;
-        }
         const entries = Object.entries(settings);
         if (entries.length === 0) {
           console.log("No personal settings.");
@@ -266,7 +230,7 @@ export async function run(args: string[], root: string): Promise<void> {
           throw new UserError("no users registered. Run 'loctt user create <name>'.");
         }
         const settings = await loadUserSettings(locttDir, current.id);
-        const savedViews = await loadSidebarSavedViews(locttDir, settings);
+        const savedViews = await loadSidebarSavedViews(locttDir);
         const orderArg = getArg(args, "--order");
         const hiddenArg = getArg(args, "--hidden");
         const reset = hasFlag(args, "--reset");

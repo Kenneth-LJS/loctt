@@ -246,12 +246,12 @@ user menu. A bare `/settings` opens Projects. The groups:
   WIP limits), Timeline defaults, Calendar (timezone, working days,
   holidays).
 - **Personal** — My preferences (theme, default project), Card layout,
-  Pinned views, Sidebar groups, Keyboard (single-key shortcut switches).
+  Sidebar groups, Keyboard (single-key shortcut switches).
 - **System** — Users, Sync (git-backed mode), Archived, Backup & restore,
   Diagnostics.
 
 Lists whose order matters (statuses, priorities, task types,
-relationships, card layout, pinned views, sidebar groups) reorder the
+relationships, card layout, sidebar groups) reorder the
 same way as links on a task: drag a row by its handle, and a line shows
 where it will land.
 

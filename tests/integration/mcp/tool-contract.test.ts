@@ -360,10 +360,6 @@ describe("MCP tool contract (moved from tests/e2e by B43)", () => {
             },
             {
               "hasDescription": true,
-              "name": "sweep_sidebar_pins",
-            },
-            {
-              "hasDescription": true,
               "name": "switch_user",
             },
             {

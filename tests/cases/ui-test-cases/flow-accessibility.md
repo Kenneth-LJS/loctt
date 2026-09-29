@@ -475,7 +475,9 @@ minority of these.
 - A label pill that filters when clicked (list, LST-5) is at least 24px tall.
 - Checkboxes and the ✕ remove buttons keep the 24px they already meet (K31, A250).
 - A control that is only visible on keyboard focus (the skip link) is measured in its visible state.
-- On every Settings page, every visible button, link and checkbox is at least 24×24px (drag handles, Pin / Hide / Show / Reset / Delete view, the card-layout visibility toggles).
+- On every Settings page, every visible button, link and checkbox is at least 24×24px (drag handles, Hide / Show / Reset / Delete view, the card-layout visibility toggles).
+
+> **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. The list named a Pin button; pins no longer exist, so there is none to measure.
 
 ### A11Y-56 · M4 · major · P8 P10
 **The master switch turns every single-key shortcut off.** In Settings → Keyboard, turn "Single-key shortcuts" off, then press `n`, `/`, `[`, `t`, `?` and `g` then `b` with nothing focused. *(K133)*
