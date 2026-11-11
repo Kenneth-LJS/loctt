@@ -17,7 +17,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState } from "react";
 
-import { LOCTT_EXTENSIONS } from "./extensions.ts";
+import { LOCTT_EXTENSIONS, setMentionNames } from "./extensions.ts";
 import { fromMarkdown } from "./markdown.ts";
 import type { MentionCandidate } from "./MentionMenu.tsx";
 import { MentionMenu, useMentionState } from "./MentionMenu.tsx";
@@ -187,6 +187,12 @@ export function RichEditor({
   });
 
   const mention = useMentionState(editor, mentionCandidates);
+
+  // The chips show names, not ids (G14); the user list can arrive after
+  // the body, so the names are pushed whenever it changes.
+  useEffect(() => {
+    if (editor !== null) setMentionNames(editor, mentionCandidates);
+  }, [editor, mentionCandidates]);
 
   // Destroy on unmount — TipTap does not do this itself, and a leaked
   // view keeps handling keys on a page that has moved on.

@@ -139,18 +139,42 @@ export const BlockMath = Node.create({
   },
 });
 
+/** Per-editor display names for mention chips, keyed by user id. */
+interface MentionStorage {
+  names: ReadonlyMap<string, string>;
+  readonly repaint: Set<() => void>;
+}
+
+/**
+ * The same chip look as a rendered mention (`comments/renderMarkdown.tsx`),
+ * so a mention looks the same while it is written as once it is posted.
+ */
+const MENTION_CHIP_CLASS =
+  "mx-px inline-flex items-baseline rounded border px-1 align-baseline text-[0.8571rem] font-medium "
+  + "border-accent/30 bg-accent-muted text-accent";
+
 /**
  * `@user:<id>` — a mention.
  *
  * The id is the payload; the display name is resolved at render time,
  * so a renamed user does not require rewriting every body that
  * mentions them.
+ *
+ * In the editor that render-time lookup is a node view reading the names
+ * {@link setMentionNames} supplied. It used to be `renderHTML` alone — an
+ * empty `<span>`, so a chosen mention was invisible in the composer and
+ * zero pixels wide, and a click to the right of it put the caret before
+ * it (CMT-7, known-gaps G14). A user the editor does not know shows as
+ * `@user:<id>`, as the rendered view shows an unresolved mention.
  */
-export const Mention = Node.create({
+export const Mention = Node.create<Record<string, never>, MentionStorage>({
   name: "mention",
   group: "inline",
   inline: true,
   atom: true,
+  addStorage() {
+    return { names: new Map(), repaint: new Set() };
+  },
   addAttributes() {
     return { userId: { default: "" } };
   },
@@ -160,7 +184,51 @@ export const Mention = Node.create({
   renderHTML({ HTMLAttributes }) {
     return ["span", mergeAttributes(HTMLAttributes, { "data-mention": "" })];
   },
+  addNodeView() {
+    const storage = this.storage;
+    return ({ node: initial }) => {
+      let node = initial;
+      const dom = document.createElement("span");
+      dom.setAttribute("data-mention", "");
+      dom.setAttribute("data-testid", "editor-mention");
+      dom.contentEditable = "false";
+      dom.className = MENTION_CHIP_CLASS;
+      const paint = (): void => {
+        const id = String(node.attrs["userId"] ?? "");
+        const name = storage.names.get(id);
+        dom.setAttribute("data-mention-id", id);
+        dom.textContent = name !== undefined ? `@${name}` : `@user:${id}`;
+      };
+      paint();
+      storage.repaint.add(paint);
+      return {
+        dom,
+        update: next => {
+          if (next.type !== node.type) return false;
+          node = next;
+          paint();
+          return true;
+        },
+        destroy: () => { storage.repaint.delete(paint); },
+      };
+    };
+  },
 });
+
+/**
+ * Gives an editor the display names its mention chips show, and repaints
+ * the chips already on screen (a user list that loads after the body, or
+ * a rename).
+ */
+export function setMentionNames(
+  editor: { readonly storage: unknown },
+  candidates: readonly { readonly id: string; readonly name: string }[],
+): void {
+  const storage = (editor.storage as { mention?: MentionStorage }).mention;
+  if (storage === undefined) return;
+  storage.names = new Map(candidates.map(c => [c.id, c.name]));
+  for (const repaint of storage.repaint) repaint();
+}
 
 /**
  * `![alt](attachments/<name>)` — an attachment embed.

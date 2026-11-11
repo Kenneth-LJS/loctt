@@ -18,6 +18,9 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 - The task list's row checkboxes are a standard 16px size.
 - On the board, cancelling a drag with Esc and releasing over the card no
   longer opens the task.
+- A mention typed in a comment or description now shows the person's
+  name while you write, and text typed after it stays after it (it used
+  to be invisible, and could end up in front of the mention).
 - Windows: writes no longer fail with "Permission denied" when two writes
   to the same file race (renames are retried briefly).
 - Windows: a tracker inside a Dropbox or OneDrive folder now gets the

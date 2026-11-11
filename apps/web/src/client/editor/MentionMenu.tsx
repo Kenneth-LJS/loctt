@@ -108,7 +108,14 @@ export function useMentionState(
       .chain()
       .focus()
       .deleteRange({ from: start, to: from })
-      .insertContent({ type: "mention", attrs: { userId: candidate.id } })
+      // A trailing space, as TipTap's own Mention extension inserts: an
+      // atom at the end of a line leaves the caret no text node after it,
+      // so a click to the right of the line put the caret back BEFORE the
+      // mention and the next words landed in front of it (G14).
+      .insertContent([
+        { type: "mention", attrs: { userId: candidate.id } },
+        { type: "text", text: " " },
+      ])
       .run();
     setQuery(null);
   }, [editor, query]);

@@ -42,6 +42,9 @@ back-to-back readers made every rename fail.
 leave gaps the retry lands in. A fix would need POSIX rename semantics,
 which Node does not expose.
 
+(G14, an invisible mention in the editor that a click put the caret in
+front of, was fixed by A378.)
+
 ## G15 · A11Y-63 is intermittent on Windows
 
 **What is wrong.** "a bulk-bar picker follows the menu keyboard pattern"
@@ -49,3 +52,4 @@ fails about 1 run in 3 alone (`toContainText`), not investigated yet.
 
 **Reproduce.** `npx playwright test --config tests/ui/playwright.config.ts
 tests/ui/flow-accessibility.spec.ts -g "A11Y-63" --repeat-each=3`.
+

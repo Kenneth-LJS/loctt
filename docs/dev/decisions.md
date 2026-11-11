@@ -23382,6 +23382,41 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A378 · A mention in the editor shows the user's name and keeps the caret after it (G14, CMT-7)
+
+**Date:** 2026-11-11 · **Agent-made** (Ken: "Yes, fix it", asked whether to fix G14).
+
+**The situation.** The editor's `mention` node rendered as an empty
+`<span data-mention>`: choosing "@Ana" left nothing visible in the comment
+box (or a task description), and because the atom ended the line, a click
+to the right of it put the caret before it. The next words landed in front
+and the stored body ended `…look@user:<id>`, which the mention pattern
+rejects, so no mention was recorded. CMT-7 failed on Windows from it.
+
+**Decided.**
+1. *A node view* (`editor/extensions.ts`) paints `@<name>` in the same chip
+   styling as a posted mention (`comments/renderMarkdown.tsx`). Names live
+   in per-editor storage that `RichEditor` fills from its
+   `mentionCandidates` via `setMentionNames`, repainting chips already on
+   screen, so a user list that loads after the body still shows names. An
+   unknown id shows `@user:<id>`, matching the rendered view's unresolved
+   mention. The stored markdown is unchanged (`@user:<id>`).
+2. *A trailing space after a chosen mention* (`MentionMenu.tsx`), as
+   TipTap's own Mention extension inserts: it gives the caret a text node
+   after the atom. The stored body therefore gains one space after a
+   picker-inserted mention (`cc @user:<id> please`), which the pattern and
+   every renderer already accept. Alternative: a gapcursor/selection fix-up
+   on click. Rejected: it fights ProseMirror's DOM mapping, and the space
+   is the established answer.
+
+**Why.** G14's repro; P-4 (no ids in UI content where a name is known);
+one look for a mention before and after posting.
+
+**To revert.** Delete `addStorage`/`addNodeView` and `setMentionNames` from
+`editor/extensions.ts` and the `setMentionNames` effect in
+`RichEditor.tsx`; restore `insertContent({ type: "mention", … })` without
+the text node in `MentionMenu.tsx`; delete `editor/mentionChip.test.tsx`.
+
 ### A377 · Making the suites pass on Windows (K165)
 
 **Date:** 2026-11-11 · **Agent-made** (under K165).
