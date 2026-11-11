@@ -49,9 +49,8 @@ export interface ListOptions {
    * Project filter. When set, only tasks with this project key are
    * returned. Applied as a post-query filter against `frontmatter.project`
    * (rather than concatenated into the query string) so callers can
-   * pass user-controlled project keys without escaping concerns. Like
-   * `includeArchived`, this is *not* applied when `view` is set — saved
-   * views are respected as authored.
+   * pass user-controlled project keys without escaping concerns. With
+   * `view` set it narrows the view (ANDed), exactly like `query`.
    */
   readonly project?: string;
   /**
@@ -251,7 +250,6 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   const { tasks, options, queriesConfig, workflowConfig, ctx = {} } = opts;
   const queryStr: string | undefined = options.query;
   let sortSpec = options.sort;
-  let usedView = false;
   /**
    * The view's filters composed into one AST (K102). Held separately from
    * `queryStr` because a view no longer HAS a query string: its filters
@@ -281,7 +279,6 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     viewNode = filtersToNode(view.filters);
     viewScope = view.archivedScope;
     if (!sortSpec && view.sort) sortSpec = view.sort;
-    usedView = true;
   }
 
   // Semantic validation. Severity differs by origin: a query the user
@@ -391,10 +388,12 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     filtered = [...tasks];
   }
 
-  // Project filter applied as a structured post-query step. Skipped
-  // when a saved view is in play, matching the includeArchived
-  // policy: views are respected as authored.
-  if (options.project !== undefined && !usedView) {
+  // Project filter applied as a structured post-query step. It narrows
+  // a saved view the same way `query` does: every filter the caller
+  // passes ANDs with the view's own (issue #9). The old "views are
+  // respected as authored" exemption mirrored the pre-K107 archived rule
+  // and made `--view x --project p` silently ignore the project.
+  if (options.project !== undefined) {
     filtered = filtered.filter(t => t.frontmatter.project === options.project);
   }
 

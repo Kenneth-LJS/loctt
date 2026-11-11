@@ -149,7 +149,7 @@ broken config print to stderr and do not change the exit code.
 | Flag | Value | Default | Description |
 |---|---|---|---|
 | `--query` | DSL | — | Ad-hoc query (see [Query language](../common/query-language.md)). |
-| `--view` | name or id | — | A saved view. |
+| `--view` | name or id | — | A saved view. `--query` and `--project` narrow it: a task must match the view and them. |
 | `--project` | name or id | all | Restrict to one project. |
 | `--sort` | field | — | Sort field. |
 | `--dir` | `asc` or `desc` | `asc` | Sort direction. |

@@ -112,6 +112,21 @@ ships; do not fold the multi-sort bullets back here.*
 - The filter bar shows the view's predicates as chips where expressible; where not expressible, it shows the raw query with an indication that it is a DSL view.
 - Modifying a chip is presented as diverging from the saved view (e.g. a "modified" indicator), not as silently rewriting the saved view.
 
+### VUE-43 · M1 · major · P1 P10
+**Saving while a view is open saves that view's filters together with the toolbar's.** *(GitHub issue #7)* Open view A (its filters, set A), add toolbar filters (set B), then "Save as view".
+
+- The new view stores set A followed by set B, each filter in the form it was authored in (an advanced filter in A stays advanced).
+- With no toolbar sort, the new view keeps A's sort; a toolbar sort replaces it.
+- The dialog's preview lists every filter that will be stored, A's included.
+- Save stays unavailable until A's filters are known, so the view can never be stored as B alone.
+
+### VUE-44 · M1 · major · P10
+**Toolbar filters narrow an open view on every task list.** *(GitHub issue #9)* With a view open (e.g. one label, no status filter), pick statuses Backlog, In progress, Testing.
+
+- Only tasks matching the view AND the picked statuses are listed; Done and Won't do tasks are gone.
+- Holds for every toolbar facet (project, status, priority, type, assignee, reporter, labels, milestone, sprint, custom fields) and on list, board and timeline, which share one task query.
+- CLI and MCP agree: `loctt list --view A --project P` and `list_tasks` with `view` + `project` return the view's tasks in project P only, as `--query` already did.
+
 ## B. Edge cases
 
 ### VUE-15 · M1 · major · P2

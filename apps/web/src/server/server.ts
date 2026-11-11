@@ -4162,9 +4162,10 @@ export function createWebApp(options: WebAppOptions) {
     // Fold the free-text `query` and the structured filter params
     // (project/status/priority/type/assignee/…, plus custom
     // `field.<key>`) into one DSL query, AND-ing every active filter.
-    // When a saved view is in play we leave its query untouched (views
-    // are authored as-is) and apply `?project=` via core's dedicated
-    // structured project option instead.
+    // This applies with a saved view too: core ANDs the view's filters
+    // with this query, so the toolbar narrows the view. Dropping the
+    // params while a view was open made the facets the user picked
+    // silently do nothing (issue #9).
     const baseQuery = url.searchParams.get("query") ?? undefined;
     if (baseQuery !== undefined && queryNamesArchivedField(baseQuery)) {
       error(res, ARCHIVED_QUERY_MESSAGE, 400, {
@@ -4175,15 +4176,7 @@ export function createWebApp(options: WebAppOptions) {
       return;
     }
     await resolveProjectSlugParam(url, locttDir);
-    const effectiveQuery = view !== undefined
-      ? baseQuery
-      : buildStructuredQuery(url, baseQuery);
-    // Only relevant alongside a view (otherwise project rides in the
-    // DSL above). Passed as a structured option so a project key with
-    // query-parser specials can't confuse the parser.
-    const projectFilter = view !== undefined
-      ? (url.searchParams.get("project") ?? undefined)
-      : undefined;
+    const effectiveQuery = buildStructuredQuery(url, baseQuery);
     // Single-column sort from `?sort=<field>&dir=asc|desc`. The list
     // view drives this off the clicked column header. `dir` defaults to
     // ascending and rejects anything else so a bad URL doesn't silently
@@ -4220,7 +4213,6 @@ export function createWebApp(options: WebAppOptions) {
     const params: ListOptions = {
       ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
       ...(view !== undefined ? { view } : {}),
-      ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       ...(sort !== undefined ? { sort } : {}),
       archivedScope,
       ...(today !== undefined ? { today } : {}),

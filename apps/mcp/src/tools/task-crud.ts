@@ -219,7 +219,7 @@ export const TOOLS: readonly ToolDef[] = [
     inputSchema: {
       query: z.string().optional().describe("Ad hoc query string"),
       view: z.string().optional().describe("Named saved view"),
-      project: z.string().optional().describe("Filter to a specific project. AND-merges with `query` if both are supplied."),
+      project: z.string().optional().describe("Filter to a specific project. AND-merges with `query` and `view` when they are supplied."),
       limit: z.number().optional().describe(`Max results (default ${DEFAULT_LIST_LIMIT})`),
       archived: z.enum(["active", "archived", "all"]).optional().describe("Archived scope (K107): 'active' (default, hide archived), 'archived' (only archived), 'all' (both). Ignored when a query already mentions `archived` (the query's term wins) or when a saved view is used."),
       sort: z.string().optional().describe("Field to order by, e.g. priority, due_date, updated_at. Priority orders by its configured value, not alphabetically."),

@@ -72,14 +72,27 @@ export function SaveViewDialog({
   const [nameTaken, setNameTaken] = useState(false);
   const views = useViews();
   const createView = useCreateView();
+  // Issue #7: saving while a view is open saves what the list shows —
+  // the open view's filters (A) AND the toolbar filters layered on it
+  // (B), not B alone. A's filters come first, in their stored order and
+  // form, so an advanced filter in A stays advanced and nothing is merged.
+  const activeViewId = search.view;
+  const activeView = activeViewId === undefined
+    ? undefined
+    : views.data?.queries.find(v => v.id === activeViewId);
+  // Until the views list has loaded, A's filters are unknown: saving now
+  // would silently store B alone, the bug itself. Hold Save until then.
+  const activeViewPending = activeViewId !== undefined && views.isPending;
   // The filters as authored — this is exactly what gets stored. Nothing
   // is merged into a query string on the way out.
-  const filters = buildFiltersFromSearch(search);
+  const filters = [...(activeView?.filters ?? []), ...buildFiltersFromSearch(search)];
 
+  // A toolbar sort overrides the view's, exactly as it does on the list;
+  // with none, the open view's own sort is what the user is looking at.
   const sort: QuerySort[] | undefined =
     search.sort !== undefined
       ? [{ field: search.sort, direction: search.dir ?? "asc" }]
-      : undefined;
+      : activeView?.sort;
   // The single entry `sort` always carries when defined — extracted once
   // so the preview never needs a non-null assertion to read it.
   const sortEntry = sort?.[0];
@@ -123,11 +136,11 @@ export function SaveViewDialog({
     // memoisation churn here; recomputing every render is cheap (a
     // handful of filters, no network).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [search, options, customFields],
+    [search, activeView, options, customFields],
   );
 
   const submit = (): void => {
-    if (name.trim().length === 0) return;
+    if (name.trim().length === 0 || activeViewPending) return;
     const onDisk = [...(views.data?.queries ?? []), ...(views.data?.broken ?? [])];
     if (isViewNameTaken(name, onDisk)) {
       setNameTaken(true);
@@ -268,7 +281,7 @@ export function SaveViewDialog({
           <Button
             variant="primary"
             onClick={submit}
-            disabled={name.trim().length === 0}
+            disabled={name.trim().length === 0 || activeViewPending}
             loading={createView.isPending}
             aria-label="Save"
           >

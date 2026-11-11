@@ -287,4 +287,50 @@ describe("SaveViewDialog", () => {
       expect(fetchMock.mock.calls.some(c => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true);
     });
   });
+  // Issue #7: saving from an open view (set A) with toolbar filters on top
+  // (set B) saves A AND B, A first in its stored form, and keeps A's sort
+  // when the toolbar has none.
+  // @verifies VUE-43
+  it("saves the open view's filters together with the toolbar's", async () => {
+    const viewA = {
+      id: "v_a",
+      name: "Label bugs",
+      filters: [
+        { kind: "simple", field: "labels", op: "in", values: ["l_bug"] },
+        { kind: "advanced", query: 'has_link("blocks")' },
+      ] satisfies Filter[],
+      sort: [{ field: "priority", direction: "desc" }],
+    };
+    fetchMock.mockImplementation((...args: [RequestInfo | URL, RequestInit?]) => {
+      const [input, init] = args;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      if (init?.method === "POST") return Promise.resolve(jsonResponse({ id: "vNew", name: "n", filters: [] }, 201));
+      if (path.startsWith("/api/views")) return Promise.resolve(jsonResponse({ queries: [viewA] }));
+      return Promise.resolve(jsonResponse(routeFetch(path)));
+    });
+    render(
+      <SaveViewDialog
+        search={{ view: "v_a", status: ["backlog"] } as Parameters<typeof SaveViewDialog>[0]["search"]}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/My open bugs/), { target: { value: "Open label bugs" } });
+    const save = screen.getByRole("button", { name: /^Save$/ });
+    // Enabled only once A's filters are known — saving earlier would
+    // store B alone, which is the bug.
+    await waitFor(() => { expect(save).toBeEnabled(); });
+    fireEvent.click(save);
+
+    await waitFor(() => { expect(postBody()).toBeDefined(); });
+    expect(postBody()?.filters).toEqual([
+      ...viewA.filters,
+      { kind: "simple", field: "status", op: "in", values: ["backlog"] },
+    ]);
+    expect(postBody()?.sort).toEqual(viewA.sort);
+    // The preview shows every filter that will be stored, not only B.
+    expect(screen.getAllByTestId("save-view-filter-row")).toHaveLength(3);
+  });
 });

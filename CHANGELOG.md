@@ -6,6 +6,14 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+- Filters stack on an open saved view. In the web UI, toolbar filters
+  (status, priority, labels, …) now narrow the open view on the list,
+  board and timeline instead of being ignored, and "Save as view" saves
+  the open view's filters together with the toolbar's. `loctt list
+  --view X --project P` and MCP `list_tasks` with `view` and `project`
+  now return only the view's tasks in that project; `--project` used to
+  be ignored with a view.
+
 ## [0.4.0] — 2026-09-29
 
 `loctt` 0.4.0 changes the tracker format to `0.4.0`. **Run `loctt migrate`

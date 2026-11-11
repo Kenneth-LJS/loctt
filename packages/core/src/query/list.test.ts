@@ -433,11 +433,10 @@ describe("listTasks", () => {
       expect(result.map(t => t.frontmatter.key)).toEqual(["WEB-1"]);
     });
 
-    it("project filter is IGNORED when a saved view is used (views are respected as authored)", () => {
-      // This is the documented interaction: when `view` is set,
-      // the `project` filter is NOT applied. The view's authored
-      // query is the source of truth — surfaces would conflate the
-      // two if they were AND-merged silently.
+    it("project filter narrows a saved view (ANDed, like query)", () => {
+      // Issue #9: this used to assert the project was IGNORED with a view
+      // ("views are respected as authored") — that test encoded the bug,
+      // where `--view x --project p` silently dropped the project.
       const viewConfig: QueriesConfig = {
         queries: [view({ id: "01HSV0000000000000ALLOPEN", name: "all-open", field: "status", op: "!=", values: ["done"] })],
       };
@@ -447,9 +446,8 @@ describe("listTasks", () => {
         queriesConfig: viewConfig,
         workflowConfig: config,
       });
-      // View matches WEB-1 and API-1; the `project: "web"` filter
-      // was supplied but the view-precedence policy ignores it.
-      expect(result.map(t => t.frontmatter.key).sort()).toEqual(["API-1", "WEB-1"]);
+      // View matches WEB-1 and API-1; the project narrows it to WEB-1.
+      expect(result.map(t => t.frontmatter.key)).toEqual(["WEB-1"]);
     });
   });
 });

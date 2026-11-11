@@ -22685,6 +22685,21 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K162 · Filters stack on an open view, on every surface
+
+**Date:** 2026-11-10 · **Ken's ruling — not revertible by an agent.**
+
+GitHub issue #7: in a view (filters A), adding filters B and saving
+*"should be saving set A AND B together, not just B."* Issue #9: on a
+label view with no status filter, picking Backlog / In progress / Testing
+*"doesn't exclude tickets with Done Won't do statuses. Let's make sure
+this works across all task lists?"* The web server dropped every toolbar
+facet whenever a view was open. Core did the same to `project` for CLI and
+MCP (`--view X --project P` ignored `--project`, though `--query`
+stacked), pinned by a core test as "views are respected as authored" with
+no decision behind it. Asked whether core should stack `project` with a
+view too, Ken chose **yes, stack everywhere**. Cases VUE-43, VUE-44.
+
 ### K161 · Restoring an older backup upgrades it
 
 **Date:** 2026-09-29 · **Ken's ruling — not revertible by an agent.**
