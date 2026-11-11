@@ -473,11 +473,13 @@ minority of these.
 
 - The header user-menu (avatar) button is at least 24px in both dimensions.
 - A label pill that filters when clicked (list, LST-5) is at least 24px tall.
-- Checkboxes and the ✕ remove buttons keep the 24px they already meet (K31, A250).
+- Checkboxes and the ✕ remove buttons keep the 24px they already meet (K31, A250) — except the task-list table's row checkboxes (see the amendment below).
 - A control that is only visible on keyboard focus (the skip link) is measured in its visible state.
 - On every Settings page, every visible button, link and checkbox is at least 24×24px (drag handles, Hide / Show / Reset / Delete view, the card-layout visibility toggles).
 
 > **Amended (K159, Ken 2026-09-29).** Ken chose **"Retire pins"**. The list named a Pin button; pins no longer exist, so there is none to measure.
+
+> **Amended (Ken, 2026-11-10, GitHub issue #8).** Asked whether task-row checkboxes should shrink to a 16px box with a 16px hit area (meeting WCAG 2.5.8 only through its spacing exception) or keep a 24px invisible target, Ken chose **16px box, 16px hit**. The list table's per-row and select-all checkboxes are therefore 16px (LST-59). Every other checkbox keeps 24px, and the Settings sweep above is unchanged.
 
 ### A11Y-56 · M4 · major · P8 P10
 **The master switch turns every single-key shortcut off.** In Settings → Keyboard, turn "Single-key shortcuts" off, then press `n`, `/`, `[`, `t`, `?` and `g` then `b` with nothing focused. *(K133)*

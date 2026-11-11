@@ -763,3 +763,9 @@ click.**
 - The custom-field filter stays in the toolbar, with its selected value, instead of disappearing.
 - When the workflow request has failed, the filter is marked unavailable, the same way a built-in filter is when its options cannot load.
 - Once the workflow loads, a custom field that genuinely no longer exists is dropped as before.
+
+### LST-59 · M1 · minor · P8
+**Task-row checkboxes are a standard size.** *(GitHub issue #8: "current task row checkboxes fill out almost the whole row? Can we make it a standard-looking size?")*
+
+- In the list table, the per-row and select-all checkboxes are a 16px box, and the clickable area is the box itself (no invisible ring around it).
+- Every other checkbox (Settings, dialogs, the phone card) keeps the 24px size A11Y-55 measures.

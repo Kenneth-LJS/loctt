@@ -167,6 +167,13 @@ describe("ListView row click (UI-12)", () => {
     expect(router.state.location.pathname).toBe("/list");
   });
 
+  // @verifies LST-59
+  it("draws the row and select-all checkboxes at the small task-row size", async () => {
+    await mountListWithTaskRoute();
+    expect(screen.getByLabelText("Select WEB-1").parentElement?.getAttribute("data-size")).toBe("sm");
+    expect(screen.getByLabelText("Select all on this page").parentElement?.getAttribute("data-size")).toBe("sm");
+  });
+
   // @verifies LST-5 (the kebab / checkbox must not navigate)
   it("does not navigate when clicking the row's select checkbox", async () => {
     const router = await mountListWithTaskRoute();

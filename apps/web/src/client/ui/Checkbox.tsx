@@ -68,10 +68,24 @@ import { Icon } from "./Icon.tsx";
  * codebase three times (`design-system.md`'s `IconButton` claim, a
  * dialog focus-ring size, and this) — treat any size assertion derived
  * from a Tailwind class name rather than a measurement as suspect.
+ *
+ * ## `size="sm"` — the task-row checkbox (issue #8)
+ *
+ * In the task list the 24.5px box filled most of a row (Ken: "can we
+ * make it a standard-looking size?"). Asked whether to shrink only the
+ * drawn box behind a 24px invisible target (#15's rejected shape) or the
+ * whole control, Ken chose a 16px box whose hit area is the box itself.
+ * `sm` is that: `1.1429rem` = 16px at the 14px root. It no longer meets
+ * WCAG 2.5.8's 24px minimum outright; it relies on the spacing exception
+ * (no other target within the 24px circle), which the list's dedicated
+ * checkbox column provides. `md` (24.5px) stays the default everywhere
+ * else, so Settings keeps A11Y-55's 24px.
  */
 export interface CheckboxProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "className"> {
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "className" | "size"> {
   readonly indeterminate?: boolean;
+  /** `md` (default) is the 24.5px target; `sm` is the 16px task-row box. */
+  readonly size?: "md" | "sm";
   /** Escape hatch on the wrapper: layout/spacing only. */
   readonly className?: string;
 }
@@ -97,7 +111,7 @@ const INPUT_BASE =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-primary)]";
 
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
-  function Checkbox({ indeterminate = false, checked, disabled, className, onClick, ...rest }, ref) {
+  function Checkbox({ indeterminate = false, size = "md", checked, disabled, className, onClick, ...rest }, ref) {
     const innerRef = useRef<HTMLInputElement | null>(null);
 
     // `indeterminate` is a property, not an attribute — set it on the DOM
@@ -125,8 +139,10 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
       // callers often wrap this in their own text `<label>`, and nesting
       // labels is invalid).
       <span
+        data-size={size}
         className={cn(
-          "relative inline-block h-7 w-7 shrink-0 align-middle",
+          "relative inline-block shrink-0 align-middle",
+          size === "sm" ? "h-[1.1429rem] w-[1.1429rem]" : "h-7 w-7",
           className,
         )}
       >
@@ -155,7 +171,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
             {/* Drawn, not typed (A208): the old `"✓"`/`"–"` literals
                 slipped past the glyph lint rule, which bans `✓` only as
                 bare JSX text. */}
-            <Icon name={indeterminate ? "minus" : "check"} size={14} />
+            <Icon name={indeterminate ? "minus" : "check"} size={size === "sm" ? 12 : 14} />
           </span>
         ) : null}
       </span>

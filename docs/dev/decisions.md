@@ -22685,6 +22685,19 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K163 · Task-row checkboxes are 16px, hit area included
+
+**Date:** 2026-11-10 · **Ken's ruling — not revertible by an agent.**
+
+GitHub issue #8: *"current task row checkboxes fill out almost the whole
+row? Can we make it a standard-looking size?"* Asked, with K31's history
+in front of him (24.5px because of WCAG 2.5.8; a small box in a 24px
+invisible target rejected as "a bad hack"), to choose between a 16px box
+with a 16px hit area (meets 2.5.8 only through the spacing exception), a
+16px box with a 24px invisible target, or an 18px box, Ken chose **16px
+box, 16px hit**. Narrows K31 for the task-list table only; A11Y-55 is
+amended to say so, and every other checkbox stays 24.5px (A376 § 3).
+
 ### K162 · Filters stack on an open view, on every surface
 
 **Date:** 2026-11-10 · **Ken's ruling — not revertible by an agent.**

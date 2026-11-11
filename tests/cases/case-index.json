@@ -1,8 +1,8 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1106,
-    "ui": 970,
+    "total": 1107,
+    "ui": 971,
     "surface": 136,
     "resolved": 4
   },
@@ -913,7 +913,7 @@
       "id": "A11Y-56",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 482,
+      "line": 484,
       "title": "The master switch turns every single-key shortcut off.",
       "milestone": "M4",
       "severity": "major",
@@ -930,7 +930,7 @@
       "id": "A11Y-57",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 490,
+      "line": 492,
       "title": "One shortcut can be turned off on its own.",
       "milestone": "M4",
       "severity": "major",
@@ -946,7 +946,7 @@
       "id": "A11Y-58",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 501,
+      "line": 503,
       "title": "The `?` dialog shows the switches' state and offers the way back.",
       "milestone": "M4",
       "severity": "major",
@@ -963,7 +963,7 @@
       "id": "A11Y-59",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 508,
+      "line": 510,
       "title": "Reset to default asks first.",
       "milestone": "M4",
       "severity": "minor",
@@ -979,7 +979,7 @@
       "id": "A11Y-60",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 515,
+      "line": 517,
       "title": "The shortcuts dialog is reachable with `?` switched off.",
       "milestone": "M4",
       "severity": "major",
@@ -995,7 +995,7 @@
       "id": "A11Y-61",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 521,
+      "line": 523,
       "title": "A panel-level loading region is exposed as a live status, not shown silently.",
       "milestone": "M4",
       "severity": "minor",
@@ -1011,7 +1011,7 @@
       "id": "A11Y-62",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 528,
+      "line": 530,
       "title": "The image lightbox is a real modal.",
       "milestone": "M4",
       "severity": "blocker",
@@ -1027,7 +1027,7 @@
       "id": "A11Y-63",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 536,
+      "line": 538,
       "title": "The bulk bar's pickers follow the menu keyboard pattern.",
       "milestone": "M4",
       "severity": "blocker",
@@ -6874,6 +6874,22 @@
       "principles": [
         "P4",
         "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "LST-59",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-list.md",
+      "line": 767,
+      "title": "Task-row checkboxes are a standard size.",
+      "milestone": "M1",
+      "severity": "minor",
+      "principles": [
+        "P8"
       ],
       "surfaces": [
         "UI"

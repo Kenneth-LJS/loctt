@@ -168,6 +168,28 @@ describe("Checkbox", () => {
     expect(sizePx).toBeGreaterThanOrEqual(24);
   });
 
+  it("size=\"sm\" draws a 16px box whose hit area is the box itself (issue #8)", () => {
+    // Ken chose the whole control at 16px, not a 16px drawing inside a
+    // 24px invisible target: the input still fills its wrapper, and only
+    // the wrapper shrinks. 1.1429rem * 14px root = 16px.
+    render(<Checkbox aria-label="Row" size="sm" />);
+    const input = screen.getByRole("checkbox", { name: "Row" });
+    expect(input.className).toContain("h-full");
+    const wrapper = input.parentElement;
+    expect(wrapper?.getAttribute("data-size")).toBe("sm");
+    expect(wrapper?.className).toContain("h-[1.1429rem]");
+    expect(wrapper?.className).toContain("w-[1.1429rem]");
+    expect(wrapper?.className).not.toContain("h-7");
+    expect(Math.round(1.1429 * 14)).toBe(16);
+  });
+
+  it("defaults to the 24.5px size when no size is given", () => {
+    render(<Checkbox aria-label="Default" />);
+    const wrapper = screen.getByRole("checkbox", { name: "Default" }).parentElement;
+    expect(wrapper?.getAttribute("data-size")).toBe("md");
+    expect(wrapper?.className).not.toContain("h-[1.1429rem]");
+  });
+
   it("toggles when any part of the (now fully visible) box is clicked", () => {
     const onChange = vi.fn();
     render(<Checkbox aria-label="P" onChange={onChange} />);

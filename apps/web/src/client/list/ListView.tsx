@@ -951,6 +951,7 @@ export function ListView() {
             <tr>
               <th scope="col" className="sticky top-0 w-9 border-b border-border-default bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
                 <Checkbox
+                  size="sm"
                   aria-label="Select all on this page"
                   checked={allOnPageSelected}
                   // BLK-3 requires the header to be *checked*, not
@@ -1157,6 +1158,7 @@ export function ListView() {
                 >
                   <td className="align-middle">
                     <Checkbox
+                      size="sm"
                       aria-label={`Select ${task.key}`}
                       checked={selection.isSelected(task.id)}
                       // The checkbox is the one hit area in the row that
