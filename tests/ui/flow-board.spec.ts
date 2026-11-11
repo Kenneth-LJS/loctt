@@ -1574,6 +1574,11 @@ test.describe("BRD — board view", () => {
     await expect(page.getByTestId("board-drag-preview")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("board-drag-preview")).toHaveCount(0);
+    // Released back over the card itself: `Esc` shows it again under the
+    // pointer, and a release there used to fire a click that opened the
+    // task. Without this move, whether the release lands on the card
+    // depended on how wide the card renders on the machine.
+    await page.mouse.move(box2.x + box2.width / 2, box2.y + box2.height / 2, { steps: 2 });
     await page.mouse.up();
 
     await page.waitForTimeout(400);

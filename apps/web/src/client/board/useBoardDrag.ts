@@ -116,6 +116,16 @@ export function useBoardDrag<C extends DraggableColumn = BoardColumn>({
   const [drag, setDrag] = useState<DragState | null>(null);
   const pending = useRef<PendingPress | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  /**
+   * BRD-37: true from the moment a press crosses the threshold until that
+   * press is released, even if `Esc` cancelled the drag in between. The
+   * click that ends such a press is not a click on the card: during the
+   * drag the card's contents are hidden (so they take no pointer events),
+   * but `Esc` shows them again under the pointer, and releasing there made
+   * the browser fire a click on the card's button — opening the task the
+   * user had just cancelled dragging.
+   */
+  const pressBecameDrag = useRef(false);
   dragRef.current = drag;
 
   /**
@@ -240,6 +250,7 @@ export function useBoardDrag<C extends DraggableColumn = BoardColumn>({
         const dy = Math.abs(e.clientY - p.startY);
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
 
+        pressBecameDrag.current = true;
         snapshot.current = buckets;
         setDrag({
           key: p.key,
@@ -264,6 +275,10 @@ export function useBoardDrag<C extends DraggableColumn = BoardColumn>({
       const d = dragRef.current;
       const snap = snapshot.current;
       pending.current = null;
+      if (pressBecameDrag.current) {
+        pressBecameDrag.current = false;
+        swallowNextClick();
+      }
 
       if (d === null) {
         // A press that never became a drag. The card's own click
@@ -316,11 +331,15 @@ export function useBoardDrag<C extends DraggableColumn = BoardColumn>({
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", cancel);
+    const onPointerCancel = (): void => {
+      pressBecameDrag.current = false;
+      cancel();
+    };
+    window.addEventListener("pointercancel", onPointerCancel);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("pointercancel", onPointerCancel);
     };
   }, [buckets, columns, slotAt, cancel, onDrop, fieldForColumn]);
 
@@ -337,4 +356,18 @@ export function useBoardDrag<C extends DraggableColumn = BoardColumn>({
  */
 function defaultFieldForColumn(column: DraggableColumn): string | undefined {
   return statusForColumn(column as BoardColumn);
+}
+
+/**
+ * Drops the click the browser dispatches right after a pointerup, in the
+ * capture phase so no card handler sees it. Removed on the next task if
+ * no click came (a release over a different element than the press).
+ */
+function swallowNextClick(): void {
+  const swallow = (e: MouseEvent): void => {
+    e.stopPropagation();
+    e.preventDefault();
+  };
+  window.addEventListener("click", swallow, { capture: true, once: true });
+  setTimeout(() => { window.removeEventListener("click", swallow, { capture: true }); }, 0);
 }

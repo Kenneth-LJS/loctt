@@ -16,6 +16,8 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 - Ctrl-click (cmd-click on macOS) on a task row opens the task in a new
   tab, in the list and on a milestone's page.
 - The task list's row checkboxes are a standard 16px size.
+- On the board, cancelling a drag with Esc and releasing over the card no
+  longer opens the task.
 - Windows: writes no longer fail with "Permission denied" when two writes
   to the same file race (renames are retried briefly).
 - Windows: a tracker inside a Dropbox or OneDrive folder now gets the
