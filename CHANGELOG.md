@@ -18,6 +18,8 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 - The task list's row checkboxes are a standard 16px size.
 - On the board, cancelling a drag with Esc and releasing over the card no
   longer opens the task.
+- A key pressed right after opening a menu (End, an arrow, a letter) is no
+  longer lost; focus used to land on the first item a moment later.
 - A mention typed in a comment or description now shows the person's
   name while you write, and text typed after it stays after it (it used
   to be invisible, and could end up in front of the mention).

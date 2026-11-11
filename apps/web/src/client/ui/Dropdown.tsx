@@ -4,6 +4,7 @@ import {
   type RefObject,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -434,12 +435,15 @@ export function Dropdown(props: DropdownProps) {
 
   // A11Y-10: `role="menu"` promises roving arrow-key movement with REAL
   // focus, and the e2e suite asserts the first row is focused on open.
-  // Deferred to after the panel paints its children.
-  useEffect(() => {
-    if (!open || !menuMode) return undefined;
-    const id = requestAnimationFrame(() => { menuRows()[0]?.focus(); });
-    return () => { cancelAnimationFrame(id); };
-  }, [open, menuMode]);
+  // In the commit the panel becomes visible, not a frame later: a key
+  // pressed during that frame went to the trigger and was lost (the same
+  // race `ui/Menu` had, A11Y-63). `placed`, not the position, so a scroll
+  // does not pull focus back to the first row.
+  const placed = pos !== null;
+  useLayoutEffect(() => {
+    if (!open || !menuMode || !placed) return;
+    menuRows()[0]?.focus();
+  }, [open, menuMode, placed]);
 
   const typeahead = useRef<{ buffer: string; at: number }>({ buffer: "", at: 0 });
 

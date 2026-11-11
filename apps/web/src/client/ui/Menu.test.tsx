@@ -45,6 +45,25 @@ function renderOpen() {
 }
 
 describe("Menu keyboard navigation", () => {
+  // A11Y-63 / G15: focus used to move a frame after opening, so a key
+  // pressed in that frame went to the trigger and was lost — Enter then
+  // End left focus on the FIRST item.
+  // @verifies A11Y-63
+  it("focuses the first item in the same tick it opens", () => {
+    renderOpen();
+    expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[0]);
+  });
+
+  // @verifies A11Y-63
+  it("keeps a key pressed straight after opening, even after the next frame", async () => {
+    renderOpen();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "End" });
+    const items = screen.getAllByRole("menuitem");
+    expect(document.activeElement).toBe(items[2]);
+    await new Promise(r => setTimeout(r, 50));
+    expect(document.activeElement).toBe(items[2]);
+  });
+
   it("ArrowDown moves focus to the next item and wraps", () => {
     const menu = renderOpen();
     const items = screen.getAllByRole("menuitem");

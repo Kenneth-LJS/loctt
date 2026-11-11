@@ -399,17 +399,15 @@ describe("Dropdown — menu mode semantics", () => {
     expect(screen.getByRole("menu")).toBeTruthy();
   });
 
-  it("A11Y-10: the first row takes REAL DOM focus on open and arrows rove it", async () => {
+  it("A11Y-10: the first row takes REAL DOM focus on open and arrows rove it", () => {
     renderMenu();
     fireEvent.click(screen.getByTestId("trigger"));
     const rows = screen.getAllByRole("menuitemcheckbox");
 
-    // Focus is deferred to after the panel paints its children.
-    await act(async () => {
-      await new Promise(r => { requestAnimationFrame(() => { r(null); }); });
-    });
     // Real focus, not an aria-activedescendant pointer: this is the
     // promise `role="menu"` makes and the listbox model does not keep.
+    // In the same tick as the open (A11Y-63): this used to wait a frame,
+    // which is the gap a quick keystroke fell into.
     expect(document.activeElement).toBe(rows[0]);
 
     const menu = screen.getByRole("menu");
@@ -426,6 +424,17 @@ describe("Dropdown — menu mode semantics", () => {
     fireEvent.keyDown(menu, { key: "Home" });
     expect(document.activeElement).toBe(rows[0]);
     fireEvent.keyDown(menu, { key: "End" });
+    expect(document.activeElement).toBe(rows[2]);
+  });
+
+  // @verifies A11Y-63
+  it("keeps a key pressed straight after opening, even after the next frame", async () => {
+    renderMenu();
+    fireEvent.click(screen.getByTestId("trigger"));
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "End" });
+    const rows = screen.getAllByRole("menuitemcheckbox");
+    expect(document.activeElement).toBe(rows[2]);
+    await act(async () => { await new Promise(r => setTimeout(r, 50)); });
     expect(document.activeElement).toBe(rows[2]);
   });
 

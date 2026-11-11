@@ -23382,6 +23382,36 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A379 · Menus focus their first item in the commit they open (A11Y-63, G15)
+
+**Date:** 2026-11-11 · **Agent-made** (Ken: "see if you can fix a11y-63").
+
+**The situation.** A11Y-63 failed 11 runs in 20 alone. Instrumented: in
+every failure focus was on the FIRST item when Enter chose, though End had
+just been pressed. `ui/Menu` and `ui/Dropdown` moved focus into a newly
+opened panel one frame later (`requestAnimationFrame`), because the panel
+is `visibility: hidden` until measured. A key pressed in that frame went to
+the trigger, outside the panel, and was lost; the frame then focused the
+first item. A quick keyboard user hits the same thing.
+
+**Decided.** Focus the first item in a layout effect keyed on the panel
+being placed (`pos !== null`), in both components. The placement is itself
+a layout effect, so the panel is visible before the browser handles the
+next keystroke; keying on "placed" rather than the position keeps a scroll
+from pulling focus back. Alternative: queue keys pressed before focus
+lands. Rejected: more machinery for a gap that need not exist.
+
+**Tests.** Two new `Menu.test.tsx` cases and one new `Dropdown.test.tsx`
+case open and press End in the same tick; all fail with the frame
+restored. `Dropdown.test`'s A11Y-10 case waited a frame before checking
+focus — the delay that hid the race — and now checks at once. A11Y-63 went
+30 of 30 alone.
+
+**To revert.** In `ui/Menu.tsx` and `ui/Dropdown.tsx` restore the
+`useEffect` + `requestAnimationFrame` focus (dropping `placed` and the
+`useLayoutEffect` import); delete the three new tests and restore the
+frame wait in A11Y-10.
+
 ### A378 · A mention in the editor shows the user's name and keeps the caret after it (G14, CMT-7)
 
 **Date:** 2026-11-11 · **Agent-made** (Ken: "Yes, fix it", asked whether to fix G14).

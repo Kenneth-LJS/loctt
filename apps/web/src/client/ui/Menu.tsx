@@ -2,6 +2,7 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -156,12 +157,19 @@ export function Menu({
         ))
       : [];
 
-  useEffect(() => {
-    if (!open) return;
-    // Defer to after the panel paints its children.
-    const id = requestAnimationFrame(() => { menuItems()[0]?.focus(); });
-    return () => { cancelAnimationFrame(id); };
-  }, [open]);
+  // Focus moves in the same commit the panel becomes visible, keyed on
+  // "placed" (not the position, so a scroll does not pull focus back). It
+  // used to wait a frame (`requestAnimationFrame`) because the panel is
+  // `visibility: hidden` until measured — but a key pressed in that frame
+  // went to the trigger, outside the panel, and was lost: opening with
+  // Enter and pressing End at once left focus on the FIRST item (A11Y-63,
+  // known-gaps G15). The measurement is itself a layout effect, so the
+  // panel is visible before the browser handles the next keystroke.
+  const placed = pos !== null;
+  useLayoutEffect(() => {
+    if (!open || !placed) return;
+    menuItems()[0]?.focus();
+  }, [open, placed]);
 
   const typeahead = useRef<{ buffer: string; at: number }>({ buffer: "", at: 0 });
 
