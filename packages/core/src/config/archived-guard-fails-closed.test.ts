@@ -1,10 +1,11 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { TaskFrontmatter } from "@loctt/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { chmod } from "../test-support/permissions.js";
 import { loadAllUsersDetailed } from "../users/profile.js";
 import {
   ArchivedReferenceError,

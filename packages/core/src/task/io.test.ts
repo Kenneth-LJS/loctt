@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { getTaskFilePath } from "../paths/index.js";
+import { chmod, DENIED_REASON } from "../test-support/permissions.js";
 import { TaskParseError } from "./frontmatter.js";
 import { readTask, readTaskBody, writeTask, writeTaskBody } from "./io.js";
 import { loadAllTasksDetailed } from "./load-all.js";
@@ -160,7 +161,7 @@ describe("task I/O", () => {
       expect(unreadable).toHaveLength(1);
       const u = unreadable[0]!;
       expect(u.path).toBe(filePath);
-      expect(u.reason).toBe("EACCES: permission denied");
+      expect(u.reason).toBe(DENIED_REASON);
       expect(`${u.path}: ${u.reason}`.split(filePath).length - 1).toBe(1);
     } finally {
       await chmod(filePath, 0o644);

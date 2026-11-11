@@ -1,9 +1,10 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { chmod } from "../test-support/permissions.js";
 import { loadJournal } from "./journal.js";
 import { recoverStagedSwap, stagedSwap, SwapRollbackError } from "./staged-swap.js";
 

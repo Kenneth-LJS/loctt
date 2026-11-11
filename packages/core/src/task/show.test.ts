@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { getAttachmentsDir, getTaskDir } from "../paths/index.js";
+import { chmod, DENIED_CODE } from "../test-support/permissions.js";
 import { writeTask } from "./io.js";
 import { buildShowModel,discoverAttachments } from "./show.js";
 
@@ -211,7 +212,7 @@ describe("task show model", () => {
 
     await chmod(dir, 0o000);
     try {
-      await expect(discoverAttachments(locttDir, "abc123")).rejects.toThrow(/EACCES|permission/i);
+      await expect(discoverAttachments(locttDir, "abc123")).rejects.toThrow(new RegExp(DENIED_CODE));
     } finally {
       await chmod(dir, 0o755);
     }
@@ -448,7 +449,7 @@ describe("task show model", () => {
       expect(model.relationships).toEqual([]);
       // The section says why, rather than claiming emptiness.
       expect(model.attachments).toEqual([]);
-      expect(model.attachmentsError).toMatch(/EACCES|permission/i);
+      expect(model.attachmentsError).toMatch(new RegExp(DENIED_CODE));
     } finally {
       await chmod(dir, 0o755);
     }

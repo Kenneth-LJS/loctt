@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +10,7 @@ import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "../task/create.js";
 import { loadAllTasks } from "../task/load-all.js";
+import { chmod } from "../test-support/permissions.js";
 import { createUser } from "../users/lifecycle.js";
 import { switchCurrentUser } from "../users/manage.js";
 import { saveUserSettings } from "../users/settings.js";

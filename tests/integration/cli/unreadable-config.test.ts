@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { chmod } from "@loctt/core/test-support/permissions.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";

@@ -58,7 +58,7 @@ describe("withStateLock", () => {
   // XS-64's permission alert missed its window under load.
   it("reports an unwritable tracker at once rather than retrying it", async () => {
     if (process.getuid?.() === 0) return; // root ignores mode bits
-    const { chmod } = await import("node:fs/promises");
+    const { chmod } = await import("../test-support/permissions.js");
     await chmod(locttDir, 0o500);
     try {
       const started = Date.now();

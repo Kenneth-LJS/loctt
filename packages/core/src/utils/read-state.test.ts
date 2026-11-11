@@ -1,9 +1,10 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { chmod, DENIED_CODE } from "../test-support/permissions.js";
 import {
   contentOr,
   isMissingFile,
@@ -58,7 +59,7 @@ describe("readFileState", () => {
     // over a file it never read.
     expect(result.state).toBe("unreadable");
     if (result.state !== "unreadable") throw new Error("unreachable");
-    expect(result.code).toBe("EACCES");
+    expect(result.code).toBe(DENIED_CODE);
   });
 
   it("names the file in the reason, so a surface need not invent one", async () => {
@@ -89,7 +90,7 @@ describe("readFileState", () => {
 
     const result = await readFileState(path);
     if (result.state !== "unreadable") throw new Error("expected unreadable");
-    expect((result.cause as NodeJS.ErrnoException).code).toBe("EACCES");
+    expect((result.cause as NodeJS.ErrnoException).code).toBe(DENIED_CODE);
   });
 });
 
@@ -131,7 +132,7 @@ describe("contentOr", () => {
       expect((err as UnreadableFileError).path).toBe(path);
       // The raw errno lives on `fileErrno`; `code` is the envelope
       // ErrorCode now that this extends LocttError.
-      expect((err as UnreadableFileError).fileErrno).toBe("EACCES");
+      expect((err as UnreadableFileError).fileErrno).toBe(DENIED_CODE);
       expect((err as UnreadableFileError).code).toBe("io_failed");
     }
   });

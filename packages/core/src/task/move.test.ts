@@ -133,7 +133,7 @@ describe("bulkMoveTasksToProject", () => {
 
     // Make the task directory unwritable so the write fails after the
     // key has already been allocated.
-    const { chmod } = await import("node:fs/promises");
+    const { chmod } = await import("../test-support/permissions.js");
     const { getTaskDir } = await import("../paths/index.js");
     // `seed` returns the task id, which is what getTaskDir wants.
     const dir = getTaskDir(locttDir, a);

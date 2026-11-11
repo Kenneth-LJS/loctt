@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import type { ReconcileDecision, Task, TaskConflictField, WorkflowConfig } from 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { readTask, writeTask } from "../task/io.js";
+import { chmod } from "../test-support/permissions.js";
 import { applyReconcile } from "./reconcile-apply.js";
 
 const workflow: WorkflowConfig = {

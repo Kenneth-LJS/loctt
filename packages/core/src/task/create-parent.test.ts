@@ -9,7 +9,7 @@
  *
  * @verifies REL-C6
  */
-import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +24,7 @@ import { resolveLocttDir } from "../paths/index.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { withStateLock } from "../state/lock.js";
 import { loadState, saveState } from "../state/state.js";
+import { chmod } from "../test-support/permissions.js";
 import { createTask } from "./create.js";
 import { readHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";

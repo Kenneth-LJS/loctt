@@ -1,8 +1,9 @@
-import { chmod, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { initLoctt } from "@loctt/core";
+import { chmod } from "@loctt/core/test-support/permissions.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createWebApp } from "./server.js";
@@ -100,7 +101,11 @@ describe("POST /api/tasks/bulk/delete when a delete fails", () => {
    * the directory is either whole or absent, never a husk the next
    * read chokes on.
    */
-  it("leaves a task that could not be deleted whole and resolvable", async () => {
+  // Skipped on Windows: a read-only parent there does not stop a child
+  // being removed (the child's own DELETE right allows it), and denying
+  // DELETE on the child would also block listing it, which POSIX does
+  // not. See test-support/permissions.ts.
+  it.skipIf(process.platform === "win32")("leaves a task that could not be deleted whole and resolvable", async () => {
     const victim = await create("Cannot be removed");
     const tasksDir = join(root, ".loctt", "tasks");
 

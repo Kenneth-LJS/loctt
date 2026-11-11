@@ -45,6 +45,10 @@
     "./query/tokenizer.js": {
       "types": "./dist/query/tokenizer.d.ts",
       "import": "./dist/query/tokenizer.js"
+    },
+    "./test-support/permissions.js": {
+      "types": "./dist/test-support/permissions.d.ts",
+      "import": "./dist/test-support/permissions.js"
     }
   },
   "scripts": {

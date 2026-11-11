@@ -1,9 +1,10 @@
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ErrorResponse } from "@loctt/contracts";
 import { initLoctt, withStateLock } from "@loctt/core";
+import { chmod, DENIED_CODE } from "@loctt/core/test-support/permissions.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createWebApp } from "./server.js";
@@ -365,8 +366,8 @@ describe("actionable filesystem errors", () => {
     expect(envelope.data_state).toBe("not_saved");
     expect(envelope.recovery?.kind).toBe("retry");
     // ERR-16: the raw errno belongs behind a details affordance.
-    expect(envelope.message).not.toContain("EACCES");
-    expect(envelope.detail).toContain("EACCES");
+    expect(envelope.message).not.toContain(DENIED_CODE);
+    expect(envelope.detail).toContain(DENIED_CODE);
     // Bounded by proper-lockfile's backoff (10 retries, capped at 500ms)
     // before the failure surfaces.
   }, 20_000);

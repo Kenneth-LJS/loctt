@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ import { loadWorkflowConfig } from "../config/workflow.js";
 import { initLoctt } from "../init/init.js";
 import { getTaskDir, resolveLocttDir } from "../paths/index.js";
 import { loadKeyIndex, loadState, saveState, withStateLock } from "../state/index.js";
+import { chmod } from "../test-support/permissions.js";
 import { bulkDelete } from "./bulk.js";
 import { createTask } from "./create.js";
 import { readHistory } from "./history.js";

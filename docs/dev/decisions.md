@@ -22685,6 +22685,16 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K165 · Permission-failure tests run on Windows through ACLs
+
+**Date:** 2026-11-11 · **Ken's ruling — not revertible by an agent.**
+
+About 45 tests inject an unreadable file or a read-only directory with
+`chmod`, which Windows ignores, so all of them failed there on their own
+premise. Asked whether to skip them on Windows or emulate the failure
+with Windows ACLs (more work, but the tests really run), Ken chose
+**use Windows ACLs**. Built as `test-support/permissions.ts` (A377 § 1).
+
 ### K164 · Ctrl/cmd-clicking a task row opens it in a new tab
 
 **Date:** 2026-11-10 · **Ken's ruling — not revertible by an agent.**
