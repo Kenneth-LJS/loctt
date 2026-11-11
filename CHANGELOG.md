@@ -6,6 +6,14 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-11
+
+No tracker format change: 0.5.0 reads and writes format `0.4.0`, so there
+is nothing to upgrade. One behaviour change for scripts: `loctt list
+--view X --project P` (and MCP `list_tasks` with `view` and `project`) now
+returns only the view's tasks in that project, where `--project` used to
+be ignored alongside a view.
+
 - Filters stack on an open saved view. In the web UI, toolbar filters
   (status, priority, labels, …) now narrow the open view on the list,
   board and timeline instead of being ignored, and "Save as view" saves
