@@ -17,7 +17,10 @@ describe("CLI body edge cases (spawned binary)", () => {
     });
   });
 
-  it("100KB body round-trips intact", async () => {
+  // Skipped on Windows: a single 100 KB argument cannot be passed there
+  // at all (the whole command line is capped at 32,767 characters), so
+  // the CLI never runs. The web body endpoint carries large bodies there.
+  it.skipIf(process.platform === "win32")("100KB body round-trips intact", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "t"], { cwd: root });
 

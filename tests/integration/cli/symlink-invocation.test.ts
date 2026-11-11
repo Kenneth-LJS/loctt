@@ -2,10 +2,16 @@ import { mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { canCreateFileSymlinks } from "@loctt/core/test-support/permissions.js";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
+
+// Windows refuses file symlinks without Developer Mode or elevation; npm
+// installs a `.cmd` shim there rather than a symlink, so the case this
+// guards does not arise.
+const CAN_SYMLINK_FILES = await canCreateFileSymlinks();
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const REAL_BINARY = path.join(REPO_ROOT, "apps/cli/dist/index.js");
@@ -21,7 +27,7 @@ const REAL_BINARY = path.join(REPO_ROOT, "apps/cli/dist/index.js");
  * This test pins the behavior: invoking via a symlink must produce the
  * same output as invoking the real path.
  */
-describe("CLI symlink invocation", () => {
+describe.skipIf(!CAN_SYMLINK_FILES)("CLI symlink invocation", () => {
   let symlinkDir: string;
 
   beforeEach(async () => {

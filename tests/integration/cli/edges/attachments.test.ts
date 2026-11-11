@@ -1,10 +1,14 @@
 import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { canCreateFileSymlinks } from "@loctt/core/test-support/permissions.js";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../../adapters/cli-spawn.js";
 import { withTmpLoctt } from "../../fixtures/tmp-loctt.js";
+
+// Windows refuses file symlinks without Developer Mode or elevation.
+const CAN_SYMLINK_FILES = await canCreateFileSymlinks();
 
 describe("CLI attach/detach edge cases (spawned binary)", () => {
   it("rejects attaching a directory", async () => {
@@ -62,7 +66,7 @@ describe("CLI attach/detach edge cases (spawned binary)", () => {
     });
   });
 
-  it("rejects attaching a symlink", async () => {
+  it.skipIf(!CAN_SYMLINK_FILES)("rejects attaching a symlink", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "t"], { cwd: root });
 

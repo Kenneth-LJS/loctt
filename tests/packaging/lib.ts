@@ -29,7 +29,21 @@ import { promisify } from "node:util";
 
 import ts from "typescript";
 
-const exec = promisify(execFile);
+const execFileP = promisify(execFile);
+
+/**
+ * `execFile`, except that `npm` runs as `node <npm-cli.js>` when
+ * `npm_execpath` is set (it is under `npm run`). On Windows npm is
+ * `npm.cmd`, which cannot be spawned without a shell (`spawn npm
+ * ENOENT`); going through Node needs no shell on any platform.
+ */
+const exec: typeof execFileP = ((file: string, args: readonly string[], opts: object) => {
+  const npmCli = process.env["npm_execpath"];
+  if (file === "npm" && npmCli !== undefined && npmCli.endsWith(".js")) {
+    return execFileP(process.execPath, [npmCli, ...args], opts);
+  }
+  return execFileP(file, args, opts);
+}) as typeof execFileP;
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -199,13 +213,17 @@ export async function packAndInstall(dir: PublishedDir): Promise<{ pkgDir: strin
   const manifest = await readManifest(dir);
   const pkgDir = path.join(project, "node_modules", manifest.name);
   await mkdir(pkgDir, { recursive: true });
-  await exec("tar", ["-xzf", tarball, "-C", pkgDir, "--strip-components=1"]);
+  // Run inside pkgDir with a relative tarball path rather than `-C <abs>`:
+  // GNU tar (Git for Windows') reads `C:\…` as a remote `host:path`.
+  await exec("tar", ["-xzf", path.relative(pkgDir, tarball), "--strip-components=1"], { cwd: pkgDir });
   // Install from the PACKED manifest: that is what npm would read.
   const packed = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8")) as Manifest;
   for (const [dep, range] of Object.entries(packed.dependencies ?? {})) {
     const link = path.join(project, "node_modules", dep);
     await mkdir(path.dirname(link), { recursive: true });
-    await symlink(await monorepoCopy(dir, dep, range), link, "dir");
+    // A junction on Windows: a directory symlink there needs Developer
+    // Mode or elevation, a junction needs neither, and Node resolves both.
+    await symlink(await monorepoCopy(dir, dep, range), link, process.platform === "win32" ? "junction" : "dir");
   }
   return { pkgDir, project };
 }

@@ -181,7 +181,10 @@ function doctorFindings(root: string): string[] {
   const real = realpathOrSelf(root);
   return out.split("\n").map(l => l.trim())
     .filter(l => l.startsWith("!") || l.startsWith("✗"))
-    .map(l => l.split(root).join("<root>").split(real).join("<root>"));
+    .map(l => l.split(root).join("<root>").split(real).join("<root>"))
+    // Posix separators, so an allow-pattern written once (`<root>/.loctt/…`)
+    // matches on Windows too.
+    .map(l => (process.platform === "win32" ? l.replace(/\\/g, "/") : l));
 }
 
 function doctorEnv(): Record<string, string> {
