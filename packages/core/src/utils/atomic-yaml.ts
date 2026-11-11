@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { stringify as stringifyYaml } from "yaml";
 
 import { withFsErrors } from "./fs-errors.js";
+import { replaceFile } from "./replace-file.js";
 
 /**
  * Atomically writes a YAML file at the given path. Serializes the
@@ -29,7 +30,7 @@ export async function writeYamlAtomically(
     await mkdir(dirname(path), { recursive: true });
     const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
     await writeFile(tmpPath, contents, "utf-8");
-    await rename(tmpPath, path);
+    await replaceFile(tmpPath, path);
   });
 }
 
@@ -45,6 +46,6 @@ export async function writeFileAtomically(
     await mkdir(dirname(path), { recursive: true });
     const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
     await writeFile(tmpPath, contents, "utf-8");
-    await rename(tmpPath, path);
+    await replaceFile(tmpPath, path);
   });
 }

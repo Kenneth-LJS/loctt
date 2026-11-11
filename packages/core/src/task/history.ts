@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { HistoryEntry, HistoryKind } from "@loctt/contracts";
@@ -10,6 +10,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { LocttError } from "../errors.js";
 import { getHistoryFilePath } from "../paths/index.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
+import { replaceFile } from "../utils/replace-file.js";
 
 /*
  * No history entry is ever merged into another (K128, Ken 2026-09-24).
@@ -347,7 +348,7 @@ export async function appendHistory(
     const out = reinsertMalformed(rows, merged);
     const tmpPath = `${filePath}.${randomUUID()}.tmp`;
     await writeFile(tmpPath, stringifyYaml(out), "utf-8");
-    await rename(tmpPath, filePath);
+    await replaceFile(tmpPath, filePath);
   } finally {
     await release().catch(() => {
       // Releaser failed — usually because the lock file was already

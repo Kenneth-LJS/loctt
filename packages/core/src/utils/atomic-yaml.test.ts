@@ -48,7 +48,12 @@ describe("writeYamlAtomically", () => {
     expect(parseYaml(raw)).toEqual({ v: 2 });
   });
 
-  it("concurrent readers never see a half-written file", async () => {
+  // Windows cannot rename over a file while any handle has it open, so
+  // four back-to-back readers starve the writers outright: measured, every
+  // rename failed while they ran, and `replaceFile`'s retry has no gap to
+  // land in. Not satisfiable there (known-gaps G13); the writer-vs-writer
+  // race that is fixable is covered in replace-file.test.ts.
+  it.skipIf(process.platform === "win32")("concurrent readers never see a half-written file", async () => {
     // Hammer the file with overlapping writes (multiple writer
     // loops running in parallel, each emitting payloads spanning
     // multiple filesystem pages so the kernel actually has the

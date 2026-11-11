@@ -92,7 +92,10 @@ const NETWORK_FSTYPES: readonly { readonly type: string; readonly cls: SyncFsCla
 export function classifySyncFs(probe: FsProbeResult | undefined): SyncFsClass | undefined {
   if (probe === undefined) return undefined;
 
-  const path = probe.resolvedPath?.toLowerCase();
+  // Windows paths use `\`; without this a tracker in
+  // `C:\Users\me\OneDrive\...` (Windows' default Documents location) or a
+  // Dropbox folder was never recognised.
+  const path = probe.resolvedPath?.replace(/\\/g, "/").toLowerCase();
   if (path !== undefined) {
     for (const { needle, cls } of PATH_MARKERS) {
       if (path.includes(needle)) return cls;
@@ -160,6 +163,10 @@ export const defaultFsProbe: FsProbe = (dir: string): FsProbeResult | undefined 
  * the fstype from that line.
  */
 function readMountFstype(path: string): string | undefined {
+  // Windows has no mount(8). Where Git for Windows puts its `mount` on the
+  // PATH, that lists the MSYS view, not the drive's filesystem, and the
+  // spawn cost ~2.7s on the first /api/info. Path markers still apply.
+  if (process.platform === "win32") return undefined;
   const proc = spawnSync("mount", [], { encoding: "utf-8", timeout: 3000 });
   if (proc.status !== 0 || typeof proc.stdout !== "string") return undefined;
 

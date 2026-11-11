@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 
 import { getUserDir } from "../paths/index.js";
+import { replaceFile } from "../utils/replace-file.js";
 import { UserError } from "./errors.js";
 
 /** Maximum avatar source size in bytes (10 MB). */
@@ -198,7 +199,7 @@ export async function copyAvatar(
   const tmpPath = `${targetPath}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   await writeFile(tmpPath, processed);
   try {
-    await rename(tmpPath, targetPath);
+    await replaceFile(tmpPath, targetPath);
   } catch (err) {
     // Cross-device rename or permission flap mid-write: clean up
     // the temp file so we don't accumulate leftovers across

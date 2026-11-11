@@ -25,3 +25,19 @@ older backup upgrades it, K161.)
 (G12, an unparseable `settings.yaml` making every settings read throw,
 was fixed by B56: it loads as no settings and a settings write refuses to
 overwrite it, A375.)
+
+## G13 · On Windows, a file read continuously cannot be atomically replaced
+
+**What is wrong.** Windows refuses to rename over a file while any handle
+has it open. Every LocTT write is temp-file + rename, retried for 2s on
+Windows (`utils/replace-file.ts`, A377). If something reads the target
+without pause for longer than that, the write fails with "Permission
+denied".
+
+**Reproduce.** On Windows, run `atomic-yaml.test.ts`'s
+"concurrent readers never see a half-written file" (skipped there): four
+back-to-back readers made every rename fail.
+
+**Decide.** Nothing yet. Realistic readers (the server, the CLI, an editor)
+leave gaps the retry lands in. A fix would need POSIX rename semantics,
+which Node does not expose.

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import * as lockfile from "proper-lockfile";
@@ -11,6 +11,7 @@ import { LocttError } from "../errors.js";
 import { getCommentsFilePath } from "../paths/index.js";
 import { readCurrentUserId } from "../users/current.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
+import { replaceFile } from "../utils/replace-file.js";
 import { appendHistory } from "./history.js";
 
 export class CommentError extends LocttError {
@@ -236,7 +237,7 @@ async function writeCommentsAtomically(
   const tmp = `${path}.${randomUUID()}.tmp`;
   const comments = entries.map(e => (isMalformedComment(e) ? e.raw : e));
   await writeFile(tmp, stringifyYaml({ comments }), "utf-8");
-  await rename(tmp, path);
+  await replaceFile(tmp, path);
 }
 
 async function withCommentsLock<T>(

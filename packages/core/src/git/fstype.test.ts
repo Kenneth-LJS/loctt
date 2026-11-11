@@ -24,6 +24,18 @@ describe("classifySyncFs (GIT-22)", () => {
   });
 
   // @verifies GIT-22
+  it.each([
+    ["C:\\Users\\ken\\Dropbox\\work\\tracker", "dropbox"],
+    ["C:\\Users\\ken\\OneDrive\\Documents\\tracker", "onedrive"],
+    ["C:\\Users\\ken\\OneDrive - Acme\\tracker", "onedrive"],
+  ])("recognises a Windows sync-folder path %s", (resolvedPath, cls) => {
+    expect(classifySyncFs({ resolvedPath, fstype: "ntfs" })).toBe(cls);
+  });
+
+  it("does not flag an ordinary Windows path", () => {
+    expect(classifySyncFs({ resolvedPath: "C:\\dev\\tracker", fstype: "ntfs" })).toBeUndefined();
+  });
+
   it("recognises a Dropbox path on a local disk", () => {
     expect(classifySyncFs({ resolvedPath: "/Users/ken/Dropbox/work/tracker", fstype: "apfs" }))
       .toBe("dropbox");

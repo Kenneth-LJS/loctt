@@ -16,6 +16,12 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
 - Ctrl-click (cmd-click on macOS) on a task row opens the task in a new
   tab, in the list and on a milestone's page.
 - The task list's row checkboxes are a standard 16px size.
+- Windows: writes no longer fail with "Permission denied" when two writes
+  to the same file race (renames are retried briefly).
+- Windows: a tracker inside a Dropbox or OneDrive folder now gets the
+  sync-folder warning.
+- Windows: the web UI's first load no longer waits ~3 seconds on a
+  filesystem probe that cannot work there.
 
 ## [0.4.0] — 2026-09-29
 

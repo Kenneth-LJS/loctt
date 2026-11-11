@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getUserDir } from "../paths/index.js";
+import { replaceFile } from "../utils/replace-file.js";
 
 const RECENTS_FILE = "recents.yaml";
 
@@ -74,7 +75,7 @@ export async function pushRecent(
   const file = recentsFilePath(locttDir, userId);
   const tmp = `${file}.tmp`;
   await writeFile(tmp, stringifyYaml({ tasks: next }), "utf-8");
-  await rename(tmp, file);
+  await replaceFile(tmp, file);
   return next;
 }
 
@@ -95,5 +96,5 @@ export async function removeRecent(
   const file = recentsFilePath(locttDir, userId);
   const tmp = `${file}.tmp`;
   await writeFile(tmp, stringifyYaml({ tasks: next }), "utf-8");
-  await rename(tmp, file);
+  await replaceFile(tmp, file);
 }
