@@ -23,9 +23,10 @@
  * XS-1 vacuous.
  */
 
-import { chmod, readdir, readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { chmod } from "@loctt/core/test-support/permissions.js";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/tracker.ts";
@@ -919,13 +920,22 @@ test.describe("TSK — a very large body", () => {
 
     const key = onlyKey(await tracker.seed([{ title: "War and peace" }]));
 
-    // A genuinely large body: 4000 numbered lines, written through the
-    // CLI so the starting bytes are known exactly and the size is real
+    // A genuinely large body: 4000 numbered lines, written before the page
+    // loads so the starting bytes are known exactly and the size is real
     // rather than a token the app might special-case.
     const LINES = 4000;
     const big = Array.from({ length: LINES }, (_u, i) => `Line ${String(i + 1)} of the body.`)
       .join("\n") + "\n";
-    await tracker.run(["body", key, "--set", big]);
+    // Through the app's own body endpoint rather than `loctt body --set`:
+    // ~88 KB as one argv entry exceeds Windows' 32,767-character command
+    // line, and chunked `--append`s would insert blank lines between
+    // chunks. Same single write, same exact bytes.
+    const res = await fetch(`${tracker.baseURL}/api/tasks/${key}/body`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Loctt-Client": "web" },
+      body: JSON.stringify({ body: big }),
+    });
+    expect(res.status, await res.clone().text()).toBeLessThan(300);
 
     // Count the writes: bullet three is a statement about *how many*
     // requests a burst produces, and only counting tells "one save per

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getAttachmentPath, getAttachmentsDir } from "../paths/index.js";
+import { canCreateFileSymlinks } from "../test-support/permissions.js";
 import {
   attachFile,
   AttachmentCaseCollisionError,
@@ -14,6 +15,9 @@ import {
   detachFile,
 } from "./attachments.js";
 import { readHistory } from "./history.js";
+
+// Windows refuses file symlinks without Developer Mode or elevation.
+const CAN_SYMLINK_FILES = await canCreateFileSymlinks();
 
 describe("attachments", () => {
   let root: string;
@@ -179,7 +183,7 @@ describe("attachments", () => {
       expect(st.isFile()).toBe(true);
     });
 
-    it("rejects symlinks outright", async () => {
+    it.skipIf(!CAN_SYMLINK_FILES)("rejects symlinks outright", async () => {
       const target = await makeSource("real.txt", "real");
       const link = join(sourceDir, "linky.txt");
       await symlink(target, link);
@@ -275,7 +279,8 @@ describe("attachments", () => {
         const outsideDir = await mkdtemp(join(tmpdir(), "loctt-symdir-"));
         await writeFile(join(outsideDir, "target.txt"), "leak", "utf-8");
         const link = join(sourceDir, "linkdir");
-        await symlink(outsideDir, link);
+        // A junction on Windows: same realpath escape, no privilege needed.
+        await symlink(outsideDir, link, process.platform === "win32" ? "junction" : "dir");
         const through = join(link, "target.txt");
         try {
           const err = await attachFile({
@@ -399,7 +404,11 @@ describe("attachments", () => {
    * the case's real content: a filesystem refusal must be named rather
    * than surfacing a raw errno, and must leave nothing behind.
    */
-  describe("a destination the filesystem refuses", () => {
+  // Skipped on Windows: a source file there cannot have a name over 255
+  // characters either, so the refusal is only reachable through a path
+  // of ~32,767 characters — ~130 nested directories, which outlasts the
+  // test timeout before the fixture is even built.
+  describe.skipIf(process.platform === "win32")("a destination the filesystem refuses", () => {
     let deepRoot: string;
     let deepLoctt: string;
 

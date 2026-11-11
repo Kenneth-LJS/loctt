@@ -216,9 +216,13 @@ export async function createCollidingFromOtherClone(
     await execa("git", ["config", "user.email", "test@example.com"], { cwd: other, env });
     await execa("git", ["config", "user.name", "Test"], { cwd: other, env });
     await mkdir(path.join(other, ".loctt"), { recursive: true });
+    // `tar` runs inside `.loctt/` rather than with `-C <path>`: GNU tar
+    // reads `C:\…` as a remote `host:path` and fails on Windows. `git
+    // archive` stays at the clone root — run from a subdirectory it
+    // archives only that subdirectory's part of the tree.
     await execa(
       "bash",
-      ["-c", `git archive origin/loctt | tar -x -C ${JSON.stringify(path.join(other, ".loctt"))}`],
+      ["-c", "git archive origin/loctt | (cd .loctt && tar -x)"],
       { cwd: other, env },
     );
     await execa("cp", [

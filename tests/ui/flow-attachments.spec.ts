@@ -21,10 +21,11 @@
  * because "untouched" is not the same as "still present".
  */
 
-import { chmod, mkdtemp, readdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { chmod } from "@loctt/core/test-support/permissions.js";
 import type { Page } from "@playwright/test";
 
 import type { TrackerFixture } from "./fixtures/tracker.ts";
@@ -123,8 +124,10 @@ async function fixtureDir(): Promise<string> {
 async function file(name: string, contents: string): Promise<Upload> {
   const dir = await fixtureDir();
   // A name with separators cannot be a path component; write it under
-  // a flat stand-in and let the browser report the real one.
-  const safe = name.replace(/[/\\]/g, "_");
+  // a flat stand-in and let the browser report the real one. So does a
+  // very long name: Chromium on Windows cannot read a file whose full
+  // path passes the 260-character MAX_PATH, so the upload never starts.
+  const safe = name.length > 100 ? `long-name-${String(name.length)}` : name.replace(/[/\\]/g, "_");
   const target = path.join(dir, safe);
   await writeFile(target, contents, "utf8");
   return safe === name ? { path: target } : { path: target, as: name };

@@ -64,7 +64,7 @@ describe("git-sync history-rewrite refusal (GIT-21 / K93)", () => {
       // Orphan branch: no parent, so nothing on `loctt` is its ancestor.
       execSync("git checkout --orphan rewritten", { cwd: wt, stdio: "pipe" });
       execSync("git rm -rf . >/dev/null 2>&1 || true", { cwd: wt, stdio: "pipe" });
-      execSync("git commit --allow-empty -m 'rewritten history'", { cwd: wt, stdio: "pipe" });
+      execSync("git commit --allow-empty -m \"rewritten history\"", { cwd: wt, stdio: "pipe" });
       const newHead = execSync("git rev-parse HEAD", { cwd: wt, encoding: "utf-8" }).trim();
       // Force the branch ref to the orphan — the force-push.
       execSync(`git branch -f loctt ${newHead}`, { cwd: root, stdio: "pipe" });

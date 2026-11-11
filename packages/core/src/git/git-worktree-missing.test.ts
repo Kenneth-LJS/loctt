@@ -112,7 +112,7 @@ describe("GIT-36 · a missing/corrupt publish/sync worktree", () => {
     const editWt = join(root, ".edit-worktree");
     execSync(`git worktree add "${editWt}" loctt`, { cwd: root, stdio: "pipe" });
     try {
-      execSync("git commit --allow-empty -m 'advance branch'", { cwd: editWt, stdio: "pipe" });
+      execSync("git commit --allow-empty -m \"advance branch\"", { cwd: editWt, stdio: "pipe" });
     } finally {
       execSync(`git worktree remove "${editWt}" --force`, { cwd: root, stdio: "pipe" });
     }

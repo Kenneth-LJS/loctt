@@ -32,10 +32,12 @@
  * changed — not that a class or an attribute is present.
  */
 
-import { chmod, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { AxeBuilder } from "@axe-core/playwright";
+import { chmod } from "@loctt/core/test-support/permissions.js";
+import type { Page } from "@playwright/test";
 
 import { defined } from "./fixtures/defined.ts";
 import { expect, test } from "./fixtures/tracker.ts";
@@ -1846,6 +1848,59 @@ test.describe("A11Y — failure communication", () => {
   });
 });
 
+/**
+ * The key presses that enter `y-m-d` into a native date input in THIS
+ * browser, whose segment order (day-month-year, month-day-year or
+ * year-month-day) comes from the OS, not from Playwright's `locale`.
+ * Day and month advance on their own after two digits. The year advances
+ * after four only when `max` caps it at four digits; unbounded it takes
+ * up to six and needs an ArrowRight. So the scratch input carries the
+ * target field's own `min`/`max`. Each order is tried for real in that
+ * scratch input outside the app, and the one that yields the date wins.
+ * It moves focus, so call it before the flow under test starts, and
+ * replay the result with {@link pressDateKeys}.
+ */
+async function dateKeystrokes(
+  page: Page,
+  [y, m, d]: readonly [string, string, string],
+  bounds: { readonly min: string; readonly max: string },
+): Promise<readonly string[]> {
+  const want = `${y}-${m}-${d}`;
+  const candidates: readonly (readonly string[])[] = [
+    [d, m, y],
+    [m, d, y],
+    [y, m, d],
+    [y, "ArrowRight", m, d],
+  ];
+  const scratch = page.locator("#a11y-date-order-probe");
+  for (const keys of candidates) {
+    // A fresh input per attempt: clearing `value` does not reset which
+    // segment the next keystroke lands in.
+    await page.evaluate(({ min, max }) => {
+      const el = document.createElement("input");
+      el.type = "date";
+      el.id = "a11y-date-order-probe";
+      el.min = min;
+      el.max = max;
+      document.body.append(el);
+    }, bounds);
+    await scratch.focus();
+    await pressDateKeys(page, keys);
+    const got = await scratch.inputValue();
+    await scratch.evaluate(el => { el.remove(); });
+    if (got === want) return keys;
+  }
+  throw new Error(`no segment order entered ${want} into a date input`);
+}
+
+/** Types digit runs and presses named keys, as real keystrokes. */
+async function pressDateKeys(page: Page, keys: readonly string[]): Promise<void> {
+  for (const k of keys) {
+    if (/^\d+$/.test(k)) await page.keyboard.type(k);
+    else await page.keyboard.press(k);
+  }
+}
+
 test.describe("A11Y — keyboard-only end-to-end flows", () => {
   /**
    * A11Y-11: create a task with no pointer at all.
@@ -1868,6 +1923,10 @@ test.describe("A11Y — keyboard-only end-to-end flows", () => {
     await tracker.seed([{ title: "Pre-existing row" }]);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Pre-existing row")).toBeVisible();
+    // Measured before the dialog opens: the probe moves focus.
+    // The create modal's date fields are bounded 1900-01-01..2099-12-31.
+    const dateKeys = await dateKeystrokes(page, ["2026", "04", "17"], { min: "1900-01-01", max: "2099-12-31" });
+    await page.locator("body").focus();
 
     await page.locator("body").press("n");
     const dialog = page.getByRole("dialog");
@@ -1928,9 +1987,12 @@ test.describe("A11Y — keyboard-only end-to-end flows", () => {
     await dateField.focus();
     await expect(dateField).toBeFocused();
     // Eight digits typed as real keystrokes into the focused control's
-    // segments, which this engine orders day, month, year. The value
-    // only materialises once all three are filled, which is why the
-    // assertion is on the completed value.
+    // segments. The segment order is the browser's, not ours: Chromium
+    // on Windows takes it from the OS short-date setting (a `yyyy-MM-dd`
+    // machine read day-month-year keystrokes as 1704-02-26), and
+    // Playwright's `locale` does not change it — so the order is
+    // measured first. The value only materialises once all three are
+    // filled, which is why the assertion is on the completed value.
     //
     // Typed rather than `fill()`ed on purpose: `fill` sets the value
     // directly, bypassing the keyboard entirely, so a fill-based
@@ -1941,7 +2003,7 @@ test.describe("A11Y — keyboard-only end-to-end flows", () => {
     // NOT use `task/editors/DateField.tsx` — it defines its own
     // `FormDateField` and imports only `nonWorkingNote` from that
     // module, so mutating `DateField` leaves this test green.
-    await page.keyboard.type("17042026");
+    await pressDateKeys(page, dateKeys);
     await expect(dateField).toHaveValue("2026-04-17");
 
     /*

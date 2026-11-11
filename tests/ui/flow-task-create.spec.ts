@@ -14,8 +14,10 @@
  * file can disagree.
  */
 
-import { chmod, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { chmod } from "@loctt/core/test-support/permissions.js";
 
 import { expect, test } from "./fixtures/tracker.ts";
 

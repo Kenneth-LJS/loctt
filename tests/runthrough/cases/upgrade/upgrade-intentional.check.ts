@@ -7,6 +7,8 @@
  * upgrade step cannot vouch for itself.
  */
 
+import { dirname } from "node:path";
+
 import { frozenSeedLoctt } from "../../lib/paths.ts";
 import type { Relationship, TrackerView } from "../../lib/tracker.ts";
 import { TrackerView as View } from "../../lib/tracker.ts";
@@ -31,7 +33,9 @@ function listedOrder(rels: readonly Relationship[], type: string): string[] {
 
 export default function check(tracker: TrackerView): void {
   // The frozen seed, read as the upgraded tracker's past.
-  const before = new View(frozenSeedLoctt.replace(/\/\.loctt$/, ""));
+  // `dirname`, not a `/\.loctt$` strip: that regex never matched a
+  // Windows path, so this read `.loctt/.loctt` and found no workflow.
+  const before = new View(dirname(frozenSeedLoctt));
   const wf = before.readYaml("config/workflow.yaml") as { relationships: Array<{ key: string; inverse?: string; kind?: string; ranked?: boolean }> };
   const ranked = new Set<string>();
   for (const d of wf.relationships) {

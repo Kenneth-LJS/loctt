@@ -21,7 +21,7 @@ describe("three-way", () => {
   /** Commits the current `incoming` tree and returns the commit sha. */
   function commitIncoming(message: string): string {
     execSync("git add -A", { cwd: incoming, stdio: "pipe" });
-    execSync(`git commit -q -m '${message}'`, { cwd: incoming, stdio: "pipe" });
+    execSync(`git commit -q -m ${JSON.stringify(message)}`, { cwd: incoming, stdio: "pipe" });
     return execSync("git rev-parse HEAD", { cwd: incoming, encoding: "utf-8" }).trim();
   }
 

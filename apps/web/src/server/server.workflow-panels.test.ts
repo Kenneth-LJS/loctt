@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import type { WorkflowConfig, WorkflowUsageResponse } from "@loctt/contracts";
 import { initLoctt } from "@loctt/core";
@@ -88,8 +88,8 @@ describe("GET /api/workflow/usage", () => {
     // SET-3: "the panel shows the absolute path of the file it
     // reflects". A relative path would be useless to a user in a
     // terminal somewhere else.
-    expect(usage.path.startsWith("/")).toBe(true);
-    expect(usage.path).toMatch(/\.loctt\/config\/workflow\.yaml$/);
+    expect(isAbsolute(usage.path)).toBe(true);
+    expect(usage.path).toMatch(/\.loctt[\\/]config[\\/]workflow\.yaml$/);
     expect(await readFile(usage.path, "utf8")).toContain("statuses:");
   });
 

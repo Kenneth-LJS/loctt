@@ -23382,6 +23382,85 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A377 · Making the suites pass on Windows (K165)
+
+**Date:** 2026-11-11 · **Agent-made** (under K165).
+
+**The situation.** On Windows, 84 unit tests, 2 runthrough scenarios and 3
+Playwright tests failed at HEAD. They were sorted by root cause and each
+cause fixed once. Three of the causes were product bugs.
+
+**Decided.**
+1. *`chmod` → ACLs.* `packages/core/src/test-support/permissions.ts`
+   exports a drop-in `chmod` (plain `fs.chmod` off Windows; on Windows the
+   mode's owner bits become `icacls` DENY entries for Everyone, and a
+   permissive mode removes them), plus `DENIED_CODE`/`DENIED_REASON`
+   (`EPERM` on Windows, `EACCES` elsewhere) for assertions on a real
+   denial. Exported as `@loctt/core/test-support/permissions.js` so web,
+   integration and Playwright tests share it. Specific rights only (`RD`,
+   `WD`, `AD`, `DC`): the generic `W` shares SYNCHRONIZE with read and
+   blocks reads too. *Not emulated:* a read-only directory on POSIX also
+   stops an existing entry being deleted; on Windows that needs DELETE
+   denied on the entry, which makes Node fail every open of it, so the
+   one test that depends on it (`server.bulk-delete-failure`) is skipped
+   on Windows with that reason.
+2. *Product: `replaceFile` (`utils/replace-file.ts`).* Every
+   temp-file-then-rename write (atomic-yaml, comments, history, recents,
+   avatar) now retries the rename on `EPERM`/`EACCES`/`EBUSY` for up to 2s,
+   on Windows only — the `graceful-fs` / `write-file-atomic` fix. Measured:
+   two writers racing one file lost 1–4 renames in 80 with plain
+   `rename`, 0 with `replaceFile`. Continuous readers still starve it
+   (known-gaps G13), so atomic-yaml's constant-readers stress test skips
+   on Windows.
+3. *Product: sync-folder detection on Windows* (`git/fstype.ts`).
+   Separators are normalised before the Dropbox/OneDrive/iCloud markers
+   are matched; a tracker under `C:\Users\me\OneDrive\...` was never
+   flagged.
+4. *Product: BRD-37, Esc then release opened the task*
+   (`board/useBoardDrag.ts`). The click that ends a press which became a
+   drag is swallowed (capture phase, one shot), however the drag ended.
+   The spec now releases over the card on purpose; it only caught the bug
+   where the card happened to render under the pointer.
+5. *Test fixes, no product change:* git test helpers quote commit messages
+   with `"` (cmd.exe passes `'` through); cross-process workers import
+   core by `pathToFileURL`; the file-symlink attachment test skips when
+   Windows refuses symlinks (no Developer Mode), and the directory one
+   uses a junction; the deep-path ENAMETOOLONG block skips on Windows
+   (a source name cannot exceed 255 there, and a 32k-character path
+   outlasts the timeout); absolute-path assertions use `isAbsolute`;
+   A11Y-11 measures the date input's segment order (Chromium on Windows
+   takes it from the OS short-date setting, not Playwright's `locale`);
+   the runthrough upgrade check uses `dirname` for the seed root; the
+   case index writes posix paths, and the regenerated `smoke.list` fixes
+   `flow-board` entries the committed one had pointing at non-test lines.
+
+6. *Found in the full Playwright run.* The ACL helper ignores the x bit
+   on Windows (`fs.stat` never reports it, so NEW-33's save-and-restore
+   of a directory mode "restored" a lock-out that broke the next test in
+   the worker). Product: `readMountFstype` skips `mount(8)` on Windows —
+   it does not exist there, or lists Git for Windows' MSYS mounts, and
+   cost ~2.7s on the first `/api/info` (security-posture timed out; GIT-27
+   and VUE-26 went from 2 of 3 to 3 of 3 alone). Tests: the collide clone
+   runs `tar` inside `.loctt/` (GNU tar reads `C:\…` as `host:path`); the
+   rekey spec's post-sync waits use `SYNC_SETTLE_MS` (click → preview
+   measured 3.7–9.4s at 2 workers); TSK-27 writes its 88 KB body through
+   the body endpoint (one argv entry passes Windows' 32,767-character
+   command line); REL-37 hands the browser a 255-character name in
+   memory (Chromium on Windows cannot read a source past MAX_PATH).
+
+**Why.** K165; build-loop "a fix that fails twice means the model is
+wrong\" (atomic-yaml and A11Y-11 were each measured before the next
+attempt); the rule against symptomatic fixes (a skip only where the
+premise cannot be built, each with its reason in the code).
+
+**To revert.** 1: restore the `node:fs/promises` `chmod` imports in the
+converted test files and delete `test-support/permissions.ts` and its
+export. 2: replace `replaceFile(` with `rename(` at the five sites and
+delete `utils/replace-file.ts` and its test. 3: drop the `.replace` in
+`classifySyncFs` and the Windows-path tests. 4: delete
+`pressBecameDrag`/`swallowNextClick` from `useBoardDrag.ts` (and the
+spec's extra move). 5: each is local to its test file.
+
 ### A376 · How view filters stack, the 16px checkbox's reach, and the row new-tab gesture (issues #7, #8, #9; K162–K164)
 
 **Date:** 2026-11-10 · **Agent-made** (under K162, K163, K164).

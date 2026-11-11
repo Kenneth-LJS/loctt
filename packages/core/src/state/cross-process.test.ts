@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -35,7 +35,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const coreDistIndex = resolve(here, "..", "..", "dist", "index.js");
 
 /**
- * Worker source: imports the built @loctt/core via absolute path,
+ * Worker source: imports the built @loctt/core by file URL (a bare
+ * Windows path like C:\... is not a valid ESM specifier),
  * runs `createTask` inside a single `withStateLock`, prints the
  * resulting task key to stdout. The parent test spawns N copies
  * concurrently and verifies all complete with distinct keys.
@@ -44,7 +45,7 @@ const coreDistIndex = resolve(here, "..", "..", "dist", "index.js");
  */
 function workerSource(coreEntry: string): string {
   return `
-import { withStateLock, loadState, saveState, createTask } from ${JSON.stringify(coreEntry)};
+import { withStateLock, loadState, saveState, createTask } from ${JSON.stringify(pathToFileURL(coreEntry).href)};
 
 const locttDir = process.argv[2];
 const projectId = process.argv[3];
@@ -194,7 +195,7 @@ import {
   saveJournal,
   withStateLock,
   writeTask,
-} from ${JSON.stringify(coreEntry)};
+} from ${JSON.stringify(pathToFileURL(coreEntry).href)};
 import { mkdir } from "node:fs/promises";
 
 const [locttDir, mode, fromProject, toProject, ...taskIds] = process.argv.slice(2);
@@ -273,7 +274,7 @@ try {
  */
 function recovererWorkerSource(coreEntry: string): string {
   return `
-import { withStateLock } from ${JSON.stringify(coreEntry)};
+import { withStateLock } from ${JSON.stringify(pathToFileURL(coreEntry).href)};
 const locttDir = process.argv[2];
 if (!locttDir) { console.error("missing locttDir"); process.exit(2); }
 try {

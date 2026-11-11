@@ -69,7 +69,7 @@ describe("GIT-34 · a malformed remote task in a sync", () => {
           "utf-8",
         );
       }
-      execSync("git add -A && git commit -m 'seed tasks incl. malformed'", { cwd: wt, stdio: "pipe" });
+      execSync("git add -A && git commit -m \"seed tasks incl. malformed\"", { cwd: wt, stdio: "pipe" });
     } finally {
       execSync(`git worktree remove "${wt}" --force`, { cwd: root, stdio: "pipe" });
     }

@@ -182,7 +182,9 @@ function parseTags(
 }
 
 async function parseFile(absPath: string, repoRoot: string, tree: Tree): Promise<TestCase[]> {
-  const rel = path.relative(repoRoot, absPath);
+  // Posix separators whatever the OS: the index is committed, and a
+  // Windows run wrote `tests\\cases\\…`, rewriting every entry.
+  const rel = path.relative(repoRoot, absPath).split(path.sep).join("/");
   const lines = (await readFile(absPath, "utf8")).split("\n");
   const cases: TestCase[] = [];
 

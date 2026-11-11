@@ -103,7 +103,7 @@ describe("publish-sync", () => {
       execSync(`git worktree add ${worktreeDir} loctt`, { cwd: root, stdio: "pipe" });
       try {
         await rm(join(worktreeDir, "tasks", task.frontmatter.id), { recursive: true, force: true });
-        execSync("git add -A && git commit -m 'delete task'", { cwd: worktreeDir, stdio: "pipe" });
+        execSync("git add -A && git commit -m \"delete task\"", { cwd: worktreeDir, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${worktreeDir} --force`, { cwd: root, stdio: "pipe" });
       }
@@ -144,7 +144,7 @@ describe("publish-sync", () => {
             + `updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n`,
           );
         }
-        execSync("git add -A && git commit -m 'seed tasks on branch'", { cwd: worktreeDir, stdio: "pipe" });
+        execSync("git add -A && git commit -m \"seed tasks on branch\"", { cwd: worktreeDir, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${worktreeDir} --force`, { cwd: root, stdio: "pipe" });
       }
@@ -185,7 +185,7 @@ describe("publish-sync", () => {
       execSync(`git worktree add ${worktreeDir} loctt`, { cwd: root, stdio: "pipe" });
       try {
         await writeFile(join(worktreeDir, "config", "queries.yaml"), "queries: []");
-        execSync("git add -A && git commit -m 'add queries'", { cwd: worktreeDir, stdio: "pipe" });
+        execSync("git add -A && git commit -m \"add queries\"", { cwd: worktreeDir, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${worktreeDir} --force`, { cwd: root, stdio: "pipe" });
       }
@@ -219,7 +219,7 @@ describe("publish-sync", () => {
       execSync(`git worktree add ${wt} loctt`, { cwd: root, stdio: "pipe" });
       try {
         await mutate(wt);
-        execSync(`git add -A && git commit -m '${message}'`, { cwd: wt, stdio: "pipe" });
+        execSync(`git add -A && git commit -m ${JSON.stringify(message)}`, { cwd: wt, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${wt} --force`, { cwd: root, stdio: "pipe" });
       }
@@ -805,7 +805,7 @@ describe("publish-sync", () => {
       execSync(`git worktree add ${wt} my-tasks`, { cwd: root, stdio: "pipe" });
       try {
         await writeFile(join(wt, "config", "queries.yaml"), "queries: []\n");
-        execSync("git add -A && git commit -m 'edit on renamed branch'", { cwd: wt, stdio: "pipe" });
+        execSync("git add -A && git commit -m \"edit on renamed branch\"", { cwd: wt, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${wt} --force`, { cwd: root, stdio: "pipe" });
       }
@@ -838,7 +838,7 @@ describe("publish-sync", () => {
       execSync(`git worktree add ${wt} tracker`, { cwd: root, stdio: "pipe" });
       try {
         await writeFile(join(wt, "config", "queries.yaml"), "queries: []\n");
-        execSync("git add -A && git commit -m 'unrelated'", { cwd: wt, stdio: "pipe" });
+        execSync("git add -A && git commit -m \"unrelated\"", { cwd: wt, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${wt} --force`, { cwd: root, stdio: "pipe" });
       }
@@ -932,7 +932,7 @@ describe("publish-sync", () => {
       execSync(`git worktree add ${wt} loctt`, { cwd: root, stdio: "pipe" });
       try {
         await mutate(wt);
-        execSync(`git add -A && git commit -m '${message}'`, { cwd: wt, stdio: "pipe" });
+        execSync(`git add -A && git commit -m ${JSON.stringify(message)}`, { cwd: wt, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${wt} --force`, { cwd: root, stdio: "pipe" });
       }
@@ -1063,7 +1063,7 @@ describe("publish-sync", () => {
       execSync(`git worktree add ${wt} loctt`, { cwd: root, stdio: "pipe" });
       try {
         await mutate(wt);
-        execSync(`git add -A && git commit -m '${message}'`, { cwd: wt, stdio: "pipe" });
+        execSync(`git add -A && git commit -m ${JSON.stringify(message)}`, { cwd: wt, stdio: "pipe" });
       } finally {
         execSync(`git worktree remove ${wt} --force`, { cwd: root, stdio: "pipe" });
       }

@@ -18,7 +18,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createCollidingFromOtherClone, expect, test } from "./fixtures/git-tracker.ts";
+import { createCollidingFromOtherClone, expect, SYNC_SETTLE_MS, test } from "./fixtures/git-tracker.ts";
 
 function reconcileYamlPath(root: string): string {
   return path.join(root, ".loctt", "local", "reconcile.yaml");
@@ -72,7 +72,7 @@ test("GIT-8: a rekey shows a preview and waits for confirm; nothing renumbered u
   // The preview appears and names the collision, keeper, loser, tiebreak,
   // and the planned new key.
   const preview = page.getByTestId("git-rekey-preview");
-  await expect(preview).toBeVisible();
+  await expect(preview).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await expect(preview.getByTestId("git-rekey-collided-key")).toHaveText(key);
   await expect(preview.getByTestId("git-rekey-new-key")).not.toHaveText(key);
   // GIT-8 (amended, A322): each row names the outcome, not the rule —
@@ -86,7 +86,7 @@ test("GIT-8: a rekey shows a preview and waits for confirm; nothing renumbered u
 
   // Confirm applies it.
   await page.getByTestId("git-rekey-confirm").click();
-  await expect(page.getByTestId("git-rekey-applied")).toBeVisible();
+  await expect(page.getByTestId("git-rekey-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // The sentinel is cleared. The colliding key now names exactly one task —
   // the KEEPER (the clone's earlier task) — and the LOSER (the local task)
@@ -142,7 +142,7 @@ test("GIT-9: the preview states the ULID tiebreak when created_at ties", async (
   await page.getByTestId("git-sync").click();
 
   const preview = page.getByTestId("git-rekey-preview");
-  await expect(preview).toBeVisible();
+  await expect(preview).toBeVisible({ timeout: SYNC_SETTLE_MS });
   // GIT-9: with created_at tied, the LOWER ULID keeps the key. The row
   // reads "<key> stays with task <keeperId>. Task <loserId> becomes …",
   // so the outcome is asserted directly rather than any explanation.
@@ -191,9 +191,9 @@ test("GIT-19: after a rekey the old-key URL resolves to the winner; an edit on t
 
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
-  await expect(page.getByTestId("git-rekey-preview")).toBeVisible();
+  await expect(page.getByTestId("git-rekey-preview")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await page.getByTestId("git-rekey-confirm").click();
-  await expect(page.getByTestId("git-rekey-applied")).toBeVisible();
+  await expect(page.getByTestId("git-rekey-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Find the loser's NEW key from disk (the task titled "local next").
   const tasksDir = path.join(root, ".loctt", "tasks");
@@ -260,9 +260,9 @@ test("XS-43: an old key still resolves after a sync-collision rekey (no 404, boo
 
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
-  await expect(page.getByTestId("git-rekey-preview")).toBeVisible();
+  await expect(page.getByTestId("git-rekey-preview")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await page.getByTestId("git-rekey-confirm").click();
-  await expect(page.getByTestId("git-rekey-applied")).toBeVisible();
+  await expect(page.getByTestId("git-rekey-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // Find the loser's NEW key (the task titled "local next"), and confirm the
   // contested key is now in its key_history (the rekey retired it there).
@@ -335,9 +335,9 @@ test("XS-45: a relationship link survives a rekey of its target", async ({
 
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-sync").click();
-  await expect(page.getByTestId("git-rekey-preview")).toBeVisible();
+  await expect(page.getByTestId("git-rekey-preview")).toBeVisible({ timeout: SYNC_SETTLE_MS });
   await page.getByTestId("git-rekey-confirm").click();
-  await expect(page.getByTestId("git-rekey-applied")).toBeVisible();
+  await expect(page.getByTestId("git-rekey-applied")).toBeVisible({ timeout: SYNC_SETTLE_MS });
 
   // The loser's NEW key.
   const tasksDir = path.join(root, ".loctt", "tasks");

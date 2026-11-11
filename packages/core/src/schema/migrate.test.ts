@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -188,7 +188,9 @@ describe("migrateToCurrent: a step fails partway (SET-37)", () => {
     const sentinel = await readFile(sentinelPath, "utf-8");
     expect(sentinel).toContain("from: 0.2.0");
     expect(sentinel).toContain("to: 0.3.0");
-    expect(sentinel).toMatch(/backup: \/.*\.backup-v/);
+    const backup = /^backup: (.+)$/m.exec(sentinel)?.[1] ?? "";
+    expect(backup).toMatch(/\.backup-v/);
+    expect(isAbsolute(backup)).toBe(true);
 
     // A second attempt (the "does not clear the schema banner" /
     // "does not report a partial success as success" bullets, read
