@@ -32,12 +32,12 @@
  *    to.
  *  - Skipped when the mouseup left a non-empty text selection, so
  *    dragging across the title to select it does not also navigate.
- *  - Skipped on a modifier click or a non-primary button — those are
- *    exactly the gestures a real anchor is for, and the row's own click
- *    handler cannot open a background tab the way a native anchor does.
- *    A modifier-click landing outside the key cell simply does nothing,
- *    which is the honest answer: there is no anchor there to carry the
- *    gesture. (The key cell's own `<Link>` still handles it natively.)
+ *  - Skipped on a modifier click or a non-primary button: in-place
+ *    navigation is only for a plain click. A ctrl/cmd-click is handled by
+ *    {@link shouldOpenRowInNewTab} instead (Ken: "i want to be able to
+ *    ctrl/command-click on rows to open tasks in new tabs"); it used to do
+ *    nothing outside the key cell. The key cell's own `<Link>` still
+ *    handles every modifier natively.
  *
  * This keeps the row's accessible shape exactly as it was: one row,
  * announced as a row with cells, one link inside it, one tab stop. No
@@ -55,7 +55,30 @@ export function shouldNavigateRow(e: {
 }): boolean {
   if (e.button !== 0) return false;
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+  return isRowBodyClick(e);
+}
 
+/**
+ * True for a ctrl/cmd + primary click on the row body — the browser's
+ * "open in new tab" gesture, which the row honours the way its key-cell
+ * link does. Same interactive-descendant and text-selection guards as
+ * {@link shouldNavigateRow}. Shift and alt are left alone: on a link they
+ * mean "new window" and "download", which a row has no business imitating.
+ */
+export function shouldOpenRowInNewTab(e: RowClickEvent): boolean {
+  if (e.button !== 0) return false;
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return false;
+  return isRowBodyClick(e);
+}
+
+/** Opens a task's detail page in a new tab, as a ctrl/cmd-clicked link would. */
+export function openTaskInNewTab(key: string): void {
+  window.open(`/tasks/${encodeURIComponent(key)}`, "_blank", "noopener");
+}
+
+type RowClickEvent = Parameters<typeof shouldNavigateRow>[0];
+
+function isRowBodyClick(e: RowClickEvent): boolean {
   const target = e.target as HTMLElement | null;
   const row = e.currentTarget as HTMLElement | null;
   if (target === null || row === null) return false;

@@ -157,12 +157,19 @@ describe("ListView row click (UI-12)", () => {
   });
 
   // @verifies LST-5 (modifier-click must not navigate in place)
-  it("does not navigate on a ctrl-click on the row", async () => {
+  // @verifies LST-58
+  it.each([
+    ["ctrl", { ctrlKey: true }],
+    ["cmd", { metaKey: true }],
+  ])("a %s-click on the row opens the task in a new tab and stays on the list", async (_name, mods) => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
     const router = await mountListWithTaskRoute();
     const row = screen.getByText("First task").closest("tr") as HTMLElement;
 
-    fireEvent.click(within(row).getByText("First task"), { ctrlKey: true });
+    fireEvent.click(within(row).getByText("First task"), mods);
 
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith("/tasks/WEB-1", "_blank", "noopener");
     expect(screen.queryByTestId("task-detail-stub")).toBeNull();
     expect(router.state.location.pathname).toBe("/list");
   });
@@ -172,6 +179,16 @@ describe("ListView row click (UI-12)", () => {
     await mountListWithTaskRoute();
     expect(screen.getByLabelText("Select WEB-1").parentElement?.getAttribute("data-size")).toBe("sm");
     expect(screen.getByLabelText("Select all on this page").parentElement?.getAttribute("data-size")).toBe("sm");
+  });
+
+  // @verifies LST-58
+  it("a ctrl-click on the row's checkbox selects it and opens no tab", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    await mountListWithTaskRoute();
+
+    fireEvent.click(screen.getByLabelText("Select WEB-1"), { ctrlKey: true });
+
+    expect(open).not.toHaveBeenCalled();
   });
 
   // @verifies LST-5 (the kebab / checkbox must not navigate)

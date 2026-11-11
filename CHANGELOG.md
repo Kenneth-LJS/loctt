@@ -13,6 +13,8 @@ based on [Keep a Changelog](https://keepachangelog.com/); versions follow
   --view X --project P` and MCP `list_tasks` with `view` and `project`
   now return only the view's tasks in that project; `--project` used to
   be ignored with a view.
+- Ctrl-click (cmd-click on macOS) on a task row opens the task in a new
+  tab, in the list and on a milestone's page.
 - The task list's row checkboxes are a standard 16px size.
 
 ## [0.4.0] — 2026-09-29

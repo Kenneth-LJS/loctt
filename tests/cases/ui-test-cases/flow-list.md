@@ -764,8 +764,18 @@ click.**
 - When the workflow request has failed, the filter is marked unavailable, the same way a built-in filter is when its options cannot load.
 - Once the workflow loads, a custom field that genuinely no longer exists is dropped as before.
 
+### LST-58 · M1 · minor · P2
+**Ctrl/cmd-clicking a task row opens the task in a new tab.** *(Ken, GitHub issue thread: "i want to be able to ctrl/command-click on rows to open tasks in new tabs")*
+
+- A ctrl-click (cmd-click on macOS) anywhere on the row body opens that task's detail page in a new tab; the list stays where it was.
+- Same on the phone card layout and on a milestone's task table.
+- A ctrl/cmd-click on a control inside the row (the select checkbox, a label pill, a menu) does what that control does and opens no tab.
+- A drag that selects row text opens no tab.
+- Shift and alt combinations are left alone (on a link they mean new window / download).
+
 ### LST-59 · M1 · minor · P8
 **Task-row checkboxes are a standard size.** *(GitHub issue #8: "current task row checkboxes fill out almost the whole row? Can we make it a standard-looking size?")*
 
 - In the list table, the per-row and select-all checkboxes are a 16px box, and the clickable area is the box itself (no invisible ring around it).
 - Every other checkbox (Settings, dialogs, the phone card) keeps the 24px size A11Y-55 measures.
+

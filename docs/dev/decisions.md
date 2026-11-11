@@ -22685,6 +22685,15 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K164 · Ctrl/cmd-clicking a task row opens it in a new tab
+
+**Date:** 2026-11-10 · **Ken's ruling — not revertible by an agent.**
+
+Ken: *"i want to be able to ctrl/command-click on rows to open tasks in
+new tabs"* (corrected from "new windows" to "new tabs"). This reverses
+UI-12's "a modifier-click landing outside the key cell simply does
+nothing". Case LST-58; the agent-made details are A376 § 4.
+
 ### K163 · Task-row checkboxes are 16px, hit area included
 
 **Date:** 2026-11-10 · **Ken's ruling — not revertible by an agent.**
@@ -23362,6 +23371,63 @@ Ken's answers on the "needs your call" rows of the app-message audit
 Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
+
+### A376 · How view filters stack, the 16px checkbox's reach, and the row new-tab gesture (issues #7, #8, #9; K162–K164)
+
+**Date:** 2026-11-10 · **Agent-made** (under K162, K163, K164).
+
+**The situation.** K162–K164 settle what Ken wants; they do not settle the
+order a stacked view stores its filters in, whether the open view's sort
+carries over, how far the 16px checkbox reaches, or how a row opens a new
+tab.
+
+**Decided.**
+1. *Stacked filter order.* "Save as view" from an open view stores the
+   view's filters first, verbatim and in their order, then the toolbar's
+   (`SaveViewDialog.tsx`). K102 says filters are stored as authored; A was
+   authored before B. Save is disabled until the views list has loaded,
+   since saving earlier would store B alone. Alternative: merge B into A
+   field by field (a toolbar `status` replacing A's `status`). Rejected:
+   that rewrites A's filters, which K102 forbids, and two filters on one
+   field AND together exactly as the list shows them.
+2. *Sort and scope.* A toolbar sort wins; with none, the open view's
+   sort is saved, because that is the order the user is looking at. The
+   view's archived scope is not carried (K121 #1: a view saved from the
+   list never carries one). Alternative: carry the scope. Rejected for
+   K121 #1.
+3. *Where the 16px checkbox applies.* `Checkbox` gained `size="sm"`
+   (`1.1429rem` = 16px, the input still fills its wrapper so the hit area
+   is the box, with a `data-size` hook for tests). Only the list table's
+   row and select-all checkboxes use it. The phone card's checkbox and
+   every Settings/dialog checkbox stay 24.5px: the issue names task rows,
+   A11Y-55's Settings sweep requires 24px, and a phone card is a touch
+   target. Alternative: shrink the primitive everywhere. Rejected: it
+   fails A11Y-55 and goes past what was asked.
+4. *New tab.* `shouldOpenRowInNewTab` (`list/rowNavigation.ts`) is true
+   for ctrl or cmd + primary button on the row body, with the same
+   interactive-child and text-selection guards as `shouldNavigateRow`;
+   the row then calls `window.open("/tasks/<key>", "_blank", "noopener")`.
+   Used by the list table, the phone cards and MilestoneDetail's table,
+   the three callers of the row guard. Shift and alt combinations are
+   left alone (on a link they mean new window / download), and
+   middle-click on the row body is not added, since Ken asked for
+   ctrl/cmd. A browser cannot open a background tab from script, so the
+   new tab may take focus where a ctrl-clicked link would not.
+
+**Why.** K102 (stored as authored); K121 #1; A11Y-55; UI-12's guards.
+
+**To revert.**
+1. `SaveViewDialog.tsx`: drop `activeView`/`activeViewPending`, build
+   `filters` from `buildFiltersFromSearch(search)` alone and `sort` from
+   the search alone; delete the "saves the open view's filters" test.
+2. As (1), sort half only: replace `: activeView?.sort` with
+   `: undefined`.
+3. Remove `size="sm"` from `ListView.tsx`'s two table checkboxes (or
+   add it to the card's), and delete the `size` prop, `data-size` and the
+   three size tests (`Checkbox.test.tsx` ×2, `ListView.rowClick.test.tsx`).
+4. Delete `shouldOpenRowInNewTab`/`openTaskInNewTab` and their call
+   lines in `ListView.tsx` and `MilestoneDetail.tsx`; restore the two
+   "does not navigate on a ctrl-click" tests' original bodies.
 
 ### A375 · An unreadable settings.yaml loads as no settings, and a settings write refuses (B56, G12)
 

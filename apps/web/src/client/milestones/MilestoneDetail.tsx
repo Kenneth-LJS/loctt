@@ -8,7 +8,7 @@ import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { formatWorkspaceDate } from "../dates/workspaceDate.ts";
 import { PriorityCell, StatusBadge, TypeBadge } from "../list/cells.tsx";
 import { buildLookups } from "../list/lookups.ts";
-import { shouldNavigateRow } from "../list/rowNavigation.ts";
+import { openTaskInNewTab, shouldNavigateRow, shouldOpenRowInNewTab } from "../list/rowNavigation.ts";
 import { recordTaskOrigin } from "../router/taskOrigin.ts";
 // K100: the detail header's Edit reuses the SAME dialog Settings and the
 // point-of-use rows use (fields + validation + `useUpdateMilestone`), so
@@ -319,6 +319,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
                   // all skip this handler rather than double-navigating
                   // or fighting the browser's own new-tab gesture.
                   onClick={e => {
+                    if (shouldOpenRowInNewTab(e)) { openTaskInNewTab(t.key); return; }
                     if (!shouldNavigateRow(e)) return;
                     recordTaskOrigin(currentHref);
                     void navigate({ to: "/tasks/$key", params: { key: t.key } });

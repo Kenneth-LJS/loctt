@@ -131,13 +131,16 @@ describe("MilestoneDetail task table row click (UI-12)", () => {
   });
 
   // @verifies LST-5 (modifier-click must not navigate in place)
-  it("does not navigate on a ctrl-click on the row", async () => {
+  // @verifies LST-58
+  it("a ctrl-click on the row opens the task in a new tab and stays put", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
     MILESTONES = [{ id: "ms_1", name: "Beta launch" }];
     const router = await renderDetail("ms_1");
     const row = screen.getByText("A milestone task").closest("tr") as HTMLElement;
 
     fireEvent.click(within(row).getByText("A milestone task"), { ctrlKey: true });
 
+    expect(open).toHaveBeenCalledWith("/tasks/WEB-1", "_blank", "noopener");
     expect(screen.queryByTestId("task-detail-stub")).toBeNull();
     expect(router.state.location.pathname).toBe("/milestones/ms_1");
   });

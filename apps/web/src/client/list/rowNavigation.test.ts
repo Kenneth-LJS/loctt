@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { shouldNavigateRow } from "./rowNavigation.ts";
+import { shouldNavigateRow, shouldOpenRowInNewTab } from "./rowNavigation.ts";
 
 /**
  * UI-12. `shouldNavigateRow` is the guard behind "whole row clickable"
@@ -127,5 +127,50 @@ describe("shouldNavigateRow", () => {
     expect(shouldNavigateRow(baseEvent({ target: cell, currentTarget: row }))).toBe(true);
 
     document.body.removeChild(row);
+  });
+});
+
+describe("shouldOpenRowInNewTab", () => {
+  // @verifies LST-58
+  it.each([
+    ["ctrlKey", { ctrlKey: true }],
+    ["metaKey", { metaKey: true }],
+  ])("opens a new tab on a %s + primary click on the row body", (_name, overrides) => {
+    expect(shouldOpenRowInNewTab(baseEvent(overrides))).toBe(true);
+  });
+
+  // @verifies LST-58
+  it("does not on a plain click, which navigates in place instead", () => {
+    expect(shouldOpenRowInNewTab(baseEvent())).toBe(false);
+  });
+
+  // @verifies LST-58
+  it.each([
+    ["shift", { ctrlKey: true, shiftKey: true }],
+    ["alt", { ctrlKey: true, altKey: true }],
+    ["middle button", { ctrlKey: true, button: 1 }],
+  ])("does not when ctrl is combined with %s", (_name, overrides) => {
+    expect(shouldOpenRowInNewTab(baseEvent(overrides))).toBe(false);
+  });
+
+  // @verifies LST-58
+  it("does not when the click landed on an interactive child", () => {
+    const e = baseEvent({ ctrlKey: true });
+    const box = document.createElement("input");
+    (e.target as HTMLElement).appendChild(box);
+    expect(shouldOpenRowInNewTab({ ...e, target: box })).toBe(false);
+  });
+
+  // @verifies LST-58
+  it("does not when the click leaves a text selection", () => {
+    const e = baseEvent({ ctrlKey: true });
+    const cell = e.target as HTMLElement;
+    cell.textContent = "Selectable title";
+    document.body.appendChild(e.currentTarget as HTMLElement);
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    window.getSelection()?.addRange(range);
+    expect(shouldOpenRowInNewTab(e)).toBe(false);
+    (e.currentTarget as HTMLElement).remove();
   });
 });

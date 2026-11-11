@@ -1,8 +1,8 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1107,
-    "ui": 971,
+    "total": 1108,
+    "ui": 972,
     "surface": 136,
     "resolved": 4
   },
@@ -6881,10 +6881,26 @@
       "resolved": false
     },
     {
-      "id": "LST-59",
+      "id": "LST-58",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-list.md",
       "line": 767,
+      "title": "Ctrl/cmd-clicking a task row opens the task in a new tab.",
+      "milestone": "M1",
+      "severity": "minor",
+      "principles": [
+        "P2"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "LST-59",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-list.md",
+      "line": 776,
       "title": "Task-row checkboxes are a standard size.",
       "milestone": "M1",
       "severity": "minor",

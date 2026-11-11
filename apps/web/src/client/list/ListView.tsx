@@ -52,7 +52,7 @@ import { clearedSearch, FilterBar } from "./FilterBar.tsx";
 import { relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
-import { shouldNavigateRow } from "./rowNavigation.ts";
+import { openTaskInNewTab, shouldNavigateRow, shouldOpenRowInNewTab } from "./rowNavigation.ts";
 import { useScopeTitle } from "./useScopeTitle.ts";
 import { useSelection } from "./useSelection.ts";
 
@@ -1118,6 +1118,7 @@ export function ListView() {
                   // real anchor), or a click that already landed on an
                   // interactive child.
                   onClick={e => {
+                    if (shouldOpenRowInNewTab(e)) { openTaskInNewTab(task.key); return; }
                     if (!shouldNavigateRow(e)) return;
                     openTask(task.key);
                   }}
@@ -1271,6 +1272,7 @@ export function ListView() {
               // table (rowNavigation.ts) — a drag-selection of the title
               // or a click on the checkbox must not also navigate.
               onClick={e => {
+                if (shouldOpenRowInNewTab(e)) { openTaskInNewTab(task.key); return; }
                 if (!shouldNavigateRow(e)) return;
                 openTask(task.key);
               }}
